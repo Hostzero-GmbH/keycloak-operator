@@ -1,0 +1,5 @@
+/*
+Copyright 2024 HostZero.
+
+Licensed under the BSD 2-Clause License.
+*/
