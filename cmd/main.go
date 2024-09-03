@@ -16,6 +16,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
+	"github.com/hostzero/keycloak-operator/internal/controller"
 )
 
 var (
@@ -58,6 +59,15 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+
+	// Setup controllers
+	if err = (&controller.KeycloakInstanceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "KeycloakInstance")
 		os.Exit(1)
 	}
 
