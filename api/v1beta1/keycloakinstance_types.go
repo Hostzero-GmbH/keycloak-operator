@@ -10,7 +10,7 @@ type KeycloakInstanceSpec struct {
 	// +kubebuilder:validation:Required
 	BaseUrl string `json:"baseUrl"`
 
-	// Credentials contains the reference to the the admin credentials secret
+	// Credentials contains the reference to the admin credentials secret
 	// +kubebuilder:validation:Required
 	Credentials CredentialsSpec `json:"credentials"`
 
