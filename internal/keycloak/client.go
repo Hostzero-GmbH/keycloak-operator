@@ -3,7 +3,9 @@ package keycloak
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -240,4 +242,51 @@ func (c *Client) Delete(ctx context.Context, path string) error {
 	}
 
 	return nil
+}
+
+// ============================================================================
+// Realm Operations
+// ============================================================================
+
+// RealmRepresentation represents a Keycloak realm
+type RealmRepresentation struct {
+	ID          *string `json:"id,omitempty"`
+	Realm       *string `json:"realm,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
+}
+
+// CreateRealmFromDefinition creates a realm from raw JSON definition
+func (c *Client) CreateRealmFromDefinition(ctx context.Context, definition json.RawMessage) error {
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(definition).Post(c.baseURL + "/admin/realms")
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}
+
+// GetRealm gets a realm by name
+func (c *Client) GetRealm(ctx context.Context, realmName string) (*RealmRepresentation, error) {
+	var realm RealmRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName), &realm); err != nil {
+		return nil, err
+	}
+	return &realm, nil
+}
+
+// UpdateRealm updates a realm from raw JSON definition
+func (c *Client) UpdateRealm(ctx context.Context, realmName string, definition json.RawMessage) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName), definition)
+}
+
+// DeleteRealm deletes a realm
+func (c *Client) DeleteRealm(ctx context.Context, realmName string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName))
 }
