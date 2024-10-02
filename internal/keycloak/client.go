@@ -290,3 +290,141 @@ func (c *Client) UpdateRealm(ctx context.Context, realmName string, definition j
 func (c *Client) DeleteRealm(ctx context.Context, realmName string) error {
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName))
 }
+
+// ============================================================================
+// Client Operations
+// ============================================================================
+
+// ClientRepresentation represents a Keycloak client
+type ClientRepresentation struct {
+	ID       *string `json:"id,omitempty"`
+	ClientID *string `json:"clientId,omitempty"`
+	Name     *string `json:"name,omitempty"`
+	Enabled  *bool   `json:"enabled,omitempty"`
+}
+
+// CreateClient creates a new client
+func (c *Client) CreateClient(ctx context.Context, realmName string, clientDef json.RawMessage) (string, error) {
+	return c.Create(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients", clientDef)
+}
+
+// GetClient gets a client by internal ID
+func (c *Client) GetClient(ctx context.Context, realmName, clientID string) (*ClientRepresentation, error) {
+	var client ClientRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientID), &client); err != nil {
+		return nil, err
+	}
+	return &client, nil
+}
+
+// GetClients gets all clients in a realm with optional filtering
+func (c *Client) GetClients(ctx context.Context, realmName string, params map[string]string) ([]ClientRepresentation, error) {
+	var clients []ClientRepresentation
+	req, err := c.request(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if params != nil {
+		req.SetQueryParams(params)
+	}
+	resp, err := req.SetResult(&clients).Get(c.baseURL + "/admin/realms/" + url.PathEscape(realmName) + "/clients")
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return clients, nil
+}
+
+// GetClientByClientID finds a client by its clientId field
+func (c *Client) GetClientByClientID(ctx context.Context, realmName, clientID string) (*ClientRepresentation, error) {
+	clients, err := c.GetClients(ctx, realmName, map[string]string{"clientId": clientID})
+	if err != nil {
+		return nil, err
+	}
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("client not found: %s", clientID)
+	}
+	return &clients[0], nil
+}
+
+// UpdateClient updates a client
+func (c *Client) UpdateClient(ctx context.Context, realmName, clientID string, clientDef json.RawMessage) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientID), clientDef)
+}
+
+// DeleteClient deletes a client
+func (c *Client) DeleteClient(ctx context.Context, realmName, clientID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientID))
+}
+
+// ============================================================================
+// User Operations
+// ============================================================================
+
+// UserRepresentation represents a Keycloak user
+type UserRepresentation struct {
+	ID        *string `json:"id,omitempty"`
+	Username  *string `json:"username,omitempty"`
+	Email     *string `json:"email,omitempty"`
+	Enabled   *bool   `json:"enabled,omitempty"`
+	FirstName *string `json:"firstName,omitempty"`
+	LastName  *string `json:"lastName,omitempty"`
+}
+
+// CreateUser creates a new user
+func (c *Client) CreateUser(ctx context.Context, realmName string, userDef json.RawMessage) (string, error) {
+	return c.Create(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users", userDef)
+}
+
+// GetUser gets a user by ID
+func (c *Client) GetUser(ctx context.Context, realmName, userID string) (*UserRepresentation, error) {
+	var user UserRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID), &user); err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+// GetUsers gets users with optional filtering
+func (c *Client) GetUsers(ctx context.Context, realmName string, params map[string]string) ([]UserRepresentation, error) {
+	var users []UserRepresentation
+	req, err := c.request(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if params != nil {
+		req.SetQueryParams(params)
+	}
+	resp, err := req.SetResult(&users).Get(c.baseURL + "/admin/realms/" + url.PathEscape(realmName) + "/users")
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return users, nil
+}
+
+// GetUserByUsername finds a user by username
+func (c *Client) GetUserByUsername(ctx context.Context, realmName, username string) (*UserRepresentation, error) {
+	users, err := c.GetUsers(ctx, realmName, map[string]string{"username": username, "exact": "true"})
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return nil, fmt.Errorf("user not found: %s", username)
+	}
+	return &users[0], nil
+}
+
+// UpdateUser updates a user
+func (c *Client) UpdateUser(ctx context.Context, realmName, userID string, userDef json.RawMessage) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID), userDef)
+}
+
+// DeleteUser deletes a user
+func (c *Client) DeleteUser(ctx context.Context, realmName, userID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID))
+}
