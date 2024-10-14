@@ -46,7 +46,7 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	kc, err := r.getKeycloakClient(ctx, realm)
 	if err != nil {
 		log.Error(err, "failed to get keycloak client")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, realm, false, "InstanceNotReady", err.Error())
 	}
 
 	// Parse realm definition to get realm name
@@ -55,11 +55,11 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
 		log.Error(err, "failed to parse realm definition")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, realm, false, "InvalidDefinition", err.Error())
 	}
 
 	if realmDef.Realm == "" {
-		return ctrl.Result{}, fmt.Errorf("realm name is required in definition")
+		return r.updateStatus(ctx, realm, false, "InvalidDefinition", "realm name is required in definition")
 	}
 
 	// Check if realm exists
@@ -69,18 +69,30 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		log.Info("creating realm", "realm", realmDef.Realm)
 		if err := kc.CreateRealmFromDefinition(ctx, realm.Spec.Definition.Raw); err != nil {
 			log.Error(err, "failed to create realm")
-			return ctrl.Result{}, err
+			return r.updateStatus(ctx, realm, false, "CreateFailed", err.Error())
 		}
 	} else {
 		// Realm exists, update it
 		log.Info("updating realm", "realm", realmDef.Realm)
 		if err := kc.UpdateRealm(ctx, realmDef.Realm, realm.Spec.Definition.Raw); err != nil {
 			log.Error(err, "failed to update realm")
-			return ctrl.Result{}, err
+			return r.updateStatus(ctx, realm, false, "UpdateFailed", err.Error())
 		}
 	}
 
 	log.Info("realm reconciled", "realm", realmDef.Realm)
+	return r.updateStatus(ctx, realm, true, "Ready", "Realm synchronized")
+}
+
+func (r *KeycloakRealmReconciler) updateStatus(ctx context.Context, realm *keycloakv1beta1.KeycloakRealm, ready bool, status, message string) (ctrl.Result, error) {
+	realm.Status.Ready = ready
+	realm.Status.Status = status
+	realm.Status.Message = message
+
+	if err := r.Status().Update(ctx, realm); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 

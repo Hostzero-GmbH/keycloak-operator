@@ -44,7 +44,7 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, kcClient)
 	if err != nil {
 		log.Error(err, "failed to get keycloak client")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, kcClient, false, "RealmNotReady", err.Error())
 	}
 
 	// Parse client definition
@@ -53,11 +53,11 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	if err := json.Unmarshal(kcClient.Spec.Definition.Raw, &clientDef); err != nil {
 		log.Error(err, "failed to parse client definition")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, kcClient, false, "InvalidDefinition", err.Error())
 	}
 
 	if clientDef.ClientID == "" {
-		return ctrl.Result{}, fmt.Errorf("clientId is required in definition")
+		return r.updateStatus(ctx, kcClient, false, "InvalidDefinition", "clientId is required in definition")
 	}
 
 	// Check if client exists
@@ -68,18 +68,30 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		_, err = kc.CreateClient(ctx, realmName, kcClient.Spec.Definition.Raw)
 		if err != nil {
 			log.Error(err, "failed to create client")
-			return ctrl.Result{}, err
+			return r.updateStatus(ctx, kcClient, false, "CreateFailed", err.Error())
 		}
 	} else {
 		// Client exists, update it
 		log.Info("updating client", "clientId", clientDef.ClientID)
 		if err := kc.UpdateClient(ctx, realmName, *existingClient.ID, kcClient.Spec.Definition.Raw); err != nil {
 			log.Error(err, "failed to update client")
-			return ctrl.Result{}, err
+			return r.updateStatus(ctx, kcClient, false, "UpdateFailed", err.Error())
 		}
 	}
 
 	log.Info("client reconciled", "clientId", clientDef.ClientID)
+	return r.updateStatus(ctx, kcClient, true, "Ready", "Client synchronized")
+}
+
+func (r *KeycloakClientReconciler) updateStatus(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient, ready bool, status, message string) (ctrl.Result, error) {
+	kcClient.Status.Ready = ready
+	kcClient.Status.Status = status
+	kcClient.Status.Message = message
+
+	if err := r.Status().Update(ctx, kcClient); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 

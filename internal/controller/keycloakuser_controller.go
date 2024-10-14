@@ -44,7 +44,7 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, user)
 	if err != nil {
 		log.Error(err, "failed to get keycloak client")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, user, false, "RealmNotReady", err.Error())
 	}
 
 	// Parse user definition
@@ -53,11 +53,11 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	if err := json.Unmarshal(user.Spec.Definition.Raw, &userDef); err != nil {
 		log.Error(err, "failed to parse user definition")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, user, false, "InvalidDefinition", err.Error())
 	}
 
 	if userDef.Username == "" {
-		return ctrl.Result{}, fmt.Errorf("username is required in definition")
+		return r.updateStatus(ctx, user, false, "InvalidDefinition", "username is required in definition")
 	}
 
 	// Check if user exists
@@ -68,18 +68,30 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		_, err = kc.CreateUser(ctx, realmName, user.Spec.Definition.Raw)
 		if err != nil {
 			log.Error(err, "failed to create user")
-			return ctrl.Result{}, err
+			return r.updateStatus(ctx, user, false, "CreateFailed", err.Error())
 		}
 	} else {
 		// User exists, update it
 		log.Info("updating user", "username", userDef.Username)
 		if err := kc.UpdateUser(ctx, realmName, *existingUser.ID, user.Spec.Definition.Raw); err != nil {
 			log.Error(err, "failed to update user")
-			return ctrl.Result{}, err
+			return r.updateStatus(ctx, user, false, "UpdateFailed", err.Error())
 		}
 	}
 
 	log.Info("user reconciled", "username", userDef.Username)
+	return r.updateStatus(ctx, user, true, "Ready", "User synchronized")
+}
+
+func (r *KeycloakUserReconciler) updateStatus(ctx context.Context, user *keycloakv1beta1.KeycloakUser, ready bool, status, message string) (ctrl.Result, error) {
+	user.Status.Ready = ready
+	user.Status.Status = status
+	user.Status.Message = message
+
+	if err := r.Status().Update(ctx, user); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 

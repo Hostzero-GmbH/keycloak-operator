@@ -45,17 +45,29 @@ func (r *KeycloakInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	cfg, err := r.getKeycloakConfig(ctx, instance)
 	if err != nil {
 		log.Error(err, "failed to get keycloak config")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, instance, false, "Error", err.Error())
 	}
 
 	// Create Keycloak client and verify connection
 	kc := keycloak.NewClient(cfg, log)
 	if err := kc.Ping(ctx); err != nil {
 		log.Error(err, "failed to connect to Keycloak")
-		return ctrl.Result{}, err
+		return r.updateStatus(ctx, instance, false, "ConnectionFailed", fmt.Sprintf("Failed to connect: %v", err))
 	}
 
 	log.Info("successfully connected to Keycloak", "baseUrl", instance.Spec.BaseUrl)
+	return r.updateStatus(ctx, instance, true, "Ready", "Connected to Keycloak")
+}
+
+func (r *KeycloakInstanceReconciler) updateStatus(ctx context.Context, instance *keycloakv1beta1.KeycloakInstance, ready bool, status, message string) (ctrl.Result, error) {
+	instance.Status.Ready = ready
+	instance.Status.Status = status
+	instance.Status.Message = message
+
+	if err := r.Status().Update(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
