@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
@@ -38,6 +39,29 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		log.Error(err, "unable to fetch KeycloakUser")
 		return ctrl.Result{}, err
+	}
+
+	// Handle deletion
+	if !user.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(user, FinalizerName) {
+			if err := r.deleteUser(ctx, user); err != nil {
+				log.Error(err, "failed to delete user from Keycloak")
+			}
+			controllerutil.RemoveFinalizer(user, FinalizerName)
+			if err := r.Update(ctx, user); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(user, FinalizerName) {
+		controllerutil.AddFinalizer(user, FinalizerName)
+		if err := r.Update(ctx, user); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Get Keycloak client and realm info
@@ -140,6 +164,27 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealm(ctx context.Context, 
 	}
 
 	return keycloak.NewClient(cfg, log.FromContext(ctx)), realmDef.Realm, nil
+}
+
+func (r *KeycloakUserReconciler) deleteUser(ctx context.Context, user *keycloakv1beta1.KeycloakUser) error {
+	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, user)
+	if err != nil {
+		return err
+	}
+
+	var userDef struct {
+		Username string `json:"username"`
+	}
+	if err := json.Unmarshal(user.Spec.Definition.Raw, &userDef); err != nil {
+		return err
+	}
+
+	existingUser, err := kc.GetUserByUsername(ctx, realmName, userDef.Username)
+	if err != nil {
+		return nil // User doesn't exist
+	}
+
+	return kc.DeleteUser(ctx, realmName, *existingUser.ID)
 }
 
 // SetupWithManager sets up the controller with the Manager

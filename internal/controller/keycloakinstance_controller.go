@@ -10,10 +10,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
 	"github.com/hostzero/keycloak-operator/internal/keycloak"
+)
+
+const (
+	// FinalizerName is the finalizer used by all controllers
+	FinalizerName = "keycloak.hostzero.com/finalizer"
 )
 
 // KeycloakInstanceReconciler reconciles a KeycloakInstance object
@@ -39,6 +45,26 @@ func (r *KeycloakInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 		log.Error(err, "unable to fetch KeycloakInstance")
 		return ctrl.Result{}, err
+	}
+
+	// Handle deletion
+	if !instance.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(instance, FinalizerName) {
+			controllerutil.RemoveFinalizer(instance, FinalizerName)
+			if err := r.Update(ctx, instance); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(instance, FinalizerName) {
+		controllerutil.AddFinalizer(instance, FinalizerName)
+		if err := r.Update(ctx, instance); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Get credentials from secret

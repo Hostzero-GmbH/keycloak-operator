@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
@@ -38,6 +39,29 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		log.Error(err, "unable to fetch KeycloakClient")
 		return ctrl.Result{}, err
+	}
+
+	// Handle deletion
+	if !kcClient.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(kcClient, FinalizerName) {
+			if err := r.deleteClient(ctx, kcClient); err != nil {
+				log.Error(err, "failed to delete client from Keycloak")
+			}
+			controllerutil.RemoveFinalizer(kcClient, FinalizerName)
+			if err := r.Update(ctx, kcClient); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(kcClient, FinalizerName) {
+		controllerutil.AddFinalizer(kcClient, FinalizerName)
+		if err := r.Update(ctx, kcClient); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Get Keycloak client and realm info
@@ -140,6 +164,27 @@ func (r *KeycloakClientReconciler) getKeycloakClientAndRealm(ctx context.Context
 	}
 
 	return keycloak.NewClient(cfg, log.FromContext(ctx)), realmDef.Realm, nil
+}
+
+func (r *KeycloakClientReconciler) deleteClient(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient) error {
+	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, kcClient)
+	if err != nil {
+		return err
+	}
+
+	var clientDef struct {
+		ClientID string `json:"clientId"`
+	}
+	if err := json.Unmarshal(kcClient.Spec.Definition.Raw, &clientDef); err != nil {
+		return err
+	}
+
+	existingClient, err := kc.GetClientByClientID(ctx, realmName, clientDef.ClientID)
+	if err != nil {
+		return nil // Client doesn't exist
+	}
+
+	return kc.DeleteClient(ctx, realmName, *existingClient.ID)
 }
 
 // SetupWithManager sets up the controller with the Manager

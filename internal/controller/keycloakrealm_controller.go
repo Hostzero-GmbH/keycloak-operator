@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
@@ -40,6 +41,30 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		log.Error(err, "unable to fetch KeycloakRealm")
 		return ctrl.Result{}, err
+	}
+
+	// Handle deletion
+	if !realm.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(realm, FinalizerName) {
+			// Delete realm from Keycloak
+			if err := r.deleteRealm(ctx, realm); err != nil {
+				log.Error(err, "failed to delete realm from Keycloak")
+			}
+			controllerutil.RemoveFinalizer(realm, FinalizerName)
+			if err := r.Update(ctx, realm); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer if not present
+	if !controllerutil.ContainsFinalizer(realm, FinalizerName) {
+		controllerutil.AddFinalizer(realm, FinalizerName)
+		if err := r.Update(ctx, realm); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Get Keycloak client for this realm's instance
@@ -125,6 +150,22 @@ func (r *KeycloakRealmReconciler) getKeycloakClient(ctx context.Context, realm *
 	}
 
 	return keycloak.NewClient(cfg, log.FromContext(ctx)), nil
+}
+
+func (r *KeycloakRealmReconciler) deleteRealm(ctx context.Context, realm *keycloakv1beta1.KeycloakRealm) error {
+	kc, err := r.getKeycloakClient(ctx, realm)
+	if err != nil {
+		return err
+	}
+
+	var realmDef struct {
+		Realm string `json:"realm"`
+	}
+	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
+		return err
+	}
+
+	return kc.DeleteRealm(ctx, realmDef.Realm)
 }
 
 // SetupWithManager sets up the controller with the Manager

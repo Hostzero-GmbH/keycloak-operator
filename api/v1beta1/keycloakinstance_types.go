@@ -59,6 +59,10 @@ type KeycloakInstanceStatus struct {
 	// Message contains additional information about the status
 	// +optional
 	Message string `json:"message,omitempty"`
+
+	// Conditions represent the latest available observations
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
