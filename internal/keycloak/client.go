@@ -428,3 +428,119 @@ func (c *Client) UpdateUser(ctx context.Context, realmName, userID string, userD
 func (c *Client) DeleteUser(ctx context.Context, realmName, userID string) error {
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID))
 }
+
+// ============================================================================
+// Role Operations
+// ============================================================================
+
+// RoleRepresentation represents a Keycloak role
+type RoleRepresentation struct {
+	ID          *string `json:"id,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Composite   *bool   `json:"composite,omitempty"`
+}
+
+// CreateRealmRole creates a realm-level role
+func (c *Client) CreateRealmRole(ctx context.Context, realmName string, roleDef json.RawMessage) error {
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(roleDef).Post(c.baseURL + "/admin/realms/" + url.PathEscape(realmName) + "/roles")
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}
+
+// GetRealmRole gets a realm role by name
+func (c *Client) GetRealmRole(ctx context.Context, realmName, roleName string) (*RoleRepresentation, error) {
+	var role RoleRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/roles/"+url.PathEscape(roleName), &role); err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
+// UpdateRealmRole updates a realm role
+func (c *Client) UpdateRealmRole(ctx context.Context, realmName, roleName string, roleDef json.RawMessage) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/roles/"+url.PathEscape(roleName), roleDef)
+}
+
+// DeleteRealmRole deletes a realm role
+func (c *Client) DeleteRealmRole(ctx context.Context, realmName, roleName string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/roles/"+url.PathEscape(roleName))
+}
+
+// ============================================================================
+// Group Operations
+// ============================================================================
+
+// GroupRepresentation represents a Keycloak group
+type GroupRepresentation struct {
+	ID   *string `json:"id,omitempty"`
+	Name *string `json:"name,omitempty"`
+	Path *string `json:"path,omitempty"`
+}
+
+// CreateGroup creates a group
+func (c *Client) CreateGroup(ctx context.Context, realmName string, groupDef json.RawMessage) (string, error) {
+	return c.Create(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups", groupDef)
+}
+
+// GetGroup gets a group by ID
+func (c *Client) GetGroup(ctx context.Context, realmName, groupID string) (*GroupRepresentation, error) {
+	var group GroupRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID), &group); err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
+// GetGroups gets all groups
+func (c *Client) GetGroups(ctx context.Context, realmName string, params map[string]string) ([]GroupRepresentation, error) {
+	var groups []GroupRepresentation
+	req, err := c.request(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if params != nil {
+		req.SetQueryParams(params)
+	}
+	resp, err := req.SetResult(&groups).Get(c.baseURL + "/admin/realms/" + url.PathEscape(realmName) + "/groups")
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return nil, fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return groups, nil
+}
+
+// GetGroupByName finds a group by name
+func (c *Client) GetGroupByName(ctx context.Context, realmName, name string) (*GroupRepresentation, error) {
+	groups, err := c.GetGroups(ctx, realmName, map[string]string{"search": name})
+	if err != nil {
+		return nil, err
+	}
+	for _, g := range groups {
+		if g.Name != nil && *g.Name == name {
+			return &g, nil
+		}
+	}
+	return nil, fmt.Errorf("group not found: %s", name)
+}
+
+// UpdateGroup updates a group
+func (c *Client) UpdateGroup(ctx context.Context, realmName, groupID string, groupDef json.RawMessage) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID), groupDef)
+}
+
+// DeleteGroup deletes a group
+func (c *Client) DeleteGroup(ctx context.Context, realmName, groupID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID))
+}
