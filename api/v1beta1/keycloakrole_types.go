@@ -7,9 +7,9 @@ import (
 
 // KeycloakRoleSpec defines the desired state of KeycloakRole
 type KeycloakRoleSpec struct {
-	// InstanceRef references the KeycloakInstance this role belongs to
+	// RealmRef references the KeycloakRealm this role belongs to
 	// +kubebuilder:validation:Required
-	InstanceRef ResourceRef `json:"instanceRef"`
+	RealmRef ResourceRef `json:"realmRef"`
 
 	// Definition is the role definition in Keycloak JSON format
 	// +kubebuilder:validation:Required

@@ -64,8 +64,8 @@ func (r *KeycloakRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Get Keycloak client from instance
-	kc, err := r.getKeycloakClient(ctx, role)
+	// Get Keycloak client and realm info
+	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, role)
 	if err != nil {
 		log.Error(err, "failed to get Keycloak client")
 		return r.updateStatus(ctx, role, false, "Error", err.Error())
@@ -78,27 +78,6 @@ func (r *KeycloakRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := json.Unmarshal(role.Spec.Definition.Raw, &roleDef); err != nil {
 		log.Error(err, "failed to parse role definition")
 		return r.updateStatus(ctx, role, false, "Error", fmt.Sprintf("Invalid definition: %v", err))
-	}
-
-	// Get the realm name from instance - THIS IS WRONG, instance doesn't have realm info
-	// for the target realm, only the admin realm
-	instance := &keycloakv1beta1.KeycloakInstance{}
-	instanceName := types.NamespacedName{
-		Name:      role.Spec.InstanceRef.Name,
-		Namespace: role.Namespace,
-	}
-	if role.Spec.InstanceRef.Namespace != nil {
-		instanceName.Namespace = *role.Spec.InstanceRef.Namespace
-	}
-	if err := r.Get(ctx, instanceName, instance); err != nil {
-		return r.updateStatus(ctx, role, false, "Error", fmt.Sprintf("Instance not found: %v", err))
-	}
-
-	// Use master realm as default - this is the conceptual mistake
-	// roles should be created in a specific realm, not master
-	realmName := "master"
-	if instance.Spec.Realm != nil {
-		realmName = *instance.Spec.Realm
 	}
 
 	// Check if role exists
@@ -134,30 +113,51 @@ func (r *KeycloakRoleReconciler) updateStatus(ctx context.Context, role *keycloa
 	return ctrl.Result{}, nil
 }
 
-func (r *KeycloakRoleReconciler) getKeycloakClient(ctx context.Context, role *keycloakv1beta1.KeycloakRole) (*keycloak.Client, error) {
-	// Get the referenced instance
-	instance := &keycloakv1beta1.KeycloakInstance{}
-	instanceName := types.NamespacedName{
-		Name:      role.Spec.InstanceRef.Name,
+func (r *KeycloakRoleReconciler) getKeycloakClientAndRealm(ctx context.Context, role *keycloakv1beta1.KeycloakRole) (*keycloak.Client, string, error) {
+	// Get the referenced realm
+	realm := &keycloakv1beta1.KeycloakRealm{}
+	realmName := types.NamespacedName{
+		Name:      role.Spec.RealmRef.Name,
 		Namespace: role.Namespace,
 	}
-	if role.Spec.InstanceRef.Namespace != nil {
-		instanceName.Namespace = *role.Spec.InstanceRef.Namespace
+	if role.Spec.RealmRef.Namespace != nil {
+		realmName.Namespace = *role.Spec.RealmRef.Namespace
+	}
+	if err := r.Get(ctx, realmName, realm); err != nil {
+		return nil, "", fmt.Errorf("failed to get realm: %w", err)
+	}
+
+	// Get the instance from the realm
+	instance := &keycloakv1beta1.KeycloakInstance{}
+	instanceName := types.NamespacedName{
+		Name:      realm.Spec.InstanceRef.Name,
+		Namespace: realm.Namespace,
+	}
+	if realm.Spec.InstanceRef.Namespace != nil {
+		instanceName.Namespace = *realm.Spec.InstanceRef.Namespace
 	}
 	if err := r.Get(ctx, instanceName, instance); err != nil {
-		return nil, fmt.Errorf("failed to get instance: %w", err)
+		return nil, "", fmt.Errorf("failed to get instance: %w", err)
 	}
 
 	cfg, err := GetKeycloakConfigFromInstance(ctx, r.Client, instance)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return keycloak.NewClient(cfg, log.FromContext(ctx)), nil
+	// Get realm name from definition
+	var realmDef struct {
+		Realm string `json:"realm"`
+	}
+	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
+		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
+	}
+
+	return keycloak.NewClient(cfg, log.FromContext(ctx)), realmDef.Realm, nil
 }
 
 func (r *KeycloakRoleReconciler) deleteRole(ctx context.Context, role *keycloakv1beta1.KeycloakRole) error {
-	kc, err := r.getKeycloakClient(ctx, role)
+	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, role)
 	if err != nil {
 		return err
 	}
@@ -167,24 +167,6 @@ func (r *KeycloakRoleReconciler) deleteRole(ctx context.Context, role *keycloakv
 	}
 	if err := json.Unmarshal(role.Spec.Definition.Raw, &roleDef); err != nil {
 		return err
-	}
-
-	// Same mistake: using instance realm instead of target realm
-	instance := &keycloakv1beta1.KeycloakInstance{}
-	instanceName := types.NamespacedName{
-		Name:      role.Spec.InstanceRef.Name,
-		Namespace: role.Namespace,
-	}
-	if role.Spec.InstanceRef.Namespace != nil {
-		instanceName.Namespace = *role.Spec.InstanceRef.Namespace
-	}
-	if err := r.Get(ctx, instanceName, instance); err != nil {
-		return err
-	}
-
-	realmName := "master"
-	if instance.Spec.Realm != nil {
-		realmName = *instance.Spec.Realm
 	}
 
 	return kc.DeleteRealmRole(ctx, realmName, roleDef.Name)
