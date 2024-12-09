@@ -63,6 +63,10 @@ type KeycloakInstanceStatus struct {
 	// Conditions represent the latest available observations
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Version is the Keycloak server version
+	// +optional
+	Version string `json:"version,omitempty"`
 }
 
 // +kubebuilder:object:root=true

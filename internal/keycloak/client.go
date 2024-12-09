@@ -544,3 +544,87 @@ func (c *Client) UpdateGroup(ctx context.Context, realmName, groupID string, gro
 func (c *Client) DeleteGroup(ctx context.Context, realmName, groupID string) error {
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID))
 }
+
+// ============================================================================
+// Server Info Operations
+// ============================================================================
+
+// ServerInfo represents Keycloak server information
+type ServerInfo struct {
+	SystemInfo *SystemInfo `json:"systemInfo,omitempty"`
+}
+
+// SystemInfo contains system-level information
+type SystemInfo struct {
+	Version     string `json:"version,omitempty"`
+	ServerTime  string `json:"serverTime,omitempty"`
+	UptimeMillis int64 `json:"uptimeMillis,omitempty"`
+}
+
+// GetServerInfo retrieves server information
+func (c *Client) GetServerInfo(ctx context.Context) (*ServerInfo, error) {
+	var info ServerInfo
+	if err := c.Get(ctx, "/admin/serverinfo", &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// ============================================================================
+// Client Scope Operations
+// ============================================================================
+
+// ClientScopeRepresentation represents a Keycloak client scope
+type ClientScopeRepresentation struct {
+	ID          *string `json:"id,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+	Protocol    *string `json:"protocol,omitempty"`
+}
+
+// CreateClientScope creates a client scope
+func (c *Client) CreateClientScope(ctx context.Context, realmName string, scopeDef json.RawMessage) (string, error) {
+	return c.Create(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes", scopeDef)
+}
+
+// GetClientScope gets a client scope by ID
+func (c *Client) GetClientScope(ctx context.Context, realmName, scopeID string) (*ClientScopeRepresentation, error) {
+	var scope ClientScopeRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes/"+url.PathEscape(scopeID), &scope); err != nil {
+		return nil, err
+	}
+	return &scope, nil
+}
+
+// GetClientScopes gets all client scopes
+func (c *Client) GetClientScopes(ctx context.Context, realmName string) ([]ClientScopeRepresentation, error) {
+	var scopes []ClientScopeRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes", &scopes); err != nil {
+		return nil, err
+	}
+	return scopes, nil
+}
+
+// GetClientScopeByName finds a client scope by name
+func (c *Client) GetClientScopeByName(ctx context.Context, realmName, name string) (*ClientScopeRepresentation, error) {
+	scopes, err := c.GetClientScopes(ctx, realmName)
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range scopes {
+		if s.Name != nil && *s.Name == name {
+			return &s, nil
+		}
+	}
+	return nil, fmt.Errorf("client scope not found: %s", name)
+}
+
+// UpdateClientScope updates a client scope
+func (c *Client) UpdateClientScope(ctx context.Context, realmName, scopeID string, scopeDef json.RawMessage) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes/"+url.PathEscape(scopeID), scopeDef)
+}
+
+// DeleteClientScope deletes a client scope
+func (c *Client) DeleteClientScope(ctx context.Context, realmName, scopeID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes/"+url.PathEscape(scopeID))
+}
