@@ -628,3 +628,123 @@ func (c *Client) UpdateClientScope(ctx context.Context, realmName, scopeID strin
 func (c *Client) DeleteClientScope(ctx context.Context, realmName, scopeID string) error {
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes/"+url.PathEscape(scopeID))
 }
+
+// ============================================================================
+// Client Role Operations
+// ============================================================================
+
+// GetClientRole gets a client role by name
+func (c *Client) GetClientRole(ctx context.Context, realmName, clientID, roleName string) (*RoleRepresentation, error) {
+	var role RoleRepresentation
+	path := fmt.Sprintf("/admin/realms/%s/clients/%s/roles/%s",
+		url.PathEscape(realmName), url.PathEscape(clientID), url.PathEscape(roleName))
+	if err := c.Get(ctx, path, &role); err != nil {
+		return nil, err
+	}
+	return &role, nil
+}
+
+// ============================================================================
+// Role Mapping Operations
+// ============================================================================
+
+// AddRealmRolesToUser adds realm roles to a user
+func (c *Client) AddRealmRolesToUser(ctx context.Context, realmName, userID string, roles []RoleRepresentation) error {
+	path := fmt.Sprintf("/admin/realms/%s/users/%s/role-mappings/realm",
+		url.PathEscape(realmName), url.PathEscape(userID))
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(roles).Post(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}
+
+// DeleteRealmRolesFromUser removes realm roles from a user
+func (c *Client) DeleteRealmRolesFromUser(ctx context.Context, realmName, userID string, roles []RoleRepresentation) error {
+	path := fmt.Sprintf("/admin/realms/%s/users/%s/role-mappings/realm",
+		url.PathEscape(realmName), url.PathEscape(userID))
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(roles).Delete(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}
+
+// AddClientRolesToUser adds client roles to a user
+func (c *Client) AddClientRolesToUser(ctx context.Context, realmName, userID, clientID string, roles []RoleRepresentation) error {
+	path := fmt.Sprintf("/admin/realms/%s/users/%s/role-mappings/clients/%s",
+		url.PathEscape(realmName), url.PathEscape(userID), url.PathEscape(clientID))
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(roles).Post(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}
+
+// DeleteClientRolesFromUser removes client roles from a user
+func (c *Client) DeleteClientRolesFromUser(ctx context.Context, realmName, userID, clientID string, roles []RoleRepresentation) error {
+	path := fmt.Sprintf("/admin/realms/%s/users/%s/role-mappings/clients/%s",
+		url.PathEscape(realmName), url.PathEscape(userID), url.PathEscape(clientID))
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(roles).Delete(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}
+
+// ============================================================================
+// User Credential Operations
+// ============================================================================
+
+// SetPassword sets a user's password
+func (c *Client) SetPassword(ctx context.Context, realmName, userID, password string, temporary bool) error {
+	path := fmt.Sprintf("/admin/realms/%s/users/%s/reset-password",
+		url.PathEscape(realmName), url.PathEscape(userID))
+
+	body := map[string]interface{}{
+		"type":      "password",
+		"value":     password,
+		"temporary": temporary,
+	}
+
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(body).Put(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}

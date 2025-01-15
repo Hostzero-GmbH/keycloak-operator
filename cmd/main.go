@@ -119,6 +119,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.KeycloakRoleMappingReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "KeycloakRoleMapping")
+		os.Exit(1)
+	}
+
+	if err = (&controller.KeycloakUserCredentialReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "KeycloakUserCredential")
+		os.Exit(1)
+	}
+
 	// Add health checks
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
