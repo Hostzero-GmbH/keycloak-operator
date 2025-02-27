@@ -748,3 +748,156 @@ func (c *Client) SetPassword(ctx context.Context, realmName, userID, password st
 	}
 	return nil
 }
+
+// ============================================================================
+// Protocol Mapper Operations
+// ============================================================================
+
+// ProtocolMapperRepresentation represents a protocol mapper
+type ProtocolMapperRepresentation struct {
+	ID             *string           `json:"id,omitempty"`
+	Name           *string           `json:"name,omitempty"`
+	Protocol       *string           `json:"protocol,omitempty"`
+	ProtocolMapper *string           `json:"protocolMapper,omitempty"`
+	Config         map[string]string `json:"config,omitempty"`
+}
+
+// CreateClientProtocolMapper creates a protocol mapper for a client
+func (c *Client) CreateClientProtocolMapper(ctx context.Context, realmName, clientID string, mapperDef json.RawMessage) (string, error) {
+	path := fmt.Sprintf("/admin/realms/%s/clients/%s/protocol-mappers/models",
+		url.PathEscape(realmName), url.PathEscape(clientID))
+	return c.Create(ctx, path, mapperDef)
+}
+
+// UpdateClientProtocolMapper updates a client protocol mapper
+func (c *Client) UpdateClientProtocolMapper(ctx context.Context, realmName, clientID, mapperID string, mapperDef json.RawMessage) error {
+	path := fmt.Sprintf("/admin/realms/%s/clients/%s/protocol-mappers/models/%s",
+		url.PathEscape(realmName), url.PathEscape(clientID), url.PathEscape(mapperID))
+	return c.Update(ctx, path, mapperDef)
+}
+
+// DeleteClientProtocolMapper deletes a client protocol mapper
+func (c *Client) DeleteClientProtocolMapper(ctx context.Context, realmName, clientID, mapperID string) error {
+	path := fmt.Sprintf("/admin/realms/%s/clients/%s/protocol-mappers/models/%s",
+		url.PathEscape(realmName), url.PathEscape(clientID), url.PathEscape(mapperID))
+	return c.Delete(ctx, path)
+}
+
+// CreateClientScopeProtocolMapper creates a protocol mapper for a client scope
+func (c *Client) CreateClientScopeProtocolMapper(ctx context.Context, realmName, scopeID string, mapperDef json.RawMessage) (string, error) {
+	path := fmt.Sprintf("/admin/realms/%s/client-scopes/%s/protocol-mappers/models",
+		url.PathEscape(realmName), url.PathEscape(scopeID))
+	return c.Create(ctx, path, mapperDef)
+}
+
+// UpdateClientScopeProtocolMapper updates a client scope protocol mapper
+func (c *Client) UpdateClientScopeProtocolMapper(ctx context.Context, realmName, scopeID, mapperID string, mapperDef json.RawMessage) error {
+	path := fmt.Sprintf("/admin/realms/%s/client-scopes/%s/protocol-mappers/models/%s",
+		url.PathEscape(realmName), url.PathEscape(scopeID), url.PathEscape(mapperID))
+	return c.Update(ctx, path, mapperDef)
+}
+
+// DeleteClientScopeProtocolMapper deletes a client scope protocol mapper
+func (c *Client) DeleteClientScopeProtocolMapper(ctx context.Context, realmName, scopeID, mapperID string) error {
+	path := fmt.Sprintf("/admin/realms/%s/client-scopes/%s/protocol-mappers/models/%s",
+		url.PathEscape(realmName), url.PathEscape(scopeID), url.PathEscape(mapperID))
+	return c.Delete(ctx, path)
+}
+
+// ============================================================================
+// Identity Provider Operations
+// ============================================================================
+
+// IdentityProviderRepresentation represents an identity provider
+type IdentityProviderRepresentation struct {
+	Alias       *string `json:"alias,omitempty"`
+	DisplayName *string `json:"displayName,omitempty"`
+	ProviderId  *string `json:"providerId,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+}
+
+// CreateIdentityProvider creates an identity provider
+func (c *Client) CreateIdentityProvider(ctx context.Context, realmName string, idpDef json.RawMessage) error {
+	path := fmt.Sprintf("/admin/realms/%s/identity-provider/instances", url.PathEscape(realmName))
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+	resp, err := req.SetBody(idpDef).Post(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+	return nil
+}
+
+// GetIdentityProvider gets an identity provider by alias
+func (c *Client) GetIdentityProvider(ctx context.Context, realmName, alias string) (*IdentityProviderRepresentation, error) {
+	var idp IdentityProviderRepresentation
+	path := fmt.Sprintf("/admin/realms/%s/identity-provider/instances/%s",
+		url.PathEscape(realmName), url.PathEscape(alias))
+	if err := c.Get(ctx, path, &idp); err != nil {
+		return nil, err
+	}
+	return &idp, nil
+}
+
+// UpdateIdentityProvider updates an identity provider
+func (c *Client) UpdateIdentityProvider(ctx context.Context, realmName, alias string, idpDef json.RawMessage) error {
+	path := fmt.Sprintf("/admin/realms/%s/identity-provider/instances/%s",
+		url.PathEscape(realmName), url.PathEscape(alias))
+	return c.Update(ctx, path, idpDef)
+}
+
+// DeleteIdentityProvider deletes an identity provider
+func (c *Client) DeleteIdentityProvider(ctx context.Context, realmName, alias string) error {
+	path := fmt.Sprintf("/admin/realms/%s/identity-provider/instances/%s",
+		url.PathEscape(realmName), url.PathEscape(alias))
+	return c.Delete(ctx, path)
+}
+
+// ============================================================================
+// Component Operations
+// ============================================================================
+
+// ComponentRepresentation represents a Keycloak component
+type ComponentRepresentation struct {
+	ID           *string `json:"id,omitempty"`
+	Name         *string `json:"name,omitempty"`
+	ProviderId   *string `json:"providerId,omitempty"`
+	ProviderType *string `json:"providerType,omitempty"`
+	ParentId     *string `json:"parentId,omitempty"`
+}
+
+// CreateComponent creates a component
+func (c *Client) CreateComponent(ctx context.Context, realmName string, componentDef json.RawMessage) (string, error) {
+	path := fmt.Sprintf("/admin/realms/%s/components", url.PathEscape(realmName))
+	return c.Create(ctx, path, componentDef)
+}
+
+// GetComponent gets a component by ID
+func (c *Client) GetComponent(ctx context.Context, realmName, componentID string) (*ComponentRepresentation, error) {
+	var component ComponentRepresentation
+	path := fmt.Sprintf("/admin/realms/%s/components/%s",
+		url.PathEscape(realmName), url.PathEscape(componentID))
+	if err := c.Get(ctx, path, &component); err != nil {
+		return nil, err
+	}
+	return &component, nil
+}
+
+// UpdateComponent updates a component
+func (c *Client) UpdateComponent(ctx context.Context, realmName, componentID string, componentDef json.RawMessage) error {
+	path := fmt.Sprintf("/admin/realms/%s/components/%s",
+		url.PathEscape(realmName), url.PathEscape(componentID))
+	return c.Update(ctx, path, componentDef)
+}
+
+// DeleteComponent deletes a component
+func (c *Client) DeleteComponent(ctx context.Context, realmName, componentID string) error {
+	path := fmt.Sprintf("/admin/realms/%s/components/%s",
+		url.PathEscape(realmName), url.PathEscape(componentID))
+	return c.Delete(ctx, path)
+}
