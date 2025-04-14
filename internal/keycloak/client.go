@@ -901,3 +901,64 @@ func (c *Client) DeleteComponent(ctx context.Context, realmName, componentID str
 		url.PathEscape(realmName), url.PathEscape(componentID))
 	return c.Delete(ctx, path)
 }
+
+// ============================================================================
+// Organization Operations (Keycloak 26+)
+// ============================================================================
+
+// OrganizationRepresentation represents a Keycloak organization
+type OrganizationRepresentation struct {
+	ID          *string              `json:"id,omitempty"`
+	Name        *string              `json:"name,omitempty"`
+	Alias       *string              `json:"alias,omitempty"`
+	Description *string              `json:"description,omitempty"`
+	Enabled     *bool                `json:"enabled,omitempty"`
+	Domains     []OrganizationDomain `json:"domains,omitempty"`
+}
+
+// OrganizationDomain represents an organization domain
+type OrganizationDomain struct {
+	Name     string `json:"name"`
+	Verified bool   `json:"verified,omitempty"`
+}
+
+// CreateOrganization creates an organization (Keycloak 26+)
+func (c *Client) CreateOrganization(ctx context.Context, realmName string, orgDef json.RawMessage) (string, error) {
+	path := fmt.Sprintf("/admin/realms/%s/organizations", url.PathEscape(realmName))
+	return c.Create(ctx, path, orgDef)
+}
+
+// GetOrganization gets an organization by ID
+func (c *Client) GetOrganization(ctx context.Context, realmName, orgID string) (*OrganizationRepresentation, error) {
+	var org OrganizationRepresentation
+	path := fmt.Sprintf("/admin/realms/%s/organizations/%s",
+		url.PathEscape(realmName), url.PathEscape(orgID))
+	if err := c.Get(ctx, path, &org); err != nil {
+		return nil, err
+	}
+	return &org, nil
+}
+
+// GetOrganizations gets all organizations in a realm
+func (c *Client) GetOrganizations(ctx context.Context, realmName string) ([]OrganizationRepresentation, error) {
+	var orgs []OrganizationRepresentation
+	path := fmt.Sprintf("/admin/realms/%s/organizations", url.PathEscape(realmName))
+	if err := c.Get(ctx, path, &orgs); err != nil {
+		return nil, err
+	}
+	return orgs, nil
+}
+
+// UpdateOrganization updates an organization
+func (c *Client) UpdateOrganization(ctx context.Context, realmName, orgID string, orgDef json.RawMessage) error {
+	path := fmt.Sprintf("/admin/realms/%s/organizations/%s",
+		url.PathEscape(realmName), url.PathEscape(orgID))
+	return c.Update(ctx, path, orgDef)
+}
+
+// DeleteOrganization deletes an organization
+func (c *Client) DeleteOrganization(ctx context.Context, realmName, orgID string) error {
+	path := fmt.Sprintf("/admin/realms/%s/organizations/%s",
+		url.PathEscape(realmName), url.PathEscape(orgID))
+	return c.Delete(ctx, path)
+}
