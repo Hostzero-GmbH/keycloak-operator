@@ -167,6 +167,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.ClusterKeycloakInstanceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClusterKeycloakInstance")
+		os.Exit(1)
+	}
+
+	if err = (&controller.ClusterKeycloakRealmReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClusterKeycloakRealm")
+		os.Exit(1)
+	}
+
 	// Add health checks
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

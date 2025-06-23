@@ -1,0 +1,154 @@
+package controller
+
+import (
+	"context"
+	"fmt"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
+	"github.com/hostzero/keycloak-operator/internal/keycloak"
+)
+
+// ClusterKeycloakInstanceReconciler reconciles a ClusterKeycloakInstance object
+type ClusterKeycloakInstanceReconciler struct {
+	client.Client
+	Scheme *runtime.Scheme
+}
+
+// +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=clusterkeycloakinstances,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=clusterkeycloakinstances/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=clusterkeycloakinstances/finalizers,verbs=update
+
+// Reconcile handles ClusterKeycloakInstance reconciliation
+func (r *ClusterKeycloakInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := log.FromContext(ctx)
+
+	instance := &keycloakv1beta1.ClusterKeycloakInstance{}
+	if err := r.Get(ctx, req.NamespacedName, instance); err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "unable to fetch ClusterKeycloakInstance")
+		return ctrl.Result{}, err
+	}
+
+	// Handle deletion
+	if !instance.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(instance, FinalizerName) {
+			controllerutil.RemoveFinalizer(instance, FinalizerName)
+			if err := r.Update(ctx, instance); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// Add finalizer
+	if !controllerutil.ContainsFinalizer(instance, FinalizerName) {
+		controllerutil.AddFinalizer(instance, FinalizerName)
+		if err := r.Update(ctx, instance); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{Requeue: true}, nil
+	}
+
+	// Get credentials from secret
+	cfg, err := r.getKeycloakConfig(ctx, instance)
+	if err != nil {
+		log.Error(err, "failed to get keycloak config")
+		return r.updateStatus(ctx, instance, false, "", "Error", err.Error())
+	}
+
+	// Create Keycloak client and verify connection
+	kc := keycloak.NewClient(cfg, log)
+	if err := kc.Ping(ctx); err != nil {
+		log.Error(err, "failed to connect to Keycloak")
+		return r.updateStatus(ctx, instance, false, "", "ConnectionFailed", fmt.Sprintf("Failed to connect: %v", err))
+	}
+
+	// Get server info
+	serverInfo, err := kc.GetServerInfo(ctx)
+	if err != nil {
+		log.Error(err, "failed to get server info")
+		return r.updateStatus(ctx, instance, false, "", "Error", fmt.Sprintf("Failed to get server info: %v", err))
+	}
+
+	version := ""
+	if serverInfo.SystemInfo != nil {
+		version = serverInfo.SystemInfo.Version
+	}
+
+	log.Info("successfully connected to Keycloak", "baseUrl", instance.Spec.BaseUrl, "version", version)
+	return r.updateStatus(ctx, instance, true, version, "Ready", "Connected to Keycloak")
+}
+
+func (r *ClusterKeycloakInstanceReconciler) updateStatus(ctx context.Context, instance *keycloakv1beta1.ClusterKeycloakInstance, ready bool, version, status, message string) (ctrl.Result, error) {
+	instance.Status.Ready = ready
+	instance.Status.Version = version
+	instance.Status.Status = status
+	instance.Status.Message = message
+
+	if err := r.Status().Update(ctx, instance); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+}
+
+func (r *ClusterKeycloakInstanceReconciler) getKeycloakConfig(ctx context.Context, instance *keycloakv1beta1.ClusterKeycloakInstance) (keycloak.Config, error) {
+	cfg := keycloak.Config{
+		BaseURL: instance.Spec.BaseUrl,
+	}
+
+	if instance.Spec.Realm != nil {
+		cfg.Realm = *instance.Spec.Realm
+	}
+
+	// Get credentials secret - namespace is required for cluster-scoped
+	secret := &corev1.Secret{}
+	secretName := types.NamespacedName{
+		Name:      instance.Spec.Credentials.SecretRef.Name,
+		Namespace: instance.Spec.Credentials.SecretRef.Namespace,
+	}
+
+	if err := r.Get(ctx, secretName, secret); err != nil {
+		return cfg, fmt.Errorf("failed to get credentials secret: %w", err)
+	}
+
+	usernameKey := instance.Spec.Credentials.SecretRef.UsernameKey
+	if usernameKey == "" {
+		usernameKey = "username"
+	}
+	passwordKey := instance.Spec.Credentials.SecretRef.PasswordKey
+	if passwordKey == "" {
+		passwordKey = "password"
+	}
+
+	if username, ok := secret.Data[usernameKey]; ok {
+		cfg.Username = string(username)
+	} else {
+		return cfg, fmt.Errorf("username key %q not found in secret", usernameKey)
+	}
+
+	if password, ok := secret.Data[passwordKey]; ok {
+		cfg.Password = string(password)
+	} else {
+		return cfg, fmt.Errorf("password key %q not found in secret", passwordKey)
+	}
+
+	return cfg, nil
+}
+
+// SetupWithManager sets up the controller with the Manager
+func (r *ClusterKeycloakInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&keycloakv1beta1.ClusterKeycloakInstance{}).
+		Complete(r)
+}
