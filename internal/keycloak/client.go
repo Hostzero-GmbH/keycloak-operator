@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -13,6 +14,163 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-resty/resty/v2"
 )
+
+// ============================================================================
+// Client Manager - Shared client pool with rate limiting
+// ============================================================================
+
+// ClientManager manages Keycloak client instances with rate limiting
+type ClientManager struct {
+	clients    map[string]*Client
+	clientsMu  sync.RWMutex
+	semaphore  chan struct{}
+	config     ClientManagerConfig
+	log        logr.Logger
+}
+
+// ClientManagerConfig holds configuration for the client manager
+type ClientManagerConfig struct {
+	MaxConcurrentRequests int
+	RequestTimeout        time.Duration
+}
+
+// NewClientManager creates a new client manager
+func NewClientManager(cfg ClientManagerConfig, log logr.Logger) *ClientManager {
+	if cfg.MaxConcurrentRequests <= 0 {
+		cfg.MaxConcurrentRequests = 10
+	}
+	if cfg.RequestTimeout <= 0 {
+		cfg.RequestTimeout = 30 * time.Second
+	}
+
+	return &ClientManager{
+		clients:   make(map[string]*Client),
+		semaphore: make(chan struct{}, cfg.MaxConcurrentRequests),
+		config:    cfg,
+		log:       log.WithName("client-manager"),
+	}
+}
+
+// GetClient returns a client for the given configuration
+func (m *ClientManager) GetClient(cfg Config, log logr.Logger) *Client {
+	key := fmt.Sprintf("%s:%s:%s", cfg.BaseURL, cfg.Realm, cfg.Username)
+
+	m.clientsMu.RLock()
+	if client, ok := m.clients[key]; ok {
+		m.clientsMu.RUnlock()
+		return client
+	}
+	m.clientsMu.RUnlock()
+
+	m.clientsMu.Lock()
+	defer m.clientsMu.Unlock()
+
+	// Double-check after acquiring write lock
+	if client, ok := m.clients[key]; ok {
+		return client
+	}
+
+	client := NewClient(cfg, log)
+	m.clients[key] = client
+	return client
+}
+
+// AcquireSlot acquires a rate limiting slot, blocking until one is available
+func (m *ClientManager) AcquireSlot(ctx context.Context) error {
+	select {
+	case m.semaphore <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// ReleaseSlot releases a rate limiting slot
+func (m *ClientManager) ReleaseSlot() {
+	<-m.semaphore
+}
+
+// ============================================================================
+// Retry Configuration
+// ============================================================================
+
+// RetryConfig holds retry configuration
+type RetryConfig struct {
+	MaxRetries     int
+	InitialBackoff time.Duration
+	MaxBackoff     time.Duration
+	BackoffFactor  float64
+}
+
+// DefaultRetryConfig returns the default retry configuration
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries:     3,
+		InitialBackoff: 1 * time.Second,
+		MaxBackoff:     30 * time.Second,
+		BackoffFactor:  2.0,
+	}
+}
+
+// WithRetry executes a function with retry logic
+func WithRetry[T any](ctx context.Context, cfg RetryConfig, fn func() (T, error)) (T, error) {
+	var result T
+	var lastErr error
+	backoff := cfg.InitialBackoff
+
+	for attempt := 0; attempt <= cfg.MaxRetries; attempt++ {
+		result, lastErr = fn()
+		if lastErr == nil {
+			return result, nil
+		}
+
+		if !isRetryableError(lastErr) {
+			return result, lastErr
+		}
+
+		if attempt < cfg.MaxRetries {
+			select {
+			case <-ctx.Done():
+				return result, ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff = time.Duration(float64(backoff) * cfg.BackoffFactor)
+			if backoff > cfg.MaxBackoff {
+				backoff = cfg.MaxBackoff
+			}
+		}
+	}
+
+	return result, lastErr
+}
+
+// WithRetryVoid executes a void function with retry logic
+func WithRetryVoid(ctx context.Context, cfg RetryConfig, fn func() error) error {
+	_, err := WithRetry(ctx, cfg, func() (struct{}, error) {
+		return struct{}{}, fn()
+	})
+	return err
+}
+
+// isRetryableError checks if an error is retryable
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	// Retry on 5xx errors and connection errors
+	if strings.Contains(errStr, "500") ||
+		strings.Contains(errStr, "502") ||
+		strings.Contains(errStr, "503") ||
+		strings.Contains(errStr, "504") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "connection reset") ||
+		strings.Contains(errStr, http.StatusText(http.StatusTooManyRequests)) {
+		return true
+	}
+	return false
+}
 
 // Client provides methods to interact with the Keycloak Admin REST API
 type Client struct {

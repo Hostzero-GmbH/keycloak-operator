@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"time"
 
 	// Import all Kubernetes client auth plugins
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -17,6 +18,7 @@ import (
 
 	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
 	"github.com/hostzero/keycloak-operator/internal/controller"
+	"github.com/hostzero/keycloak-operator/internal/keycloak"
 )
 
 var (
@@ -33,12 +35,15 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var maxConcurrentRequests int
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.IntVar(&maxConcurrentRequests, "max-concurrent-requests", 10,
+		"Maximum number of concurrent requests to Keycloak API.")
 
 	opts := zap.Options{
 		Development: true,
@@ -47,6 +52,16 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Create client manager for rate limiting
+	clientManager := keycloak.NewClientManager(keycloak.ClientManagerConfig{
+		MaxConcurrentRequests: maxConcurrentRequests,
+		RequestTimeout:        30 * time.Second,
+	}, ctrl.Log)
+
+	// Log client manager configuration
+	setupLog.Info("client manager initialized", "maxConcurrentRequests", maxConcurrentRequests)
+	_ = clientManager // TODO: pass to controllers
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
