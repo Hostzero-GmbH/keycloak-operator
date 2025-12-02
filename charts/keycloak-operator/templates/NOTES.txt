@@ -1,0 +1,31 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To verify the operator is running:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "keycloak-operator.name" . }}
+
+To create your first KeycloakInstance:
+
+  1. Create a secret with Keycloak admin credentials:
+
+     kubectl create secret generic keycloak-credentials \
+       --from-literal=username=admin \
+       --from-literal=password=admin
+
+  2. Create a KeycloakInstance resource:
+
+     cat <<EOF | kubectl apply -f -
+     apiVersion: keycloak.hostzero.com/v1beta1
+     kind: KeycloakInstance
+     metadata:
+       name: my-keycloak
+     spec:
+       baseUrl: http://keycloak:8080
+       credentials:
+         secretRef:
+           name: keycloak-credentials
+     EOF
+
+For more information, visit: https://github.com/hostzero/keycloak-operator

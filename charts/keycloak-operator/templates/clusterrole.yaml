@@ -1,0 +1,72 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "keycloak-operator.fullname" . }}
+  labels:
+    {{- include "keycloak-operator.labels" . | nindent 4 }}
+rules:
+  # Keycloak resources
+  - apiGroups:
+      - keycloak.hostzero.com
+    resources:
+      - keycloakinstances
+      - keycloakrealms
+      - keycloakclients
+      - keycloakusers
+      - keycloakroles
+      - keycloakgroups
+      - keycloakclientscopes
+      - keycloakrolemappings
+      - keycloakusercredentials
+      - keycloakprotocolmappers
+      - keycloakidentityproviders
+      - keycloakcomponents
+      - keycloakorganizations
+      - clusterkeycloakinstances
+      - clusterkeycloakrealms
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - keycloak.hostzero.com
+    resources:
+      - "*/status"
+      - "*/finalizers"
+    verbs:
+      - get
+      - patch
+      - update
+  # Core resources
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  # Leader election
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch

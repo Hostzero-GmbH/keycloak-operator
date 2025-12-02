@@ -67,6 +67,26 @@ install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found -f -
 
+##@ Helm
+
+CHART_DIR := charts/keycloak-operator
+
+.PHONY: helm-lint
+helm-lint: ## Lint the Helm chart.
+	helm lint $(CHART_DIR)
+
+.PHONY: helm-template
+helm-template: ## Render the Helm chart templates.
+	helm template keycloak-operator $(CHART_DIR)
+
+.PHONY: helm-install
+helm-install: ## Install the Helm chart.
+	helm upgrade --install keycloak-operator $(CHART_DIR) --namespace keycloak-operator --create-namespace
+
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall the Helm chart.
+	helm uninstall keycloak-operator --namespace keycloak-operator
+
 ##@ Dependencies
 
 ## Location to install dependencies to

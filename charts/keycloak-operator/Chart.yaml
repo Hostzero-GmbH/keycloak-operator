@@ -1,0 +1,14 @@
+apiVersion: v2
+name: keycloak-operator
+description: A Kubernetes operator for managing Keycloak resources
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - keycloak
+  - operator
+  - identity
+  - authentication
+maintainers:
+  - name: hostzero
+    email: support@hostzero.com

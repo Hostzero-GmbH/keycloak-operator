@@ -1,0 +1,55 @@
+# Default values for keycloak-operator
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/hostzero/keycloak-operator
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Operator configuration
+operator:
+  metricsBindAddress: ":8080"
+  healthProbeBindAddress: ":8081"
+  leaderElect: true
+  maxConcurrentRequests: 10
+
+# Logging configuration
+logging:
+  level: info
+  format: json
