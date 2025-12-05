@@ -1,0 +1,29 @@
+# Development values for keycloak-operator
+
+replicaCount: 1
+
+image:
+  repository: keycloak-operator
+  pullPolicy: Never
+  tag: "dev"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+operator:
+  metricsBindAddress: ":8080"
+  healthProbeBindAddress: ":8081"
+  leaderElect: false
+  maxConcurrentRequests: 5
+
+logging:
+  level: debug
+  format: text
+
+crds:
+  install: true

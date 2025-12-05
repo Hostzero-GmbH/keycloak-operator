@@ -1,0 +1,43 @@
+# Production values for keycloak-operator
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/hostzero/keycloak-operator
+  pullPolicy: IfNotPresent
+  tag: ""
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+operator:
+  metricsBindAddress: ":8080"
+  healthProbeBindAddress: ":8081"
+  leaderElect: true
+  maxConcurrentRequests: 20
+
+logging:
+  level: info
+  format: json
+
+crds:
+  install: true
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak-operator
+          topologyKey: kubernetes.io/hostname

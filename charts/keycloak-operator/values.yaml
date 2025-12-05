@@ -53,3 +53,7 @@ operator:
 logging:
   level: info
   format: json
+
+# CRD installation
+crds:
+  install: true

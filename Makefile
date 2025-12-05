@@ -83,6 +83,14 @@ helm-template: ## Render the Helm chart templates.
 helm-install: ## Install the Helm chart.
 	helm upgrade --install keycloak-operator $(CHART_DIR) --namespace keycloak-operator --create-namespace
 
+.PHONY: helm-install-dev
+helm-install-dev: ## Install the Helm chart with dev values.
+	helm upgrade --install keycloak-operator $(CHART_DIR) -f $(CHART_DIR)/values-dev.yaml --namespace keycloak-operator --create-namespace
+
+.PHONY: helm-install-prod
+helm-install-prod: ## Install the Helm chart with prod values.
+	helm upgrade --install keycloak-operator $(CHART_DIR) -f $(CHART_DIR)/values-prod.yaml --namespace keycloak-operator --create-namespace
+
 .PHONY: helm-uninstall
 helm-uninstall: ## Uninstall the Helm chart.
 	helm uninstall keycloak-operator --namespace keycloak-operator
