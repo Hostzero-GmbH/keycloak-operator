@@ -95,6 +95,31 @@ helm-install-prod: ## Install the Helm chart with prod values.
 helm-uninstall: ## Uninstall the Helm chart.
 	helm uninstall keycloak-operator --namespace keycloak-operator
 
+##@ Kind / E2E Testing
+
+CLUSTER_NAME ?= keycloak-operator-e2e
+
+.PHONY: kind-create
+kind-create: ## Create a Kind cluster for testing.
+	CLUSTER_NAME=$(CLUSTER_NAME) ./hack/setup-kind.sh
+
+.PHONY: kind-delete
+kind-delete: ## Delete the Kind cluster.
+	CLUSTER_NAME=$(CLUSTER_NAME) ./hack/teardown-kind.sh
+
+.PHONY: kind-deploy
+kind-deploy: docker-build ## Build and deploy to Kind cluster.
+	kind load docker-image ${IMG} --name $(CLUSTER_NAME)
+	$(MAKE) helm-install-dev
+
+.PHONY: test-e2e
+test-e2e: ## Run e2e tests against existing cluster.
+	USE_EXISTING_CLUSTER=true go test -v ./test/e2e/... -timeout 30m
+
+.PHONY: test-e2e-kind
+test-e2e-kind: ## Run e2e tests in Kind cluster.
+	CLUSTER_NAME=$(CLUSTER_NAME) ./hack/run-e2e-kind.sh
+
 ##@ Dependencies
 
 ## Location to install dependencies to
