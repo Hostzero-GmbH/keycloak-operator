@@ -84,6 +84,52 @@ spec:
 | KeycloakIdentityProvider | External identity provider |
 | KeycloakOrganization | Organization (Keycloak 26+) |
 
+## Testing
+
+### Unit Tests
+
+```bash
+make test
+```
+
+### E2E Tests
+
+Run e2e tests against an existing cluster:
+
+```bash
+make test-e2e
+```
+
+Run e2e tests in a Kind cluster:
+
+```bash
+# Create Kind cluster with Keycloak
+make kind-create
+
+# Run e2e tests
+make test-e2e-kind
+
+# Cleanup
+make kind-delete
+```
+
+## Development
+
+### Prerequisites
+
+- Go 1.21+
+- Docker
+- kubectl
+- Kind (for local testing)
+- Helm 3
+
+### Building
+
+```bash
+make build
+make docker-build IMG=myregistry/keycloak-operator:tag
+```
+
 ## License
 
 Apache License 2.0
