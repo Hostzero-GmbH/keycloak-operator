@@ -39,6 +39,14 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+.PHONY: test
+test: manifests generate fmt vet ## Run tests.
+	go test ./... -coverprofile cover.out
+
+.PHONY: lint
+lint: ## Run linter.
+	golangci-lint run
+
 ##@ Build
 
 .PHONY: build
@@ -94,6 +102,20 @@ helm-install-prod: ## Install the Helm chart with prod values.
 .PHONY: helm-uninstall
 helm-uninstall: ## Uninstall the Helm chart.
 	helm uninstall keycloak-operator --namespace keycloak-operator
+
+##@ Documentation
+
+.PHONY: docs
+docs: ## Build the documentation.
+	cd docs && mdbook build
+
+.PHONY: docs-serve
+docs-serve: ## Serve the documentation locally.
+	cd docs && mdbook serve --open
+
+.PHONY: docs-clean
+docs-clean: ## Clean the documentation build.
+	rm -rf docs/book
 
 ##@ Kind / E2E Testing
 
