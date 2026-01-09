@@ -1,58 +1,47 @@
 # Installation
 
-This section covers various ways to install the Keycloak Operator.
+There are several ways to install the Keycloak Operator:
 
-## Prerequisites
+## Helm Chart (Recommended)
 
-- Kubernetes cluster (1.25+)
-- kubectl configured to access your cluster
-- Helm 3 (for Helm installation)
+The preferred way to install the Keycloak Operator is using the provided Helm chart.
 
-## Installation Methods
-
-Choose the installation method that best fits your needs:
-
-- [Quick Start](./installation/quick-start.md) - Get up and running in minutes
-- [Helm Installation](./installation/helm.md) - Production-ready Helm chart
-- [Kind Development Setup](./installation/kind.md) - Local development with Kind
-
-## Verifying Installation
-
-After installation, verify the operator is running:
-
-```bash
-kubectl get pods -n keycloak-operator
+```shell
+helm install keycloak-operator ./charts/keycloak-operator \
+  --namespace keycloak-operator \
+  --create-namespace
 ```
 
-You should see the operator pod in Running state:
+For detailed Helm configuration options, see the [Helm Chart documentation](./installation/helm.md).
 
-```
-NAME                                 READY   STATUS    RESTARTS   AGE
-keycloak-operator-7d8f9b6c4-x2j5k   1/1     Running   0          1m
+## Kustomize
+
+You can also deploy using kustomize:
+
+```shell
+# Install CRDs
+kubectl apply -k config/crd
+
+# Deploy the operator
+kubectl apply -k config/default
 ```
 
-Check that CRDs are installed:
+## From Source
 
-```bash
-kubectl get crds | grep keycloak
+For development or customization:
+
+```shell
+# Clone the repository
+git clone https://github.com/hostzero/keycloak-operator.git
+cd keycloak-operator
+
+# Install CRDs
+make install
+
+# Run the operator locally
+make run
 ```
 
-Expected output:
+## Next Steps
 
-```
-clusterkeycloakinstances.keycloak.hostzero.com   2024-01-01T00:00:00Z
-clusterkeycloakrealms.keycloak.hostzero.com      2024-01-01T00:00:00Z
-keycloakclients.keycloak.hostzero.com            2024-01-01T00:00:00Z
-keycloakclientscopes.keycloak.hostzero.com       2024-01-01T00:00:00Z
-keycloakcomponents.keycloak.hostzero.com         2024-01-01T00:00:00Z
-keycloakgroups.keycloak.hostzero.com             2024-01-01T00:00:00Z
-keycloakidentityproviders.keycloak.hostzero.com  2024-01-01T00:00:00Z
-keycloakinstances.keycloak.hostzero.com          2024-01-01T00:00:00Z
-keycloakorganizations.keycloak.hostzero.com      2024-01-01T00:00:00Z
-keycloakprotocolmappers.keycloak.hostzero.com    2024-01-01T00:00:00Z
-keycloakrealms.keycloak.hostzero.com             2024-01-01T00:00:00Z
-keycloakrolemappings.keycloak.hostzero.com       2024-01-01T00:00:00Z
-keycloakroles.keycloak.hostzero.com              2024-01-01T00:00:00Z
-keycloakusercredentials.keycloak.hostzero.com    2024-01-01T00:00:00Z
-keycloakusers.keycloak.hostzero.com              2024-01-01T00:00:00Z
-```
+After installation, proceed to the [Quick Start](./installation/quick-start.md) guide to create your first Keycloak resources.

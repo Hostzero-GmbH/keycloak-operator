@@ -1,36 +1,55 @@
 # KeycloakProtocolMapper
 
-Manages protocol mappers for token customization.
+A `KeycloakProtocolMapper` defines how user attributes, roles, and other data are mapped into tokens. Protocol mappers can be attached to either clients or client scopes.
 
-## Spec
+## Specification
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `clientRef` | ResourceRef | No* | Reference to KeycloakClient |
-| `clientScopeRef` | ResourceRef | No* | Reference to KeycloakClientScope |
-| `definition` | object | Yes | Mapper representation |
-
-*One of `clientRef` or `clientScopeRef` is required.
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakProtocolMapper
+metadata:
+  name: my-mapper
+spec:
+  # One of clientRef or clientScopeRef must be specified
+  clientRef:
+    name: my-client
+  
+  # Or for client scopes:
+  # clientScopeRef:
+  #   name: my-scope
+  
+  # Required: Mapper definition
+  definition:
+    name: department
+    protocol: openid-connect
+    protocolMapper: oidc-usermodel-attribute-mapper
+    config:
+      user.attribute: department
+      claim.name: department
+```
 
 ## Status
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `ready` | bool | Mapper is synced |
-| `status` | string | Human-readable status |
-| `message` | string | Detailed message |
-| `mapperId` | string | Keycloak mapper UUID |
+```yaml
+status:
+  ready: true
+  mapperID: "12345678-1234-1234-1234-123456789abc"
+  message: "Protocol mapper synchronized successfully"
+```
 
-## Example - User Attribute Mapper
+## Examples
+
+### Client Protocol Mapper
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakProtocolMapper
 metadata:
   name: department-mapper
+  namespace: keycloak
 spec:
   clientRef:
-    name: my-frontend
+    name: my-client
   definition:
     name: department
     protocol: openid-connect
@@ -44,12 +63,85 @@ spec:
       userinfo.token.claim: "true"
 ```
 
-## Common Mapper Types
+### Client Scope Protocol Mapper
 
-| Type | Description |
-|------|-------------|
-| `oidc-usermodel-attribute-mapper` | Map user attribute to claim |
-| `oidc-usermodel-property-mapper` | Map user property to claim |
-| `oidc-hardcoded-claim-mapper` | Add hardcoded claim |
-| `oidc-audience-mapper` | Add audience to token |
-| `oidc-group-membership-mapper` | Add group memberships |
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakProtocolMapper
+metadata:
+  name: groups-mapper
+  namespace: keycloak
+spec:
+  clientScopeRef:
+    name: my-scope
+  definition:
+    name: groups
+    protocol: openid-connect
+    protocolMapper: oidc-group-membership-mapper
+    config:
+      full.path: "false"
+      id.token.claim: "true"
+      access.token.claim: "true"
+      claim.name: groups
+      userinfo.token.claim: "true"
+```
+
+## Parent Reference
+
+A `KeycloakProtocolMapper` belongs to either a client or client scope:
+
+| Reference | Use Case |
+|-----------|----------|
+| `clientRef` | Mapper applies to a specific client only |
+| `clientScopeRef` | Mapper applies to all clients using the scope |
+
+**Note:** Exactly one of these must be specified.
+
+## Definition Properties
+
+The `definition` field accepts any valid Keycloak [ProtocolMapperRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#ProtocolMapperRepresentation):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Mapper name (required) |
+| `protocol` | string | Protocol (usually "openid-connect" or "saml") |
+| `protocolMapper` | string | Mapper type (see common types below) |
+| `config` | object | Mapper-specific configuration |
+
+## Common Protocol Mapper Types
+
+### OpenID Connect
+
+| Mapper Type | Description |
+|-------------|-------------|
+| `oidc-usermodel-attribute-mapper` | Maps user attribute to token claim |
+| `oidc-usermodel-property-mapper` | Maps user property to token claim |
+| `oidc-group-membership-mapper` | Includes group membership in token |
+| `oidc-role-name-mapper` | Maps role names |
+| `oidc-hardcoded-claim-mapper` | Adds hardcoded claim |
+| `oidc-audience-mapper` | Adds audience to token |
+| `oidc-full-name-mapper` | Maps full name |
+
+### SAML
+
+| Mapper Type | Description |
+|-------------|-------------|
+| `saml-user-attribute-mapper` | Maps user attribute |
+| `saml-group-membership-mapper` | Maps group membership |
+| `saml-role-list-mapper` | Maps roles |
+
+## Short Names
+
+| Alias | Full Name |
+|-------|-----------|
+| `kcpm` | `keycloakprotocolmappers` |
+
+```bash
+kubectl get kcpm
+```
+
+## Notes
+
+- Mapper names must be unique within the client or client scope
+- The `config` values are all strings (including boolean values like "true"/"false")
+- Changes to mappers affect all tokens issued after the change

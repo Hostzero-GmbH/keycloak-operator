@@ -7,11 +7,17 @@ import (
 
 // KeycloakIdentityProviderSpec defines the desired state of KeycloakIdentityProvider
 type KeycloakIdentityProviderSpec struct {
-	// RealmRef references the KeycloakRealm this IdP belongs to
-	// +kubebuilder:validation:Required
-	RealmRef ResourceRef `json:"realmRef"`
+	// RealmRef is a reference to a KeycloakRealm
+	// One of realmRef or clusterRealmRef must be specified
+	// +optional
+	RealmRef *ResourceRef `json:"realmRef,omitempty"`
 
-	// Definition is the identity provider definition in Keycloak JSON format
+	// ClusterRealmRef is a reference to a ClusterKeycloakRealm
+	// One of realmRef or clusterRealmRef must be specified
+	// +optional
+	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
+
+	// Definition contains the Keycloak IdentityProviderRepresentation
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -19,10 +25,10 @@ type KeycloakIdentityProviderSpec struct {
 
 // KeycloakIdentityProviderStatus defines the observed state of KeycloakIdentityProvider
 type KeycloakIdentityProviderStatus struct {
-	// Ready indicates if the IdP exists in Keycloak
+	// Ready indicates if the identity provider is ready
 	Ready bool `json:"ready"`
 
-	// Status is a human-readable status
+	// Status is a human-readable status message
 	// +optional
 	Status string `json:"status,omitempty"`
 
@@ -30,17 +36,31 @@ type KeycloakIdentityProviderStatus struct {
 	// +optional
 	Message string `json:"message,omitempty"`
 
-	// Alias is the IdP alias in Keycloak
+	// ResourcePath is the Keycloak API path for this identity provider
 	// +optional
-	Alias string `json:"alias,omitempty"`
+	ResourcePath string `json:"resourcePath,omitempty"`
+
+	// Instance contains the resolved instance reference
+	// +optional
+	Instance *InstanceRef `json:"instance,omitempty"`
+
+	// Realm contains the resolved realm reference
+	// +optional
+	Realm *RealmRef `json:"realm,omitempty"`
+
+	// Conditions represent the latest available observations
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the identity provider is ready"
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:resource:shortName=kcidp,categories={keycloak,all}
 
-// KeycloakIdentityProvider is the Schema for the keycloakidentityproviders API
+// KeycloakIdentityProvider defines an identity provider within a KeycloakRealm
 type KeycloakIdentityProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -1,59 +1,60 @@
 # KeycloakComponent
 
-Manages Keycloak components like key providers, LDAP, etc.
+A `KeycloakComponent` manages Keycloak components such as LDAP user federation, custom storage providers, key providers, and other pluggable realm components.
 
-## Spec
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `realmRef` | ResourceRef | Yes | Reference to KeycloakRealm |
-| `definition` | object | Yes | Component representation |
-
-## Status
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ready` | bool | Component is synced |
-| `status` | string | Human-readable status |
-| `message` | string | Detailed message |
-| `componentId` | string | Keycloak component UUID |
-
-## Example - RSA Key Provider
+## Specification
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakComponent
 metadata:
-  name: rsa-key
+  name: my-component
 spec:
+  # One of realmRef or clusterRealmRef must be specified
   realmRef:
-    name: my-app
+    name: my-realm
+  
+  # Required: Component definition
   definition:
-    name: rsa-generated
-    providerId: rsa-generated
-    providerType: org.keycloak.keys.KeyProvider
+    name: corporate-ldap
+    providerId: ldap
+    providerType: org.keycloak.storage.UserStorageProvider
     config:
-      priority:
-        - "100"
-      keySize:
-        - "2048"
+      enabled:
+        - "true"
+      connectionUrl:
+        - "ldap://ldap.example.com:389"
 ```
 
-## Example - LDAP User Federation
+## Status
+
+```yaml
+status:
+  ready: true
+  componentID: "12345678-1234-1234-1234-123456789abc"
+  message: "Component synchronized successfully"
+```
+
+## Examples
+
+### LDAP User Federation
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakComponent
 metadata:
   name: ldap-federation
+  namespace: keycloak
 spec:
   realmRef:
-    name: my-app
+    name: my-realm
   definition:
-    name: ldap
+    name: corporate-ldap
     providerId: ldap
     providerType: org.keycloak.storage.UserStorageProvider
     config:
+      enabled:
+        - "true"
       vendor:
         - "ad"
       connectionUrl:
@@ -64,11 +65,66 @@ spec:
         - "secret"
       usersDn:
         - "ou=users,dc=example,dc=com"
+      userObjectClasses:
+        - "person, organizationalPerson, user"
+      editMode:
+        - "READ_ONLY"
 ```
 
-## Component Types
+### RSA Key Provider
 
-| Provider Type | Description |
-|--------------|-------------|
-| `org.keycloak.keys.KeyProvider` | Cryptographic keys |
-| `org.keycloak.storage.UserStorageProvider` | User federation (LDAP) |
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakComponent
+metadata:
+  name: rsa-key
+  namespace: keycloak
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    name: rsa-generated
+    providerId: rsa-generated
+    providerType: org.keycloak.keys.KeyProvider
+    config:
+      priority:
+        - "100"
+      algorithm:
+        - "RS256"
+```
+
+## Definition Properties
+
+The `definition` field accepts any valid Keycloak [ComponentRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#ComponentRepresentation):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Component name (required) |
+| `providerId` | string | Provider ID (e.g., "ldap", "rsa-generated") |
+| `providerType` | string | Provider type (e.g., "org.keycloak.storage.UserStorageProvider") |
+| `parentId` | string | Parent component ID (defaults to realm ID) |
+| `config` | object | Provider-specific configuration (array of strings per key) |
+
+## Common Provider Types
+
+| Provider Type | Use Case |
+|--------------|----------|
+| `org.keycloak.storage.UserStorageProvider` | LDAP, custom user storage |
+| `org.keycloak.keys.KeyProvider` | Cryptographic keys (RSA, AES, etc.) |
+| `org.keycloak.storage.ldap.mappers.LDAPStorageMapper` | LDAP attribute mappers |
+
+## Short Names
+
+| Alias | Full Name |
+|-------|-----------|
+| `kcco` | `keycloakcomponents` |
+
+```bash
+kubectl get kcco
+```
+
+## Notes
+
+- Component configuration uses arrays of strings for all values
+- LDAP credentials should be managed via Kubernetes Secrets (not directly in the CR)
+- Some components may require specific ordering via `priority` config

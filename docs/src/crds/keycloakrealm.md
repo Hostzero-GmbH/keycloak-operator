@@ -1,56 +1,140 @@
 # KeycloakRealm
 
-Manages a Keycloak realm.
+A `KeycloakRealm` represents a realm within a Keycloak instance.
 
-## Spec
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `instanceRef` | ResourceRef | Yes | Reference to KeycloakInstance |
-| `definition` | object | Yes | Realm representation |
-
-## Status
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ready` | bool | Realm is synced |
-| `status` | string | Human-readable status |
-| `message` | string | Detailed message |
-| `realmId` | string | Keycloak realm ID |
-
-## Example
+## Specification
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRealm
 metadata:
-  name: my-app
+  name: my-realm
 spec:
+  # Required: Reference to the KeycloakInstance
   instanceRef:
-    name: main
+    name: my-keycloak
+    namespace: default  # Optional
+  
+  # Optional: Realm name in Keycloak (defaults to metadata.name)
+  realmName: my-realm
+  
+  # Required: Realm definition (Keycloak RealmRepresentation)
   definition:
-    realm: my-app
+    realm: my-realm
+    displayName: My Realm
     enabled: true
-    displayName: My Application
-    registrationAllowed: false
-    loginWithEmailAllowed: true
-    duplicateEmailsAllowed: false
-    sslRequired: external
-    accessTokenLifespan: 300
-    ssoSessionIdleTimeout: 1800
+    # ... any other Keycloak realm properties
 ```
 
-## Definition Fields
+## Status
 
-The `definition` field accepts any valid [Keycloak Realm Representation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#RealmRepresentation).
+```yaml
+status:
+  ready: true
+  realmId: "my-realm"
+  message: "Realm synchronized successfully"
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
+```
 
-Common fields:
+## Example
 
-| Field | Type | Description |
-|-------|------|-------------|
+### Basic Realm
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: my-app-realm
+spec:
+  instanceRef:
+    name: production-keycloak
+  definition:
+    realm: my-app
+    displayName: My Application
+    enabled: true
+```
+
+### Full Configuration
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: production-realm
+spec:
+  instanceRef:
+    name: production-keycloak
+  definition:
+    realm: production
+    displayName: Production Realm
+    enabled: true
+    
+    # Login settings
+    registrationAllowed: false
+    registrationEmailAsUsername: true
+    loginWithEmailAllowed: true
+    duplicateEmailsAllowed: false
+    resetPasswordAllowed: true
+    rememberMe: true
+    
+    # Session settings
+    ssoSessionIdleTimeout: 1800
+    ssoSessionMaxLifespan: 36000
+    accessTokenLifespan: 300
+    
+    # Security settings
+    bruteForceProtected: true
+    permanentLockout: false
+    maxFailureWaitSeconds: 900
+    minimumQuickLoginWaitSeconds: 60
+    waitIncrementSeconds: 60
+    quickLoginCheckMilliSeconds: 1000
+    maxDeltaTimeSeconds: 43200
+    failureFactor: 5
+    
+    # Themes
+    loginTheme: keycloak
+    accountTheme: keycloak
+    adminTheme: keycloak
+    emailTheme: keycloak
+    
+    # SMTP settings
+    smtpServer:
+      host: smtp.example.com
+      port: "587"
+      fromDisplayName: My App
+      from: noreply@example.com
+      starttls: "true"
+      auth: "true"
+      user: smtp-user
+      password: smtp-password
+```
+
+## Definition Properties
+
+The `definition` field accepts any property from the [Keycloak RealmRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#RealmRepresentation).
+
+Common properties:
+
+| Property | Type | Description |
+|----------|------|-------------|
 | `realm` | string | Realm name (required) |
-| `enabled` | bool | Whether realm is enabled |
-| `displayName` | string | Display name |
-| `sslRequired` | string | SSL requirement (none, external, all) |
-| `registrationAllowed` | bool | Allow user registration |
-| `loginWithEmailAllowed` | bool | Allow login with email |
+| `displayName` | string | Display name for the realm |
+| `enabled` | boolean | Whether the realm is enabled |
+| `registrationAllowed` | boolean | Allow user registration |
+| `loginWithEmailAllowed` | boolean | Allow login with email |
+| `ssoSessionIdleTimeout` | integer | SSO session idle timeout (seconds) |
+| `accessTokenLifespan` | integer | Access token lifespan (seconds) |
+
+## Short Names
+
+| Alias | Full Name |
+|-------|-----------|
+| `kcr` | `keycloakrealms` |
+
+```bash
+kubectl get kcr
+```

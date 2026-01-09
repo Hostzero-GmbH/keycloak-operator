@@ -1,7 +1,19 @@
+# Keycloak deployment for Kind cluster testing
+# This provides a simple Keycloak instance for e2e tests
 apiVersion: v1
 kind: Namespace
 metadata:
   name: keycloak
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-admin
+  namespace: keycloak
+type: Opaque
+stringData:
+  username: admin
+  password: admin
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -27,30 +39,82 @@ spec:
             - start-dev
           env:
             - name: KEYCLOAK_ADMIN
-              value: admin
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: username
             - name: KEYCLOAK_ADMIN_PASSWORD
-              value: admin
-            - name: KC_HTTP_PORT
-              value: "8080"
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
           ports:
-            - containerPort: 8080
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
           readinessProbe:
             httpGet:
               path: /health/ready
-              port: 8080
-            initialDelaySeconds: 30
+              port: 9000
+            initialDelaySeconds: 60
             periodSeconds: 10
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 9000
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: keycloak
   namespace: keycloak
+  labels:
+    app: keycloak
 spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      protocol: TCP
+      name: http
   selector:
     app: keycloak
+---
+# NodePort service for external access during development
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-nodeport
+  namespace: keycloak
+  labels:
+    app: keycloak
+spec:
+  type: NodePort
   ports:
     - port: 8080
       targetPort: 8080
       nodePort: 30080
-  type: NodePort
+      protocol: TCP
+      name: http
+  selector:
+    app: keycloak

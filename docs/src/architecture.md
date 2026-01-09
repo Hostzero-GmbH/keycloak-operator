@@ -1,109 +1,238 @@
 # Architecture
 
-This document describes the architecture of the Keycloak Operator.
+The Keycloak Operator follows the Kubernetes operator pattern to manage Keycloak resources declaratively.
 
 ## Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Kubernetes Cluster                        │
-│                                                              │
-│  ┌──────────────────┐     ┌──────────────────────────────┐ │
-│  │  Keycloak        │     │  Keycloak Operator           │ │
-│  │  Instance        │◄────│                              │ │
-│  │                  │     │  ┌────────────────────────┐  │ │
-│  │  - Realms        │     │  │ Controllers            │  │ │
-│  │  - Clients       │     │  │ - Instance Controller  │  │ │
-│  │  - Users         │     │  │ - Realm Controller     │  │ │
-│  │  - Roles         │     │  │ - Client Controller    │  │ │
-│  │  - Groups        │     │  │ - User Controller      │  │ │
-│  └──────────────────┘     │  │ - ...                  │  │ │
-│                           │  └────────────────────────┘  │ │
-│                           │                              │ │
-│  ┌──────────────────┐     │  ┌────────────────────────┐  │ │
-│  │  Custom          │────►│  │ Keycloak Client        │  │ │
-│  │  Resources       │     │  │ - REST API calls       │  │ │
-│  │                  │     │  │ - Token management     │  │ │
-│  │  - KeycloakRealm │     │  │ - Rate limiting        │  │ │
-│  │  - KeycloakClient│     │  └────────────────────────┘  │ │
-│  │  - KeycloakUser  │     │                              │ │
-│  └──────────────────┘     └──────────────────────────────┘ │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                      Kubernetes Cluster                          │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────────────┐│
+│  │                    Custom Resources                           ││
+│  │  ┌────────────┐ ┌────────────┐ ┌────────────┐               ││
+│  │  │ Keycloak   │ │ Keycloak   │ │ Keycloak   │               ││
+│  │  │ Instance   │ │ Realm      │ │ Client     │  ...          ││
+│  │  └─────┬──────┘ └─────┬──────┘ └─────┬──────┘               ││
+│  └────────┼──────────────┼──────────────┼───────────────────────┘│
+│           │              │              │                        │
+│           ▼              ▼              ▼                        │
+│  ┌──────────────────────────────────────────────────────────────┐│
+│  │                   Keycloak Operator                           ││
+│  │  ┌────────────────────────────────────────────────────────┐  ││
+│  │  │                  Controller Manager                     │  ││
+│  │  │  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │  ││
+│  │  │  │   Instance   │ │    Realm     │ │    Client    │   │  ││
+│  │  │  │  Controller  │ │  Controller  │ │  Controller  │   │  ││
+│  │  │  └──────────────┘ └──────────────┘ └──────────────┘   │  ││
+│  │  └────────────────────────────────────────────────────────┘  ││
+│  │                            │                                  ││
+│  │                            ▼                                  ││
+│  │  ┌────────────────────────────────────────────────────────┐  ││
+│  │  │                  Keycloak Client                        │  ││
+│  │  │         (custom resty-based HTTP client)                │  ││
+│  │  └────────────────────────────────────────────────────────┘  ││
+│  └──────────────────────────────────────────────────────────────┘│
+│                               │                                  │
+└───────────────────────────────┼──────────────────────────────────┘
+                                │
+                                ▼
+                    ┌───────────────────────┐
+                    │    Keycloak Server    │
+                    │   (Admin REST API)    │
+                    └───────────────────────┘
 ```
 
 ## Components
 
+### Controller Manager
+
+The controller manager is the main component that runs all controllers. It is built using the [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) library.
+
+Key features:
+- Leader election for high availability
+- Health and readiness probes
+- Metrics endpoint for Prometheus
+- Graceful shutdown handling
+
 ### Controllers
 
-Each CRD has a dedicated controller that watches for changes and reconciles the desired state with Keycloak.
+Each CRD type has a dedicated controller that implements the reconciliation logic:
 
-Controllers follow the standard Kubernetes controller pattern:
-1. Watch for changes to custom resources
-2. Compare desired state with actual state
-3. Make API calls to Keycloak to reconcile differences
-4. Update resource status
+| Controller | CRD | Responsibilities |
+|------------|-----|------------------|
+| Instance Controller | KeycloakInstance, ClusterKeycloakInstance | Connection management, health checking |
+| Realm Controller | KeycloakRealm, ClusterKeycloakRealm | Realm CRUD, configuration sync |
+| Client Controller | KeycloakClient | Client CRUD, secret management |
+| ClientScope Controller | KeycloakClientScope | Scope CRUD |
+| ProtocolMapper Controller | KeycloakProtocolMapper | Token claim mapper configuration |
+| User Controller | KeycloakUser | User CRUD |
+| UserCredential Controller | KeycloakUserCredential | Password management |
+| Group Controller | KeycloakGroup | Group CRUD, hierarchy management |
+| Role Controller | KeycloakRole | Realm and client role management |
+| RoleMapping Controller | KeycloakRoleMapping | Role-to-subject assignments |
+| IdentityProvider Controller | KeycloakIdentityProvider | External IDP configuration |
+| Component Controller | KeycloakComponent | LDAP, key providers, etc. |
+| Organization Controller | KeycloakOrganization | Organization management (KC 26+) |
 
 ### Keycloak Client
 
-The internal Keycloak client handles all communication with the Keycloak Admin REST API:
+The operator uses a custom HTTP client built on [resty](https://github.com/go-resty/resty). Key features:
 
-- **Authentication**: Obtains and refreshes OAuth2 tokens
-- **Rate Limiting**: Prevents overwhelming the Keycloak server
-- **Retry Logic**: Handles transient failures gracefully
-- **Connection Pooling**: Reuses connections efficiently
+- **Version-agnostic**: Works with raw JSON to support all Keycloak versions
+- **Connection pooling**: Multiple KeycloakInstances share clients via `ClientManager`
+- **Token management**: Automatic token acquisition and refresh
+- **Retry logic**: Exponential backoff for transient errors (5xx, network issues)
+- **Pass-through definitions**: CR definitions are sent directly to Keycloak without field stripping
 
-### Client Manager
-
-The Client Manager provides shared access to Keycloak clients across controllers:
-
-- Manages a pool of clients per Keycloak instance
-- Enforces concurrent request limits
-- Provides semaphore-based rate limiting
-
-## Resource Hierarchy
-
-Resources follow a hierarchical dependency model:
+## Reconciliation Flow
 
 ```
-KeycloakInstance (or ClusterKeycloakInstance)
-└── KeycloakRealm (or ClusterKeycloakRealm)
-    ├── KeycloakClient
-    │   └── KeycloakProtocolMapper
-    ├── KeycloakUser
-    │   ├── KeycloakRoleMapping
-    │   └── KeycloakUserCredential
-    ├── KeycloakRole
-    ├── KeycloakGroup
-    ├── KeycloakClientScope
-    │   └── KeycloakProtocolMapper
-    ├── KeycloakIdentityProvider
-    ├── KeycloakComponent
-    └── KeycloakOrganization
+                    ┌─────────────────┐
+                    │  CR Created/    │
+                    │  Updated/Deleted│
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │   Controller    │
+                    │   Triggered     │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │  Get Current    │
+                    │  State from KC  │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ Compare Desired │
+                    │ vs Actual State │
+                    └────────┬────────┘
+                             │
+            ┌────────────────┼────────────────┐
+            ▼                ▼                ▼
+      ┌──────────┐    ┌──────────┐    ┌──────────┐
+      │  Create  │    │  Update  │    │  Delete  │
+      │ in KC    │    │ in KC    │    │ from KC  │
+      └────┬─────┘    └────┬─────┘    └────┬─────┘
+           │               │               │
+           └───────────────┴───────────────┘
+                           │
+                           ▼
+                    ┌─────────────────┐
+                    │  Update CR      │
+                    │  Status         │
+                    └─────────────────┘
 ```
+
+## Resource Dependencies
+
+Resources form a hierarchy with parent-child relationships:
+
+```
+KeycloakInstance (connection to Keycloak)
+│
+└── KeycloakRealm (realm within instance)
+    │
+    ├── KeycloakClient (client within realm)
+    │
+    ├── KeycloakUser (user within realm)
+    │
+    ├── KeycloakGroup (group within realm)
+    │   │
+    │   └── KeycloakGroup (nested child group)
+    │
+    ├── KeycloakClientScope (scope within realm)
+    │
+    └── KeycloakIdentityProvider (IDP within realm)
+```
+
+Controllers resolve parent references and wait for parents to be ready before proceeding.
 
 ## Finalizers
 
-All resources use Kubernetes finalizers to ensure proper cleanup:
+The operator uses finalizers to ensure proper cleanup:
 
-1. When a resource is deleted, the finalizer prevents immediate removal
-2. The controller deletes the corresponding Keycloak resource
-3. The finalizer is removed, allowing Kubernetes to complete deletion
+1. When a CR is created, a finalizer is added
+2. When a CR is deleted, the controller:
+   - Removes the resource from Keycloak
+   - Removes the finalizer
+3. Kubernetes then removes the CR
 
-## Status Management
+This ensures resources are properly cleaned up in Keycloak even if the cluster is disrupted.
 
-Each resource maintains status fields:
+## High Availability
 
-- `ready`: Boolean indicating if the resource is synced
-- `status`: Human-readable status message
-- `message`: Detailed information about the current state
-- Resource-specific IDs (e.g., `realmId`, `clientId`)
+The operator supports running multiple replicas with leader election:
 
-## Metrics
+- Only the leader processes reconciliations
+- Other replicas are hot standby
+- Automatic failover on leader failure
+- Configurable via `leaderElection.enabled` Helm value
 
-The operator exposes Prometheus metrics:
+## Performance Tuning
 
-- `keycloak_operator_reconcile_total`: Total reconciliations by controller and result
-- `keycloak_operator_reconcile_duration_seconds`: Reconciliation duration histogram
-- `keycloak_operator_api_requests_total`: Keycloak API requests by method and status
-- `keycloak_operator_managed_resources`: Gauge of managed resources by kind
+For large deployments with many resources, the operator provides tuning options:
+
+### Sync Period
+
+The `--sync-period` flag controls how often successfully reconciled resources are re-checked for drift:
+
+```bash
+# Default: 5 minutes
+--sync-period=5m
+
+# For large deployments (100+ resources): 30 minutes
+--sync-period=30m
+
+# For very large deployments or slow networks: 1 hour
+--sync-period=1h
+```
+
+**Trade-offs:**
+- **Shorter periods**: Faster drift detection, higher Keycloak API load
+- **Longer periods**: Lower API load, slower drift detection
+
+In Helm:
+```yaml
+performance:
+  syncPeriod: "30m"
+```
+
+### Rate Limiting
+
+The `--max-concurrent-requests` flag limits parallel requests to Keycloak:
+
+```bash
+# Default: 10 concurrent requests
+--max-concurrent-requests=10
+
+# For resource-constrained Keycloak instances
+--max-concurrent-requests=5
+
+# No limit (not recommended for large deployments)
+--max-concurrent-requests=0
+```
+
+**Trade-offs:**
+- **Lower values**: Less Keycloak load, slower reconciliation on startup
+- **Higher values**: Faster reconciliation, more Keycloak load
+
+In Helm:
+```yaml
+performance:
+  maxConcurrentRequests: 5
+```
+
+### Recommendations by Scale
+
+| Resources | Sync Period | Max Concurrent Requests |
+|-----------|-------------|------------------------|
+| < 50 | 5m (default) | 10 (default) |
+| 50-200 | 15-30m | 10 |
+| 200-500 | 30m | 5-10 |
+| 500+ | 1h | 5 |
+
+The exact values depend on your Keycloak instance capacity and acceptable drift detection latency.

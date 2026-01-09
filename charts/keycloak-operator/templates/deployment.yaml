@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "keycloak-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "keycloak-operator.labels" . | nindent 4 }}
 spec:
@@ -11,37 +12,53 @@ spec:
       {{- include "keycloak-operator.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
-        {{- include "keycloak-operator.selectorLabels" . | nindent 8 }}
+        {{- include "keycloak-operator.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "keycloak-operator.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       containers:
         - name: manager
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ include "keycloak-operator.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - --metrics-bind-address={{ .Values.operator.metricsBindAddress }}
-            - --health-probe-bind-address={{ .Values.operator.healthProbeBindAddress }}
-            - --leader-elect={{ .Values.operator.leaderElect }}
-            - --max-concurrent-requests={{ .Values.operator.maxConcurrentRequests }}
+            - --metrics-bind-address=:{{ .Values.metrics.port }}
+            - --health-probe-bind-address=:{{ .Values.health.port }}
+            {{- if .Values.leaderElection.enabled }}
+            - --leader-elect
+            {{- end }}
+            {{- if .Values.performance }}
+            {{- if .Values.performance.syncPeriod }}
+            - --sync-period={{ .Values.performance.syncPeriod }}
+            {{- end }}
+            {{- if .Values.performance.maxConcurrentRequests }}
+            - --max-concurrent-requests={{ .Values.performance.maxConcurrentRequests }}
+            {{- end }}
+            {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - name: metrics
-              containerPort: 8080
+              containerPort: {{ .Values.metrics.port }}
               protocol: TCP
             - name: health
-              containerPort: 8081
+              containerPort: {{ .Values.health.port }}
               protocol: TCP
           livenessProbe:
             httpGet:
@@ -49,14 +66,38 @@ spec:
               port: health
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /readyz
               port: health
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraVolumeMounts }}
+          volumeMounts:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

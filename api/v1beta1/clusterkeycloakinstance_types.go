@@ -5,8 +5,9 @@ import (
 )
 
 // ClusterKeycloakInstanceSpec defines the desired state of ClusterKeycloakInstance
+// It mirrors KeycloakInstanceSpec but is cluster-scoped
 type ClusterKeycloakInstanceSpec struct {
-	// BaseUrl is the URL of the Keycloak server
+	// BaseUrl is the URL of the Keycloak server (e.g., http://keycloak:8080)
 	// +kubebuilder:validation:Required
 	BaseUrl string `json:"baseUrl"`
 
@@ -17,31 +18,39 @@ type ClusterKeycloakInstanceSpec struct {
 	// Realm is the admin realm (defaults to "master")
 	// +optional
 	Realm *string `json:"realm,omitempty"`
+
+	// Client contains optional service account client configuration
+	// +optional
+	Client *ClientAuthSpec `json:"client,omitempty"`
+
+	// Token contains optional token caching configuration
+	// +optional
+	Token *TokenSpec `json:"token,omitempty"`
 }
 
-// ClusterCredentialsSpec defines admin credentials for cluster-scoped instance
+// ClusterCredentialsSpec defines admin credentials for cluster-scoped instances
 type ClusterCredentialsSpec struct {
 	// SecretRef contains the reference to the secret with credentials
 	// +kubebuilder:validation:Required
 	SecretRef ClusterSecretRefSpec `json:"secretRef"`
 }
 
-// ClusterSecretRefSpec defines a reference to a secret for cluster resources
+// ClusterSecretRefSpec defines a reference to a secret for cluster-scoped resources
 type ClusterSecretRefSpec struct {
 	// Name is the name of the secret
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
-	// Namespace is the namespace of the secret (required for cluster-scoped)
+	// Namespace is the namespace of the secret (required for cluster-scoped resources)
 	// +kubebuilder:validation:Required
 	Namespace string `json:"namespace"`
 
-	// UsernameKey is the key in the secret for the username
+	// UsernameKey is the key in the secret for the username (defaults to "username")
 	// +kubebuilder:default="username"
 	// +optional
 	UsernameKey string `json:"usernameKey,omitempty"`
 
-	// PasswordKey is the key in the secret for the password
+	// PasswordKey is the key in the secret for the password (defaults to "password")
 	// +kubebuilder:default="password"
 	// +optional
 	PasswordKey string `json:"passwordKey,omitempty"`
@@ -52,6 +61,10 @@ type ClusterKeycloakInstanceStatus struct {
 	// Ready indicates if the Keycloak instance is accessible
 	Ready bool `json:"ready"`
 
+	// Version is the Keycloak server version
+	// +optional
+	Version string `json:"version,omitempty"`
+
 	// Status is a human-readable status message
 	// +optional
 	Status string `json:"status,omitempty"`
@@ -60,9 +73,9 @@ type ClusterKeycloakInstanceStatus struct {
 	// +optional
 	Message string `json:"message,omitempty"`
 
-	// Version is the Keycloak server version
+	// ResourcePath is the API path for this resource
 	// +optional
-	Version string `json:"version,omitempty"`
+	ResourcePath string `json:"resourcePath,omitempty"`
 
 	// Conditions represent the latest available observations
 	// +optional
@@ -71,13 +84,13 @@ type ClusterKeycloakInstanceStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster
-// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
-// +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.baseUrl`
-// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`
+// +kubebuilder:resource:scope=Cluster,shortName=ckci,categories={keycloak,all}
+// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the instance is ready"
+// +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.baseUrl`,description="The base URL of the Keycloak instance"
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`,description="Keycloak server version"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
-// ClusterKeycloakInstance is a cluster-scoped Keycloak instance resource
+// ClusterKeycloakInstance makes a Keycloak server known to the operator at the cluster level
 type ClusterKeycloakInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

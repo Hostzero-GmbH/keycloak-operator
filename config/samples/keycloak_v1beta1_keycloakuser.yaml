@@ -1,0 +1,23 @@
+# Sample KeycloakUser
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakUser
+metadata:
+  name: example-user
+  namespace: default
+spec:
+  realmRef: example-realm
+  definition:
+    username: testuser
+    email: testuser@example.com
+    emailVerified: true
+    enabled: true
+    firstName: Test
+    lastName: User
+    groups:
+      - /users
+    realmRoles:
+      - offline_access
+    credentials:
+      - type: password
+        value: changeme
+        temporary: true

@@ -4,7 +4,10 @@ kind: CustomResourceDefinition
 metadata:
   name: keycloakinstances.keycloak.hostzero.com
   annotations:
-    controller-gen.kubebuilder.io/version: v0.17.2
+    controller-gen.kubebuilder.io/version: v0.16.1
+    {{- if .Values.crds.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
   labels:
     {{- include "keycloak-operator.labels" . | nindent 4 }}
 spec:
@@ -14,26 +17,17 @@ spec:
     listKind: KeycloakInstanceList
     plural: keycloakinstances
     singular: keycloakinstance
+    shortNames:
+      - kci
   scope: Namespaced
   versions:
     - name: v1beta1
       served: true
       storage: true
-      subresources:
-        status: {}
-      additionalPrinterColumns:
-        - name: Ready
-          type: boolean
-          jsonPath: .status.ready
-        - name: URL
-          type: string
-          jsonPath: .spec.baseUrl
-        - name: Age
-          type: date
-          jsonPath: .metadata.creationTimestamp
       schema:
         openAPIV3Schema:
           type: object
+          description: KeycloakInstance is the Schema for the keycloakinstances API
           properties:
             apiVersion:
               type: string
@@ -49,6 +43,11 @@ spec:
               properties:
                 baseUrl:
                   type: string
+                  description: Base URL of the Keycloak server
+                realm:
+                  type: string
+                  description: Realm to authenticate against (defaults to master)
+                  default: master
                 credentials:
                   type: object
                   required:
@@ -69,19 +68,18 @@ spec:
                         passwordKey:
                           type: string
                           default: password
-                realm:
-                  type: string
             status:
               type: object
               properties:
                 ready:
                   type: boolean
-                status:
+                version:
                   type: string
                 message:
                   type: string
-                version:
+                lastConnected:
                   type: string
+                  format: date-time
                 conditions:
                   type: array
                   items:
@@ -91,11 +89,26 @@ spec:
                         type: string
                       status:
                         type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
                       reason:
                         type: string
                       message:
                         type: string
-                      lastTransitionTime:
-                        type: string
-                        format: date-time
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: URL
+          type: string
+          jsonPath: .spec.baseUrl
+        - name: Version
+          type: string
+          jsonPath: .status.version
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
 {{- end }}

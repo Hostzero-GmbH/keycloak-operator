@@ -1,19 +1,9 @@
 [book]
-authors = ["HostZero Team"]
+authors = ["HostZero"]
 language = "en"
-multilingual = false
 src = "src"
-title = "Keycloak Operator Documentation"
-
-[build]
-build-dir = "book"
+title = "Keycloak Operator"
 
 [output.html]
-default-theme = "navy"
-preferred-dark-theme = "navy"
-git-repository-url = "https://github.com/hostzero/keycloak-operator"
+git-repository-url = "https://github.com/hostzero/keycloak-operator/"
 edit-url-template = "https://github.com/hostzero/keycloak-operator/edit/main/docs/{path}"
-
-[output.html.fold]
-enable = true
-level = 1

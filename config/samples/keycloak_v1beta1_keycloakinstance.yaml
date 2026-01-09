@@ -1,0 +1,12 @@
+# Sample KeycloakInstance connecting to a local Keycloak server
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakInstance
+metadata:
+  name: keycloak-instance
+  namespace: default
+spec:
+  baseUrl: http://keycloak:8080
+  credentials:
+    secretName: keycloak-admin
+    usernameKey: username
+    passwordKey: password

@@ -7,6 +7,7 @@ Expand the name of the chart.
 
 {{/*
 Create a default fully qualified app name.
+We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 */}}
 {{- define "keycloak-operator.fullname" -}}
 {{- if .Values.fullnameOverride }}
@@ -46,6 +47,7 @@ Selector labels
 {{- define "keycloak-operator.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "keycloak-operator.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/component: controller-manager
 {{- end }}
 
 {{/*
@@ -57,4 +59,12 @@ Create the name of the service account to use
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
+{{- end }}
+
+{{/*
+Return the image name
+*/}}
+{{- define "keycloak-operator.image" -}}
+{{- $tag := .Values.image.tag | default .Chart.AppVersion }}
+{{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}

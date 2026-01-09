@@ -1,0 +1,27 @@
+# Sample KeycloakClient - a confidential client for a web application
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClient
+metadata:
+  name: example-client
+  namespace: default
+spec:
+  realmRef: example-realm
+  definition:
+    clientId: example-web-app
+    name: "Example Web Application"
+    enabled: true
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    serviceAccountsEnabled: true
+    redirectUris:
+      - "http://localhost:3000/*"
+      - "https://app.example.com/*"
+    webOrigins:
+      - "+"
+    attributes:
+      post.logout.redirect.uris: "+"
+  clientSecret:
+    secretName: example-client-secret
+    clientIdKey: client-id
+    clientSecretKey: client-secret

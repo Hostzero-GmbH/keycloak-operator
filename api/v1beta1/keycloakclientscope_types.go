@@ -7,11 +7,17 @@ import (
 
 // KeycloakClientScopeSpec defines the desired state of KeycloakClientScope
 type KeycloakClientScopeSpec struct {
-	// RealmRef references the KeycloakRealm this client scope belongs to
-	// +kubebuilder:validation:Required
-	RealmRef ResourceRef `json:"realmRef"`
+	// RealmRef is a reference to a KeycloakRealm
+	// One of realmRef or clusterRealmRef must be specified
+	// +optional
+	RealmRef *ResourceRef `json:"realmRef,omitempty"`
 
-	// Definition is the client scope definition in Keycloak JSON format
+	// ClusterRealmRef is a reference to a ClusterKeycloakRealm
+	// One of realmRef or clusterRealmRef must be specified
+	// +optional
+	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
+
+	// Definition contains the Keycloak ClientScopeRepresentation
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -19,10 +25,10 @@ type KeycloakClientScopeSpec struct {
 
 // KeycloakClientScopeStatus defines the observed state of KeycloakClientScope
 type KeycloakClientScopeStatus struct {
-	// Ready indicates if the client scope exists in Keycloak
+	// Ready indicates if the client scope is ready
 	Ready bool `json:"ready"`
 
-	// Status is a human-readable status
+	// Status is a human-readable status message
 	// +optional
 	Status string `json:"status,omitempty"`
 
@@ -30,17 +36,31 @@ type KeycloakClientScopeStatus struct {
 	// +optional
 	Message string `json:"message,omitempty"`
 
-	// ScopeID is the internal Keycloak client scope ID
+	// ResourcePath is the Keycloak API path for this client scope
 	// +optional
-	ScopeID string `json:"scopeId,omitempty"`
+	ResourcePath string `json:"resourcePath,omitempty"`
+
+	// Instance contains the resolved instance reference
+	// +optional
+	Instance *InstanceRef `json:"instance,omitempty"`
+
+	// Realm contains the resolved realm reference
+	// +optional
+	Realm *RealmRef `json:"realm,omitempty"`
+
+	// Conditions represent the latest available observations
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the client scope is ready"
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:resource:shortName=kccs,categories={keycloak,all}
 
-// KeycloakClientScope is the Schema for the keycloakclientscopes API
+// KeycloakClientScope defines a client scope within a KeycloakRealm
 type KeycloakClientScope struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

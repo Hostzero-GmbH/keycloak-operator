@@ -1,42 +1,57 @@
 # Quick Start
 
-Get the Keycloak Operator running in minutes.
+This guide will walk you through setting up the Keycloak Operator and creating your first managed resources.
 
 ## Prerequisites
 
-- Kubernetes cluster
-- kubectl configured
-- Helm 3
+* A running Kubernetes cluster
+* `kubectl` installed and configured
+* `helm` installed (optional, for Helm installation)
+* A Keycloak instance (or use the provided Kind setup)
 
 ## Step 1: Install the Operator
 
+### Option A: Using Helm
+
 ```bash
-helm install keycloak-operator oci://ghcr.io/hostzero/charts/keycloak-operator \
+helm install keycloak-operator ./charts/keycloak-operator \
   --namespace keycloak-operator \
   --create-namespace
 ```
 
-## Step 2: Create a Secret for Keycloak Credentials
+### Option B: Using Kind (for development)
 
 ```bash
-kubectl create secret generic keycloak-admin \
+# This creates a Kind cluster with Keycloak and deploys the operator
+make kind-all
+```
+
+## Step 2: Create Admin Credentials Secret
+
+Create a secret containing your Keycloak admin credentials:
+
+```bash
+kubectl create secret generic keycloak-admin-credentials \
+  --namespace keycloak-operator \
   --from-literal=username=admin \
-  --from-literal=password=admin
+  --from-literal=password=your-admin-password
 ```
 
 ## Step 3: Create a KeycloakInstance
 
+Create a `KeycloakInstance` resource to connect the operator to your Keycloak server:
+
 ```yaml
-# keycloak-instance.yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakInstance
 metadata:
-  name: main
+  name: my-keycloak
+  namespace: keycloak-operator
 spec:
   baseUrl: https://keycloak.example.com
   credentials:
     secretRef:
-      name: keycloak-admin
+      name: keycloak-admin-credentials
 ```
 
 Apply it:
@@ -45,42 +60,97 @@ Apply it:
 kubectl apply -f keycloak-instance.yaml
 ```
 
+Verify the connection:
+
+```bash
+kubectl get keycloakinstances -n keycloak-operator
+```
+
+You should see:
+
+```
+NAME          READY   URL                           VERSION   AGE
+my-keycloak   true    https://keycloak.example.com  26.0.0    30s
+```
+
 ## Step 4: Create a Realm
 
+Create a realm in your Keycloak instance:
+
 ```yaml
-# my-realm.yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRealm
 metadata:
-  name: my-app
+  name: my-realm
+  namespace: keycloak-operator
 spec:
   instanceRef:
-    name: main
+    name: my-keycloak
   definition:
-    realm: my-app
+    realm: my-realm
+    displayName: My Application Realm
     enabled: true
-    displayName: My Application
+    registrationAllowed: false
+    loginWithEmailAllowed: true
 ```
 
 Apply it:
 
 ```bash
-kubectl apply -f my-realm.yaml
+kubectl apply -f keycloak-realm.yaml
 ```
 
-## Step 5: Verify
+## Step 5: Create a Client
 
-Check the status of your resources:
+Create an OAuth2/OIDC client:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClient
+metadata:
+  name: my-app
+  namespace: keycloak-operator
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    clientId: my-app
+    name: My Application
+    enabled: true
+    publicClient: false
+    standardFlowEnabled: true
+    directAccessGrantsEnabled: false
+    redirectUris:
+      - "https://my-app.example.com/callback"
+    webOrigins:
+      - "https://my-app.example.com"
+  clientSecret:
+    secretName: my-app-credentials
+    key: clientSecret
+```
+
+Apply it:
 
 ```bash
-kubectl get keycloakinstances
-kubectl get keycloakrealms
+kubectl apply -f keycloak-client.yaml
 ```
 
-Both should show `Ready: true`.
+The operator will create a Kubernetes secret with the client credentials:
+
+```bash
+kubectl get secret my-app-credentials -n keycloak-operator -o yaml
+```
+
+## Step 6: Verify Resources
+
+Check the status of all your Keycloak resources:
+
+```bash
+kubectl get keycloakinstances,keycloakrealms,keycloakclients -n keycloak-operator
+```
 
 ## Next Steps
 
-- [Create clients](../crds/keycloakclient.md) for your applications
-- [Create users](../crds/keycloakuser.md) for authentication
-- [Configure roles](../crds/keycloakrole.md) for authorization
+- Learn about [Helm Chart configuration](./helm.md)
+- Explore all [Custom Resource Definitions](../crds.md)
+- Set up a [local development environment](./kind.md)

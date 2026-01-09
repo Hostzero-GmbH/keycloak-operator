@@ -1,87 +1,72 @@
 # Local Setup
 
-Set up a local development environment.
+This guide explains how to set up a local development environment.
 
 ## Prerequisites
 
-Install required tools:
+- Go 1.22+
+- Docker
+- Kind (`brew install kind` or `go install sigs.k8s.io/kind@latest`)
+- kubectl
+- Helm
+
+## Quick Start with Kind (Recommended)
+
+The easiest way to develop is using Kind:
 
 ```bash
-# Go
-brew install go
-
-# Docker
-brew install --cask docker
-
-# Kind
-brew install kind
-
-# Kubectl
-brew install kubectl
-
-# Helm
-brew install helm
+# Create cluster and deploy everything
+make kind-all
 ```
 
-## Clone and Build
+This sets up:
+- Kind cluster with 3 nodes
+- Keycloak instance (admin/admin)
+- Operator deployment
+- Test resources
+
+### Iterating on Changes
 
 ```bash
-git clone https://github.com/hostzero/keycloak-operator.git
-cd keycloak-operator
+# After code changes, rebuild and redeploy
+make kind-deploy
 
-# Download dependencies
-go mod download
-
-# Generate CRDs and code
-make generate
-make manifests
-
-# Build binary
-make build
+# Check operator logs
+make kind-logs
 ```
 
-## Create Kind Cluster
+### Accessing Keycloak
+
+To access Keycloak from your local machine:
 
 ```bash
-make kind-create
+# Port-forward Keycloak to localhost:8080
+make kind-port-forward
 ```
 
-This creates a Kind cluster with Keycloak deployed.
+Then open http://localhost:8080 (admin/admin).
 
-## Run Locally
+## Run Against External Keycloak
 
-Run the operator against the Kind cluster:
+You can run the operator against any Keycloak instance:
 
-```bash
-# Install CRDs
-make install
+1. Configure kubeconfig for your cluster
+2. Install CRDs: `make install`
+3. Create a KeycloakInstance pointing to your Keycloak
+4. Run locally: `make run`
 
-# Run operator locally
-make run
-```
+## Development Commands
 
-## Deploy to Kind
-
-Build and deploy to Kind:
-
-```bash
-# Build image
-make docker-build IMG=keycloak-operator:dev
-
-# Load to Kind
-kind load docker-image keycloak-operator:dev --name keycloak-operator-e2e
-
-# Deploy
-make helm-install-dev
-```
-
-## Iterate
-
-1. Make code changes
-2. Run `make generate manifests` if CRDs changed
-3. Run `make build` to verify compilation
-4. Run `make test` for unit tests
-5. Deploy to Kind for integration testing
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the operator binary |
+| `make run` | Run the operator locally |
+| `make install` | Install CRDs to cluster |
+| `make generate` | Generate DeepCopy methods |
+| `make manifests` | Generate CRD manifests |
+| `make fmt` | Format code |
+| `make vet` | Run go vet |
+| `make lint` | Run golangci-lint |
 
 ## IDE Setup
 
@@ -92,16 +77,46 @@ Recommended extensions:
 - YAML
 - Kubernetes
 
-settings.json:
+Settings (`.vscode/settings.json`):
 ```json
 {
   "go.lintTool": "golangci-lint",
-  "go.lintFlags": ["--fast"]
+  "go.lintFlags": ["--fast"],
+  "go.testFlags": ["-v"]
 }
 ```
 
 ### GoLand
 
-Enable:
-- Go modules integration
-- File watchers for code generation
+- Enable Go modules integration
+- Configure GOROOT to Go 1.22+
+- Set up golangci-lint as external tool
+
+## Debugging
+
+### Local Debugging
+
+1. Set breakpoints in your IDE
+2. Run with debug configuration:
+   ```bash
+   dlv debug ./cmd/main.go
+   ```
+
+### Remote Debugging
+
+For debugging in-cluster:
+
+1. Build with debug symbols:
+   ```bash
+   CGO_ENABLED=0 go build -gcflags="all=-N -l" -o manager ./cmd/main.go
+   ```
+
+2. Use `kubectl port-forward` to access debugger port
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KUBECONFIG` | Path to kubeconfig | `~/.kube/config` |
+| `KEYCLOAK_URL` | Keycloak URL for tests | `http://localhost:8080` |
+| `LOG_LEVEL` | Log level | `info` |

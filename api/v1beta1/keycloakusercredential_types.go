@@ -6,41 +6,68 @@ import (
 
 // KeycloakUserCredentialSpec defines the desired state of KeycloakUserCredential
 type KeycloakUserCredentialSpec struct {
-	// UserRef references the KeycloakUser to set credentials for
+	// UserRef is a reference to a KeycloakUser
 	// +kubebuilder:validation:Required
 	UserRef ResourceRef `json:"userRef"`
 
-	// SecretRef references the secret containing the password
+	// UserSecret defines the secret containing the credentials
 	// +kubebuilder:validation:Required
-	SecretRef CredentialSecretRef `json:"secretRef"`
-
-	// Temporary indicates if the password should be temporary
-	// +optional
-	Temporary bool `json:"temporary,omitempty"`
+	UserSecret CredentialSecretSpec `json:"userSecret"`
 }
 
-// CredentialSecretRef references a secret containing credentials
-type CredentialSecretRef struct {
-	// Name is the name of the secret
+// CredentialSecretSpec defines the secret containing user credentials
+type CredentialSecretSpec struct {
+	// SecretName is the name of the Kubernetes secret
 	// +kubebuilder:validation:Required
-	Name string `json:"name"`
+	SecretName string `json:"secretName"`
 
-	// Namespace is the namespace of the secret
+	// Create indicates whether to create the secret if it doesn't exist
 	// +optional
-	Namespace *string `json:"namespace,omitempty"`
+	Create bool `json:"create,omitempty"`
 
-	// PasswordKey is the key in the secret for the password
+	// UsernameKey is the key for the username in the secret
+	// +kubebuilder:default="username"
+	// +optional
+	UsernameKey string `json:"usernameKey,omitempty"`
+
+	// PasswordKey is the key for the password in the secret
 	// +kubebuilder:default="password"
 	// +optional
 	PasswordKey string `json:"passwordKey,omitempty"`
+
+	// EmailKey is the key for the email in the secret
+	// +optional
+	EmailKey string `json:"emailKey,omitempty"`
+
+	// PasswordPolicy configures password generation
+	// +optional
+	PasswordPolicy *PasswordPolicySpec `json:"passwordPolicy,omitempty"`
+}
+
+// PasswordPolicySpec defines password generation policy
+type PasswordPolicySpec struct {
+	// Length is the password length (default 24)
+	// +kubebuilder:default=24
+	// +optional
+	Length int `json:"length,omitempty"`
+
+	// IncludeNumbers includes numbers in the password
+	// +kubebuilder:default=true
+	// +optional
+	IncludeNumbers *bool `json:"includeNumbers,omitempty"`
+
+	// IncludeSymbols includes symbols in the password
+	// +kubebuilder:default=true
+	// +optional
+	IncludeSymbols *bool `json:"includeSymbols,omitempty"`
 }
 
 // KeycloakUserCredentialStatus defines the observed state of KeycloakUserCredential
 type KeycloakUserCredentialStatus struct {
-	// Ready indicates if the credential was set
+	// Ready indicates if the credentials are synchronized
 	Ready bool `json:"ready"`
 
-	// Status is a human-readable status
+	// Status is a human-readable status message
 	// +optional
 	Status string `json:"status,omitempty"`
 
@@ -48,17 +75,47 @@ type KeycloakUserCredentialStatus struct {
 	// +optional
 	Message string `json:"message,omitempty"`
 
-	// LastUpdated is the timestamp of the last credential update
+	// ResourcePath is the Keycloak API path for the user
 	// +optional
-	LastUpdated *metav1.Time `json:"lastUpdated,omitempty"`
+	ResourcePath string `json:"resourcePath,omitempty"`
+
+	// Instance contains the resolved instance reference
+	// +optional
+	Instance *InstanceRef `json:"instance,omitempty"`
+
+	// Realm contains the resolved realm reference
+	// +optional
+	Realm *RealmRef `json:"realm,omitempty"`
+
+	// SecretCreated indicates if the secret was created by the operator
+	// +optional
+	SecretCreated bool `json:"secretCreated,omitempty"`
+
+	// ObservedGeneration is the generation of the spec that was last processed
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// PasswordHash is a hash of the last synchronized password (for change detection)
+	// +optional
+	PasswordHash string `json:"passwordHash,omitempty"`
+
+	// SecretResourceVersion is the resource version of the secret when last synced
+	// +optional
+	SecretResourceVersion string `json:"secretResourceVersion,omitempty"`
+
+	// Conditions represent the latest available observations
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the credentials are synchronized"
+// +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:resource:shortName=kcuc,categories={keycloak,all}
 
-// KeycloakUserCredential is the Schema for the keycloakusercredentials API
+// KeycloakUserCredential manages credentials for a KeycloakUser
 type KeycloakUserCredential struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -78,4 +135,9 @@ type KeycloakUserCredentialList struct {
 
 func init() {
 	SchemeBuilder.Register(&KeycloakUserCredential{}, &KeycloakUserCredentialList{})
+}
+
+// GetUserRef returns the user reference
+func (c *KeycloakUserCredential) GetUserRef() ResourceRef {
+	return c.Spec.UserRef
 }

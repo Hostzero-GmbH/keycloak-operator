@@ -7,9 +7,12 @@
 
 # Test binary, built with `go test -c`
 *.test
+e2e.test
 
 # Output of the go coverage tool
 *.out
+coverage.html
+coverage.txt
 
 # Go workspace files
 go.work
@@ -18,7 +21,7 @@ go.work.sum
 # Dependency directories
 vendor/
 
-# Build output directory
+# Build output directory (Kubebuilder generates binaries here)
 bin/
 
 # IDE and editor directories
@@ -30,21 +33,60 @@ bin/
 
 # OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+
+# Kubernetes config files that may contain secrets
+kubeconfig
+*.kubeconfig
+.kube/
 
 # Local environment files
 .env
 .env.local
 .envrc
 
+# Test artifacts
+testbin/
+cover.out
+junit-report.xml
+
 # Debug files
 debug
 __debug_bin*
 
+# Helm chart dependencies
+charts/*/charts/
+charts/**/Chart.lock
+
 # Temporary files
 tmp/
+temp/
 *.tmp
 *.bak
 
 # Log files
 *.log
+
+# Docker build cache
+.docker/
+
+# Kind cluster config (local testing)
+.kind/
+
+# Generated manifests that shouldn't be committed
+# (uncomment if you generate these during build)
+# config/crd/bases/
+
+# Air live reload (if used for development)
+.air.toml
+tmp/
+
+# Delve debugger
+__debug_bin
+
+# Goreleaser
+dist/

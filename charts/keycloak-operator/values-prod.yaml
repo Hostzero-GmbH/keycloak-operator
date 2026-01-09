@@ -1,36 +1,40 @@
-# Production values for keycloak-operator
+# Production-ready values
+# Usage: helm install keycloak-operator ./charts/keycloak-operator -f ./charts/keycloak-operator/values-prod.yaml
 
 replicaCount: 2
 
 image:
-  repository: ghcr.io/hostzero/keycloak-operator
-  pullPolicy: IfNotPresent
-  tag: ""
+  pullPolicy: Always
 
 resources:
   limits:
     cpu: 1000m
     memory: 512Mi
   requests:
-    cpu: 100m
-    memory: 128Mi
-
-operator:
-  metricsBindAddress: ":8080"
-  healthProbeBindAddress: ":8081"
-  leaderElect: true
-  maxConcurrentRequests: 20
+    cpu: 200m
+    memory: 256Mi
 
 logging:
   level: info
   format: json
+  development: false
 
-crds:
-  install: true
+leaderElection:
+  enabled: true
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    additionalLabels:
+      release: prometheus
 
 podDisruptionBudget:
   enabled: true
   minAvailable: 1
+
+networkPolicy:
+  enabled: true
 
 affinity:
   podAntiAffinity:
@@ -41,3 +45,9 @@ affinity:
             matchLabels:
               app.kubernetes.io/name: keycloak-operator
           topologyKey: kubernetes.io/hostname
+
+tolerations: []
+  # - key: "dedicated"
+  #   operator: "Equal"
+  #   value: "operators"
+  #   effect: "NoSchedule"

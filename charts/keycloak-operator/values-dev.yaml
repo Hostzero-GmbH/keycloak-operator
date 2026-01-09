@@ -1,29 +1,35 @@
-# Development values for keycloak-operator
+# Values for local development with minikube/kind
+# Usage: helm install keycloak-operator ./charts/keycloak-operator -f ./charts/keycloak-operator/values-dev.yaml
 
 replicaCount: 1
 
 image:
   repository: keycloak-operator
-  pullPolicy: Never
+  pullPolicy: Never  # Use local image
   tag: "dev"
 
 resources:
   limits:
-    cpu: 500m
-    memory: 256Mi
+    cpu: 200m
+    memory: 128Mi
   requests:
-    cpu: 10m
+    cpu: 50m
     memory: 64Mi
-
-operator:
-  metricsBindAddress: ":8080"
-  healthProbeBindAddress: ":8081"
-  leaderElect: false
-  maxConcurrentRequests: 5
 
 logging:
   level: debug
-  format: text
+  format: console
+  development: true
+
+leaderElection:
+  enabled: false  # Not needed for single replica dev
+
+metrics:
+  enabled: true
+  port: 8080
+  serviceMonitor:
+    enabled: false
 
 crds:
   install: true
+  keep: false  # Clean up CRDs on uninstall during dev

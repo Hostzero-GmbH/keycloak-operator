@@ -1,168 +1,223 @@
 # Keycloak Operator
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Go Report Card](https://goreportcard.com/badge/github.com/hostzero/keycloak-operator)](https://goreportcard.com/report/github.com/hostzero/keycloak-operator)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/hostzero/keycloak-operator)](go.mod)
+<sub>Sponsored by [Hostzero](https://hostzero.com)</sub>
 
-A Kubernetes operator for managing Keycloak resources declaratively.
-
-## Overview
-
-The Keycloak Operator enables GitOps-style management of Keycloak configuration. Define your realms, clients, users, and roles as Kubernetes custom resources, and the operator will synchronize them with your Keycloak instance.
+A Kubernetes operator for managing Keycloak resources declaratively. It uses the `keycloak.hostzero.com/v1beta1` API group.
 
 ## Features
 
-- **Declarative Configuration**: Manage Keycloak resources as Kubernetes CRDs
-- **GitOps Ready**: Store your Keycloak configuration in Git
-- **Full Lifecycle Management**: Create, update, and delete resources automatically
-- **Multi-Instance Support**: Manage multiple Keycloak instances from a single operator
-- **Cluster-Scoped Resources**: Share instances and realms across namespaces
-- **Keycloak 26+ Support**: Includes organization management for Keycloak 26+
-- **Rate Limiting**: Built-in rate limiting to protect your Keycloak server
-- **Prometheus Metrics**: Monitor operator and Keycloak API performance
+- Declarative management of Keycloak resources via Kubernetes CRDs
+- Full Keycloak API support via `definition` fields
+- Automatic client secret synchronization to Kubernetes Secrets
+- Hierarchical resource management (Instance → Realm → Clients/Users)
+- Helm chart for easy deployment
+- High availability with leader election
+
+## Supported Keycloak Versions
+
+| Keycloak Version | Status |
+|------------------|--------|
+| 20.x - 26.x | ✅ Supported |
+| 19.x and older | ❌ Not supported |
+
+**Minimum supported version: 20.0.0**
+
+The operator validates the Keycloak version on connection and will fail to become ready if an unsupported version is detected. This ensures compatibility with modern Keycloak APIs and security features.
+
+> **Note**: Red Hat Build of Keycloak (RHBK) versions are also supported as they map to upstream Keycloak versions (e.g., RHBK 24.x corresponds to Keycloak 24.x).
 
 ## Documentation
 
-📖 **[Full Documentation](https://hostzero.github.io/keycloak-operator/)**
+📖 **[Read the full documentation](./docs/src/index.md)**
 
-## Quick Start
+## Overview
 
-### Install the Operator
+This operator manages Keycloak instances and their resources (realms, clients, users, etc.) as Kubernetes Custom Resources. It provides:
 
-```bash
-helm install keycloak-operator oci://ghcr.io/hostzero/charts/keycloak-operator \
-  --namespace keycloak-operator \
-  --create-namespace
+- **KeycloakInstance / ClusterKeycloakInstance**: Connection to a Keycloak server
+- **KeycloakRealm / ClusterKeycloakRealm**: Realm configuration
+- **KeycloakClient**: OAuth2/OIDC client configuration
+- **KeycloakClientScope**: Client scope configuration
+- **KeycloakProtocolMapper**: Token claim mappers
+- **KeycloakUser**: User management
+- **KeycloakUserCredential**: User password management
+- **KeycloakGroup**: Group management
+- **KeycloakRole**: Realm and client roles
+- **KeycloakRoleMapping**: Role-to-user/group assignments
+- **KeycloakIdentityProvider**: External identity providers
+- **KeycloakComponent**: LDAP federation, key providers
+- **KeycloakOrganization**: Organization management (Keycloak 26+)
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Kubernetes Cluster                        │
+│  ┌─────────────────┐    ┌──────────────────────────────────┐│
+│  │ Keycloak        │    │  Keycloak Operator                ││
+│  │ Operator CRDs   │───▶│  ┌────────────────────────────┐  ││
+│  │                 │    │  │ Instance Controller        │  ││
+│  │ - Instance      │    │  ├────────────────────────────┤  ││
+│  │ - Realm         │    │  │ Realm Controller           │  ││
+│  │ - Client        │    │  ├────────────────────────────┤  ││
+│  │ - User          │    │  │ Client Controller          │  ││
+│  │ - ...           │    │  ├────────────────────────────┤  ││
+│  └─────────────────┘    │  │ User Controller            │  ││
+│                         │  └────────────────────────────┘  ││
+│                         └──────────────┬───────────────────┘│
+│                                        │                    │
+│                                        ▼                    │
+│                         ┌──────────────────────────────────┐│
+│                         │         Keycloak Server          ││
+│                         │         (Admin REST API)         ││
+│                         └──────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Create a Keycloak Connection
+## Project Structure
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: keycloak-credentials
-stringData:
-  username: admin
-  password: admin
----
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakInstance
-metadata:
-  name: main
-spec:
-  baseUrl: https://keycloak.example.com
-  credentials:
-    secretRef:
-      name: keycloak-credentials
 ```
-
-### Create a Realm
-
-```yaml
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakRealm
-metadata:
-  name: my-app
-spec:
-  instanceRef:
-    name: main
-  definition:
-    realm: my-app
-    enabled: true
-```
-
-## Supported Resources
-
-| Resource | Description |
-|----------|-------------|
-| KeycloakInstance | Connection to a Keycloak server |
-| ClusterKeycloakInstance | Cluster-scoped instance connection |
-| KeycloakRealm | Keycloak realm |
-| ClusterKeycloakRealm | Cluster-scoped realm |
-| KeycloakClient | OAuth2/OIDC client |
-| KeycloakUser | User account |
-| KeycloakRole | Realm or client role |
-| KeycloakGroup | User group |
-| KeycloakClientScope | Client scope |
-| KeycloakRoleMapping | Role assignment to users |
-| KeycloakUserCredential | User password |
-| KeycloakProtocolMapper | Token mapper |
-| KeycloakIdentityProvider | External identity provider |
-| KeycloakComponent | Keycloak components (keys, LDAP) |
-| KeycloakOrganization | Organization (Keycloak 26+) |
-
-## Installation
-
-### Using Helm
-
-```bash
-helm repo add hostzero https://hostzero.github.io/charts
-helm install keycloak-operator hostzero/keycloak-operator \
-  --namespace keycloak-operator \
-  --create-namespace
-```
-
-### From Source
-
-```bash
-git clone https://github.com/hostzero/keycloak-operator.git
-cd keycloak-operator
-make helm-install
-```
-
-## Testing
-
-### Unit Tests
-
-```bash
-make test
-```
-
-### E2E Tests
-
-```bash
-# Create Kind cluster with Keycloak
-make kind-create
-
-# Run e2e tests
-make test-e2e-kind
-
-# Cleanup
-make kind-delete
+keycloak-operator/
+├── api/
+│   └── v1beta1/           # API types (CRDs)
+├── cmd/
+│   └── main.go            # Operator entrypoint
+├── internal/
+│   ├── controller/        # Reconciliation logic
+│   └── keycloak/          # Keycloak client wrapper
+├── config/
+│   ├── crd/               # CRD manifests
+│   ├── manager/           # Operator deployment
+│   ├── rbac/              # RBAC configuration
+│   └── samples/           # Example resources
+├── test/
+│   └── e2e/               # End-to-end tests
+├── charts/
+│   └── keycloak-operator/ # Helm chart
+├── hack/                  # Development scripts
+├── Dockerfile
+├── Makefile
+└── go.mod
 ```
 
 ## Development
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.22+
 - Docker
 - kubectl
-- Kind (for local testing)
-- Helm 3
+- Kind (`brew install kind`)
+- Helm
 
-### Building
-
-```bash
-make build
-make docker-build IMG=myregistry/keycloak-operator:tag
-```
-
-### Documentation
+### Quick Start
 
 ```bash
-# Serve docs locally
-make docs-serve
+# Create Kind cluster with Keycloak and operator deployed
+make kind-all
 
-# Build docs
-make docs
+# Check operator logs
+make kind-logs
+
+# Apply sample resources
+kubectl apply -f config/samples/
 ```
 
-## Contributing
+### Testing
 
-Contributions are welcome! Please read our [Contributing Guide](docs/src/development/contributing.md) for details.
+```bash
+# Run unit tests (fast, no cluster required)
+make test
+
+# Run full E2E tests (requires Kind cluster)
+make kind-test
+```
+
+## Monitoring
+
+The operator exposes Prometheus metrics at `:8080/metrics` for observability:
+
+- **Reconciliation metrics**: Total reconciliations, duration, errors by controller
+- **Resource metrics**: Managed and ready resources by type
+- **Keycloak connection**: Connection status, API request counts and latency
+
+Key alerts to configure:
+- Connection failures (`keycloak_operator_keycloak_connection_status == 0`)
+- High error rate (>10% reconciliation failures)
+- Resources not ready for extended periods
+
+See the [Monitoring Documentation](./docs/src/monitoring.md) for detailed metrics reference, alerting rules, and Grafana dashboard recommendations.
+
+## API Reference
+
+### KeycloakInstance
+
+Defines a connection to a Keycloak server.
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakInstance
+metadata:
+  name: keycloak-instance
+spec:
+  baseUrl: http://keycloak:8080
+  credentials:
+    secretName: keycloak-admin
+    usernameKey: username
+    passwordKey: password
+```
+
+### KeycloakRealm
+
+Defines a realm within a Keycloak instance.
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: my-realm
+spec:
+  instanceRef: keycloak-instance
+  definition:
+    realm: my-realm
+    displayName: My Realm
+    enabled: true
+```
+
+### KeycloakClient
+
+Defines an OAuth2/OIDC client within a realm.
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClient
+metadata:
+  name: my-client
+spec:
+  realmRef: my-realm
+  definition:
+    clientId: my-client
+    name: My Application
+    publicClient: false
+    standardFlowEnabled: true
+  clientSecret:
+    secretName: my-client-secret
+```
+
+## Enterprise Support
+
+This operator is developed and maintained by [**Hostzero GmbH**](https://hostzero.com), a provider of sovereign IT infrastructure solutions.
+
+**For organizations with critical infrastructure needs (KRITIS), we offer:**
+
+- Enterprise support with SLAs
+- Security hardening and compliance consulting
+- On-premises deployment assistance
+- 24/7 incident response
+- Training and workshops
+
+[Contact us](https://hostzero.com/contact) for enterprise licensing and support options.
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE) for details.

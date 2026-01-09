@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -20,7 +22,8 @@ import (
 // KeycloakClientScopeReconciler reconciles a KeycloakClientScope object
 type KeycloakClientScopeReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme        *runtime.Scheme
+	ClientManager *keycloak.ClientManager
 }
 
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakclientscopes,verbs=get;list;watch;create;update;patch;delete
@@ -30,25 +33,35 @@ type KeycloakClientScopeReconciler struct {
 // Reconcile handles KeycloakClientScope reconciliation
 func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
+	startTime := time.Now()
+	controllerName := "KeycloakClientScope"
 
 	// Fetch the KeycloakClientScope
-	scope := &keycloakv1beta1.KeycloakClientScope{}
-	if err := r.Get(ctx, req.NamespacedName, scope); err != nil {
+	clientScope := &keycloakv1beta1.KeycloakClientScope{}
+	if err := r.Get(ctx, req.NamespacedName, clientScope); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		log.Error(err, "unable to fetch KeycloakClientScope")
+		RecordReconcile(controllerName, false, time.Since(startTime).Seconds())
+		RecordError(controllerName, "fetch_error")
 		return ctrl.Result{}, err
 	}
 
+	// Defer metrics recording
+	defer func() {
+		RecordReconcile(controllerName, clientScope.Status.Ready, time.Since(startTime).Seconds())
+	}()
+
 	// Handle deletion
-	if !scope.DeletionTimestamp.IsZero() {
-		if controllerutil.ContainsFinalizer(scope, FinalizerName) {
-			if err := r.deleteClientScope(ctx, scope); err != nil {
+	if !clientScope.DeletionTimestamp.IsZero() {
+		if controllerutil.ContainsFinalizer(clientScope, FinalizerName) {
+			if err := r.deleteClientScope(ctx, clientScope); err != nil {
 				log.Error(err, "failed to delete client scope from Keycloak")
 			}
-			controllerutil.RemoveFinalizer(scope, FinalizerName)
-			if err := r.Update(ctx, scope); err != nil {
+
+			controllerutil.RemoveFinalizer(clientScope, FinalizerName)
+			if err := r.Update(ctx, clientScope); err != nil {
 				return ctrl.Result{}, err
 			}
 		}
@@ -56,96 +69,107 @@ func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	// Add finalizer if not present
-	if !controllerutil.ContainsFinalizer(scope, FinalizerName) {
-		controllerutil.AddFinalizer(scope, FinalizerName)
-		if err := r.Update(ctx, scope); err != nil {
+	if !controllerutil.ContainsFinalizer(clientScope, FinalizerName) {
+		controllerutil.AddFinalizer(clientScope, FinalizerName)
+		if err := r.Update(ctx, clientScope); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Get Keycloak client and realm info
-	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, scope)
+	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, clientScope)
 	if err != nil {
-		log.Error(err, "failed to get Keycloak client")
-		return r.updateStatus(ctx, scope, false, "Error", err.Error())
+		RecordError(controllerName, "realm_not_ready")
+		return r.updateStatus(ctx, clientScope, false, "RealmNotReady", err.Error(), "")
 	}
 
-	// Parse scope definition
+	// Parse client scope definition to extract name
 	var scopeDef struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(scope.Spec.Definition.Raw, &scopeDef); err != nil {
-		log.Error(err, "failed to parse client scope definition")
-		return r.updateStatus(ctx, scope, false, "Error", fmt.Sprintf("Invalid definition: %v", err))
+	if err := json.Unmarshal(clientScope.Spec.Definition.Raw, &scopeDef); err != nil {
+		RecordError(controllerName, "invalid_definition")
+		return r.updateStatus(ctx, clientScope, false, "InvalidDefinition", fmt.Sprintf("Failed to parse client scope definition: %v", err), "")
 	}
 
-	// Check if client scope exists
-	existingScope, err := kc.GetClientScopeByName(ctx, realmName, scopeDef.Name)
-	if err != nil {
-		// Scope doesn't exist, create it
-		scopeID, err := kc.CreateClientScope(ctx, realmName, scope.Spec.Definition.Raw)
-		if err != nil {
-			log.Error(err, "failed to create client scope")
-			return r.updateStatus(ctx, scope, false, "Error", fmt.Sprintf("Failed to create: %v", err))
+	// Ensure name is set
+	if scopeDef.Name == "" {
+		// Default to metadata.name
+		scopeDef.Name = clientScope.Name
+	}
+
+	// Prepare definition JSON with name set
+	definition := setFieldInDefinition(clientScope.Spec.Definition.Raw, "name", scopeDef.Name)
+
+	// Check if client scope exists by name
+	existingScopes, err := kc.GetClientScopes(ctx, realmName)
+	var existingScope *keycloak.ClientScopeRepresentation
+	if err == nil {
+		for i := range existingScopes {
+			if existingScopes[i].Name != nil && *existingScopes[i].Name == scopeDef.Name {
+				existingScope = &existingScopes[i]
+				break
+			}
 		}
-		log.Info("created client scope", "name", scopeDef.Name, "id", scopeID)
-		scope.Status.ScopeID = scopeID
-		return r.updateStatus(ctx, scope, true, "Created", "Client scope created successfully")
 	}
 
-	// Scope exists, update it
-	if err := kc.UpdateClientScope(ctx, realmName, *existingScope.ID, scope.Spec.Definition.Raw); err != nil {
-		log.Error(err, "failed to update client scope")
-		return r.updateStatus(ctx, scope, false, "Error", fmt.Sprintf("Failed to update: %v", err))
+	var scopeID string
+	if existingScope == nil {
+		// Client scope doesn't exist, create it
+		log.Info("creating client scope", "name", scopeDef.Name, "realm", realmName)
+		scopeID, err = kc.CreateClientScope(ctx, realmName, definition)
+		if err != nil {
+			RecordError(controllerName, "keycloak_api_error")
+			return r.updateStatus(ctx, clientScope, false, "CreateFailed", fmt.Sprintf("Failed to create client scope: %v", err), "")
+		}
+		log.Info("client scope created successfully", "name", scopeDef.Name, "id", scopeID)
+	} else {
+		// Client scope exists, update it
+		scopeID = *existingScope.ID
+		definition = mergeIDIntoDefinition(definition, existingScope.ID)
+
+		log.Info("updating client scope", "name", scopeDef.Name, "realm", realmName)
+		if err := kc.UpdateClientScope(ctx, realmName, scopeID, definition); err != nil {
+			RecordError(controllerName, "keycloak_api_error")
+			return r.updateStatus(ctx, clientScope, false, "UpdateFailed", fmt.Sprintf("Failed to update client scope: %v", err), scopeID)
+		}
+		log.Info("client scope updated successfully", "name", scopeDef.Name)
 	}
 
-	log.Info("updated client scope", "name", scopeDef.Name, "id", *existingScope.ID)
-	scope.Status.ScopeID = *existingScope.ID
-	return r.updateStatus(ctx, scope, true, "Ready", "Client scope synchronized")
+	// Update status
+	clientScope.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s/client-scopes/%s", realmName, scopeID)
+	return r.updateStatus(ctx, clientScope, true, "Ready", "Client scope synchronized", scopeID)
 }
 
-func (r *KeycloakClientScopeReconciler) updateStatus(ctx context.Context, scope *keycloakv1beta1.KeycloakClientScope, ready bool, status, message string) (ctrl.Result, error) {
-	scope.Status.Ready = ready
-	scope.Status.Status = status
-	scope.Status.Message = message
-
-	if err := r.Status().Update(ctx, scope); err != nil {
-		return ctrl.Result{}, err
+func (r *KeycloakClientScopeReconciler) getKeycloakClientAndRealm(ctx context.Context, clientScope *keycloakv1beta1.KeycloakClientScope) (*keycloak.Client, string, error) {
+	// Check if using cluster realm ref
+	if clientScope.Spec.ClusterRealmRef != nil {
+		return r.getKeycloakClientFromClusterRealm(ctx, clientScope.Spec.ClusterRealmRef.Name)
 	}
-	return ctrl.Result{}, nil
-}
 
-func (r *KeycloakClientScopeReconciler) getKeycloakClientAndRealm(ctx context.Context, scope *keycloakv1beta1.KeycloakClientScope) (*keycloak.Client, string, error) {
-	// Get the referenced realm
-	realm := &keycloakv1beta1.KeycloakRealm{}
+	// Use namespaced realm ref
+	if clientScope.Spec.RealmRef == nil {
+		return nil, "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
+	}
+
+	realmNamespace := clientScope.Namespace
+	if clientScope.Spec.RealmRef.Namespace != nil {
+		realmNamespace = *clientScope.Spec.RealmRef.Namespace
+	}
 	realmName := types.NamespacedName{
-		Name:      scope.Spec.RealmRef.Name,
-		Namespace: scope.Namespace,
+		Name:      clientScope.Spec.RealmRef.Name,
+		Namespace: realmNamespace,
 	}
-	if scope.Spec.RealmRef.Namespace != nil {
-		realmName.Namespace = *scope.Spec.RealmRef.Namespace
-	}
+
+	// Get the KeycloakRealm
+	realm := &keycloakv1beta1.KeycloakRealm{}
 	if err := r.Get(ctx, realmName, realm); err != nil {
-		return nil, "", fmt.Errorf("failed to get realm: %w", err)
+		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
 	}
 
-	// Get the instance from the realm
-	instance := &keycloakv1beta1.KeycloakInstance{}
-	instanceName := types.NamespacedName{
-		Name:      realm.Spec.InstanceRef.Name,
-		Namespace: realm.Namespace,
-	}
-	if realm.Spec.InstanceRef.Namespace != nil {
-		instanceName.Namespace = *realm.Spec.InstanceRef.Namespace
-	}
-	if err := r.Get(ctx, instanceName, instance); err != nil {
-		return nil, "", fmt.Errorf("failed to get instance: %w", err)
-	}
-
-	cfg, err := GetKeycloakConfigFromInstance(ctx, r.Client, instance)
-	if err != nil {
-		return nil, "", err
+	if !realm.Status.Ready {
+		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 
 	// Get realm name from definition
@@ -156,28 +180,190 @@ func (r *KeycloakClientScopeReconciler) getKeycloakClientAndRealm(ctx context.Co
 		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
-	return keycloak.NewClient(cfg, log.FromContext(ctx)), realmDef.Realm, nil
+	// Get instance reference from realm
+	if realm.Spec.InstanceRef == nil {
+		return nil, "", fmt.Errorf("realm %s has no instanceRef", realmName)
+	}
+
+	instanceNamespace := realm.Namespace
+	if realm.Spec.InstanceRef.Namespace != nil {
+		instanceNamespace = *realm.Spec.InstanceRef.Namespace
+	}
+	instanceName := types.NamespacedName{
+		Name:      realm.Spec.InstanceRef.Name,
+		Namespace: instanceNamespace,
+	}
+
+	instance := &keycloakv1beta1.KeycloakInstance{}
+	if err := r.Get(ctx, instanceName, instance); err != nil {
+		return nil, "", fmt.Errorf("failed to get KeycloakInstance %s: %w", instanceName, err)
+	}
+
+	if !instance.Status.Ready {
+		return nil, "", fmt.Errorf("KeycloakInstance %s is not ready", instanceName)
+	}
+
+	cfg, err := GetKeycloakConfigFromInstance(ctx, r.Client, instance)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get Keycloak config from KeycloakInstance %s: %w", instanceName, err)
+	}
+
+	kc := r.ClientManager.GetOrCreateClient(instanceName.String(), cfg)
+	if kc == nil {
+		return nil, "", fmt.Errorf("Keycloak client not available for instance %s", instanceName)
+	}
+
+	return kc, realmDef.Realm, nil
 }
 
-func (r *KeycloakClientScopeReconciler) deleteClientScope(ctx context.Context, scope *keycloakv1beta1.KeycloakClientScope) error {
-	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, scope)
+func (r *KeycloakClientScopeReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {
+	// Get the ClusterKeycloakRealm
+	clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{}
+	if err := r.Get(ctx, types.NamespacedName{Name: clusterRealmName}, clusterRealm); err != nil {
+		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
+	}
+
+	if !clusterRealm.Status.Ready {
+		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
+	}
+
+	// Get realm name
+	realmName := clusterRealm.Status.RealmName
+	if realmName == "" {
+		var realmDef struct {
+			Realm string `json:"realm"`
+		}
+		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
+			return nil, "", fmt.Errorf("failed to parse cluster realm definition: %w", err)
+		}
+		realmName = realmDef.Realm
+	}
+
+	// Get Keycloak client from cluster instance
+	if clusterRealm.Spec.ClusterInstanceRef != nil {
+		clusterInstance := &keycloakv1beta1.ClusterKeycloakInstance{}
+		if err := r.Get(ctx, types.NamespacedName{Name: clusterRealm.Spec.ClusterInstanceRef.Name}, clusterInstance); err != nil {
+			return nil, "", fmt.Errorf("failed to get ClusterKeycloakInstance %s: %w", clusterRealm.Spec.ClusterInstanceRef.Name, err)
+		}
+
+		if !clusterInstance.Status.Ready {
+			return nil, "", fmt.Errorf("ClusterKeycloakInstance %s is not ready", clusterRealm.Spec.ClusterInstanceRef.Name)
+		}
+
+		cfg, err := GetKeycloakConfigFromClusterInstance(ctx, r.Client, clusterInstance)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get Keycloak config from ClusterKeycloakInstance %s: %w", clusterRealm.Spec.ClusterInstanceRef.Name, err)
+		}
+
+		kc := r.ClientManager.GetOrCreateClient(clusterInstanceKey(clusterRealm.Spec.ClusterInstanceRef.Name), cfg)
+		if kc == nil {
+			return nil, "", fmt.Errorf("Keycloak client not available for cluster instance %s", clusterRealm.Spec.ClusterInstanceRef.Name)
+		}
+		return kc, realmName, nil
+	}
+
+	// Use namespaced instance ref
+	if clusterRealm.Spec.InstanceRef == nil {
+		return nil, "", fmt.Errorf("cluster realm %s has no instanceRef or clusterInstanceRef", clusterRealmName)
+	}
+
+	instanceName := types.NamespacedName{
+		Name:      clusterRealm.Spec.InstanceRef.Name,
+		Namespace: clusterRealm.Spec.InstanceRef.Namespace,
+	}
+
+	instance := &keycloakv1beta1.KeycloakInstance{}
+	if err := r.Get(ctx, instanceName, instance); err != nil {
+		return nil, "", fmt.Errorf("failed to get KeycloakInstance %s: %w", instanceName, err)
+	}
+
+	if !instance.Status.Ready {
+		return nil, "", fmt.Errorf("KeycloakInstance %s is not ready", instanceName)
+	}
+
+	cfg, err := GetKeycloakConfigFromInstance(ctx, r.Client, instance)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get Keycloak config from KeycloakInstance %s: %w", instanceName, err)
+	}
+
+	kc := r.ClientManager.GetOrCreateClient(instanceName.String(), cfg)
+	if kc == nil {
+		return nil, "", fmt.Errorf("Keycloak client not available for instance %s", instanceName)
+	}
+
+	return kc, realmName, nil
+}
+
+func (r *KeycloakClientScopeReconciler) deleteClientScope(ctx context.Context, clientScope *keycloakv1beta1.KeycloakClientScope) error {
+	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, clientScope)
 	if err != nil {
 		return err
 	}
 
+	// Get scope ID from resource path or find by name
 	var scopeDef struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(scope.Spec.Definition.Raw, &scopeDef); err != nil {
+	if err := json.Unmarshal(clientScope.Spec.Definition.Raw, &scopeDef); err != nil {
+		return fmt.Errorf("failed to parse client scope definition: %w", err)
+	}
+
+	if scopeDef.Name == "" {
+		scopeDef.Name = clientScope.Name
+	}
+
+	// Find scope by name
+	scopes, err := kc.GetClientScopes(ctx, realmName)
+	if err != nil {
 		return err
 	}
 
-	existingScope, err := kc.GetClientScopeByName(ctx, realmName, scopeDef.Name)
-	if err != nil {
-		return nil // Scope doesn't exist
+	for _, s := range scopes {
+		if s.Name != nil && *s.Name == scopeDef.Name {
+			return kc.DeleteClientScope(ctx, realmName, *s.ID)
+		}
 	}
 
-	return kc.DeleteClientScope(ctx, realmName, *existingScope.ID)
+	return nil // Scope doesn't exist
+}
+
+func (r *KeycloakClientScopeReconciler) updateStatus(ctx context.Context, clientScope *keycloakv1beta1.KeycloakClientScope, ready bool, status, message, scopeID string) (ctrl.Result, error) {
+	clientScope.Status.Ready = ready
+	clientScope.Status.Status = status
+	clientScope.Status.Message = message
+
+	// Update conditions
+	condition := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		Reason:             status,
+		Message:            message,
+		LastTransitionTime: metav1.Now(),
+	}
+	if ready {
+		condition.Status = metav1.ConditionTrue
+	}
+
+	found := false
+	for i, c := range clientScope.Status.Conditions {
+		if c.Type == "Ready" {
+			clientScope.Status.Conditions[i] = condition
+			found = true
+			break
+		}
+	}
+	if !found {
+		clientScope.Status.Conditions = append(clientScope.Status.Conditions, condition)
+	}
+
+	if err := r.Status().Update(ctx, clientScope); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if ready {
+		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
+	}
+	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager

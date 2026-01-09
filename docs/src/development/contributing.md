@@ -6,84 +6,82 @@ Thank you for your interest in contributing to the Keycloak Operator!
 
 Please be respectful and constructive in all interactions.
 
-## Getting Started
+## How to Contribute
+
+### Reporting Issues
+
+- Search existing issues first
+- Provide clear reproduction steps
+- Include relevant logs and configuration
+
+### Submitting Changes
 
 1. Fork the repository
-2. Clone your fork
-3. Create a feature branch
-4. Make your changes
-5. Submit a pull request
+2. Create a feature branch:
+   ```bash
+   git checkout -b feature/my-feature
+   ```
 
-## Development Workflow
+3. Make your changes following the code style
 
-```bash
-# Create branch
-git checkout -b feature/my-feature
+4. Add tests for new functionality
 
-# Make changes
-# ...
+5. Run checks:
+   ```bash
+   make fmt
+   make vet
+   make lint
+   make test
+   ```
 
-# Run tests
-make test
+6. Commit with a clear message:
+   ```bash
+   git commit -m "feat: add support for X"
+   ```
 
-# Format code
-make fmt
+7. Push and create a Pull Request
 
-# Run linter
-make lint
+### Commit Messages
 
-# Commit
-git commit -m "Add my feature"
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
-# Push
-git push origin feature/my-feature
-```
+- `feat:` New feature
+- `fix:` Bug fix
+- `docs:` Documentation only
+- `refactor:` Code change without feature/fix
+- `test:` Adding tests
+- `chore:` Maintenance
 
-## Pull Request Guidelines
+### Code Style
 
-### Before Submitting
-
-- [ ] Code compiles without errors
-- [ ] All tests pass
-- [ ] Code is formatted (`make fmt`)
-- [ ] Linter passes (`make lint`)
-- [ ] Documentation updated if needed
-
-### PR Description
-
-Include:
-- What the PR does
-- Why it's needed
-- How to test it
-
-## Code Style
-
-- Follow Go conventions
-- Use meaningful variable names
-- Add comments for complex logic
+- Follow standard Go conventions
+- Use `gofmt` and `golangci-lint`
+- Add comments for exported types/functions
 - Keep functions focused and small
 
-## Adding a New CRD
+### Testing Requirements
 
-1. Define types in `api/v1beta1/`
-2. Run `make generate manifests`
-3. Implement controller in `internal/controller/`
-4. Add Keycloak client methods if needed
-5. Write tests
-6. Update documentation
+- Unit tests for new logic
+- E2E tests for new CRD features and Keycloak interactions
 
-## Commit Messages
+## Development Setup
 
-Use conventional commit format:
+See [Local Setup](./local-setup.md) for environment setup.
 
-```
-type(scope): description
+## Pull Request Process
 
-feat(realm): add support for realm events
-fix(client): handle missing secret gracefully
-docs(readme): update installation instructions
-```
+1. Ensure all tests pass
+2. Update documentation if needed
+3. Request review from maintainers
+4. Address feedback
+5. Squash commits if requested
 
-## Questions?
+## Getting Help
 
-Open an issue for questions or discussions.
+- Open an issue for questions
+- Check existing documentation
+- Review similar PRs for patterns
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the MIT License.

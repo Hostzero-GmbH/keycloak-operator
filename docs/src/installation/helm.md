@@ -1,71 +1,111 @@
-# Helm Installation
+# Helm Chart Installation
 
-Production-ready installation using Helm.
+The Keycloak Operator Helm chart provides a flexible way to deploy the operator with customizable settings.
 
-## Add the Helm Repository
+## Installation
 
-```bash
-helm repo add hostzero https://hostzero.github.io/charts
-helm repo update
-```
-
-## Install with Default Values
+### From Local Chart
 
 ```bash
-helm install keycloak-operator hostzero/keycloak-operator \
+helm install keycloak-operator ./charts/keycloak-operator \
   --namespace keycloak-operator \
   --create-namespace
 ```
 
-## Install with Custom Values
-
-Create a `values.yaml` file:
-
-```yaml
-replicaCount: 2
-
-image:
-  repository: ghcr.io/hostzero/keycloak-operator
-  tag: latest
-  pullPolicy: IfNotPresent
-
-resources:
-  limits:
-    cpu: 500m
-    memory: 256Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-
-args:
-  - --max-concurrent-requests=20
-  - --leader-elect=true
-
-serviceAccount:
-  create: true
-  name: keycloak-operator
-
-metrics:
-  enabled: true
-  serviceMonitor:
-    enabled: true
-```
-
-Install with custom values:
+### With Custom Values
 
 ```bash
-helm install keycloak-operator hostzero/keycloak-operator \
+helm install keycloak-operator ./charts/keycloak-operator \
   --namespace keycloak-operator \
   --create-namespace \
-  -f values.yaml
+  --values my-values.yaml
+```
+
+## Configuration
+
+### Common Parameters
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `replicaCount` | Number of operator replicas | `1` |
+| `image.repository` | Container image repository | `ghcr.io/hostzero/keycloak-operator` |
+| `image.tag` | Container image tag | Chart appVersion |
+| `image.pullPolicy` | Image pull policy | `IfNotPresent` |
+
+### Resources
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `resources.limits.cpu` | CPU limit | `500m` |
+| `resources.limits.memory` | Memory limit | `256Mi` |
+| `resources.requests.cpu` | CPU request | `100m` |
+| `resources.requests.memory` | Memory request | `128Mi` |
+
+### Features
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `leaderElection.enabled` | Enable leader election | `true` |
+| `metrics.enabled` | Enable metrics endpoint | `true` |
+| `metrics.serviceMonitor.enabled` | Create Prometheus ServiceMonitor | `false` |
+
+### CRDs
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `crds.install` | Install CRDs with Helm | `true` |
+| `crds.keep` | Keep CRDs on uninstall | `true` |
+
+## Example Values Files
+
+### Development
+
+```yaml
+# values-dev.yaml
+replicaCount: 1
+image:
+  pullPolicy: Never
+  tag: "dev"
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+leaderElection:
+  enabled: false
+logging:
+  level: debug
+crds:
+  keep: false
+```
+
+### Production
+
+```yaml
+# values-prod.yaml
+replicaCount: 2
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 200m
+    memory: 256Mi
+metrics:
+  serviceMonitor:
+    enabled: true
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+networkPolicy:
+  enabled: true
 ```
 
 ## Upgrading
 
 ```bash
-helm upgrade keycloak-operator hostzero/keycloak-operator \
+helm upgrade keycloak-operator ./charts/keycloak-operator \
   --namespace keycloak-operator \
-  -f values.yaml
+  --values my-values.yaml
 ```
 
 ## Uninstalling
@@ -74,12 +114,14 @@ helm upgrade keycloak-operator hostzero/keycloak-operator \
 helm uninstall keycloak-operator --namespace keycloak-operator
 ```
 
-Note: CRDs are not removed automatically. To remove them:
+**Note:** CRDs are kept by default. To remove them:
 
 ```bash
-kubectl delete crds -l app.kubernetes.io/name=keycloak-operator
+kubectl delete crd keycloakinstances.keycloak.hostzero.com
+kubectl delete crd keycloakrealms.keycloak.hostzero.com
+kubectl delete crd keycloakclients.keycloak.hostzero.com
+kubectl delete crd keycloakusers.keycloak.hostzero.com
+kubectl delete crd keycloakclientscopes.keycloak.hostzero.com
+kubectl delete crd keycloakgroups.keycloak.hostzero.com
+kubectl delete crd keycloakidentityproviders.keycloak.hostzero.com
 ```
-
-## Configuration Reference
-
-See [Helm Values](../configuration/helm-values.md) for all available options.

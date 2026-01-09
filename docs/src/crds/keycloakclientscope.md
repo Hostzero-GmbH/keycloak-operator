@@ -1,49 +1,104 @@
 # KeycloakClientScope
 
-Manages a client scope for token customization.
+A `KeycloakClientScope` represents a client scope within a Keycloak realm.
 
-## Spec
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `realmRef` | ResourceRef | Yes | Reference to KeycloakRealm |
-| `definition` | object | Yes | ClientScope representation |
-
-## Status
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ready` | bool | Scope is synced |
-| `status` | string | Human-readable status |
-| `message` | string | Detailed message |
-| `scopeId` | string | Keycloak scope UUID |
-
-## Example
+## Specification
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakClientScope
 metadata:
-  name: custom-claims
+  name: my-scope
 spec:
+  # One of realmRef or clusterRealmRef must be specified
+  
+  # Option 1: Reference to a namespaced KeycloakRealm
   realmRef:
-    name: my-app
+    name: my-realm
+    namespace: default  # Optional, defaults to same namespace
+  
+  # Option 2: Reference to a ClusterKeycloakRealm
+  clusterRealmRef:
+    name: my-cluster-realm
+  
+  # Required: Client scope definition
   definition:
-    name: custom-claims
+    name: my-scope
     protocol: openid-connect
-    description: Custom claims for our applications
-    attributes:
-      include.in.token.scope: "true"
-      display.on.consent.screen: "false"
+    # ... any other properties
 ```
 
-## Adding Protocol Mappers
+## Status
 
-Use [KeycloakProtocolMapper](./keycloakprotocolmapper.md) with `clientScopeRef` to add mappers to scopes.
+```yaml
+status:
+  ready: true
+  scopeId: "12345678-1234-1234-1234-123456789abc"
+  message: "Client scope synchronized successfully"
+```
 
-## Scope Types
+## Example
 
-| Type | Description |
-|------|-------------|
-| Default | Automatically included for all clients |
-| Optional | Client must explicitly request |
+### Basic Scope
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClientScope
+metadata:
+  name: profile-extended
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    name: profile-extended
+    description: Extended profile information
+    protocol: openid-connect
+```
+
+### Scope with Protocol Mappers
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClientScope
+metadata:
+  name: department-scope
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    name: department
+    description: Department information
+    protocol: openid-connect
+    protocolMappers:
+      - name: department
+        protocol: openid-connect
+        protocolMapper: oidc-usermodel-attribute-mapper
+        consentRequired: false
+        config:
+          claim.name: department
+          user.attribute: department
+          jsonType.label: String
+          id.token.claim: "true"
+          access.token.claim: "true"
+          userinfo.token.claim: "true"
+```
+
+## Definition Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | string | Scope name (required) |
+| `description` | string | Description |
+| `protocol` | string | Protocol (openid-connect, saml) |
+| `protocolMappers` | array | Protocol mapper configurations |
+| `attributes` | map | Additional attributes |
+
+## Short Names
+
+| Alias | Full Name |
+|-------|-----------|
+| `kccs` | `keycloakclientscopes` |
+
+```bash
+kubectl get kccs
+```

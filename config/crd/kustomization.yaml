@@ -3,6 +3,17 @@ kind: Kustomization
 
 resources:
   - bases/keycloak.hostzero.com_keycloakinstances.yaml
+  - bases/keycloak.hostzero.com_clusterkeycloakinstances.yaml
   - bases/keycloak.hostzero.com_keycloakrealms.yaml
+  - bases/keycloak.hostzero.com_clusterkeycloakrealms.yaml
   - bases/keycloak.hostzero.com_keycloakclients.yaml
   - bases/keycloak.hostzero.com_keycloakusers.yaml
+  - bases/keycloak.hostzero.com_keycloakusercredentials.yaml
+  - bases/keycloak.hostzero.com_keycloakrolemappings.yaml
+  - bases/keycloak.hostzero.com_keycloakclientscopes.yaml
+  - bases/keycloak.hostzero.com_keycloakgroups.yaml
+  - bases/keycloak.hostzero.com_keycloakidentityproviders.yaml
+  - bases/keycloak.hostzero.com_keycloakroles.yaml
+  - bases/keycloak.hostzero.com_keycloakprotocolmappers.yaml
+  - bases/keycloak.hostzero.com_keycloakcomponents.yaml
+  - bases/keycloak.hostzero.com_keycloakorganizations.yaml

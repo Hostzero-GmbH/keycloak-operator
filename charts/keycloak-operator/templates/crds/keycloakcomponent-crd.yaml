@@ -1,0 +1,119 @@
+{{- if .Values.crds.install }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: keycloakcomponents.keycloak.hostzero.com
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+    {{- if .Values.crds.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+  labels:
+    {{- include "keycloak-operator.labels" . | nindent 4 }}
+spec:
+  group: keycloak.hostzero.com
+  names:
+    kind: KeycloakComponent
+    listKind: KeycloakComponentList
+    plural: keycloakcomponents
+    singular: keycloakcomponent
+    shortNames:
+      - kcco
+    categories:
+      - keycloak
+      - all
+  scope: Namespaced
+  versions:
+    - name: v1beta1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: KeycloakComponent defines a component within a KeycloakRealm
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - definition
+              properties:
+                realmRef:
+                  type: object
+                  description: Reference to a KeycloakRealm
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                    namespace:
+                      type: string
+                clusterRealmRef:
+                  type: object
+                  description: Reference to a ClusterKeycloakRealm
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                definition:
+                  type: object
+                  description: Keycloak ComponentRepresentation
+                  x-kubernetes-preserve-unknown-fields: true
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                status:
+                  type: string
+                message:
+                  type: string
+                resourcePath:
+                  type: string
+                componentID:
+                  type: string
+                componentName:
+                  type: string
+                providerType:
+                  type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Ready
+          type: boolean
+          jsonPath: .status.ready
+        - name: Name
+          type: string
+          jsonPath: .status.componentName
+        - name: Type
+          type: string
+          jsonPath: .status.providerType
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+{{- end }}

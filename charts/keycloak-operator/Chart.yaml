@@ -4,11 +4,17 @@ description: A Kubernetes operator for managing Keycloak resources
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/hostzero/keycloak-operator
+sources:
+  - https://github.com/hostzero/keycloak-operator
 keywords:
   - keycloak
   - operator
   - identity
   - authentication
+  - oauth
+  - oidc
 maintainers:
-  - name: hostzero
-    email: support@hostzero.com
+  - name: HostZero
+    url: https://hostzero.com

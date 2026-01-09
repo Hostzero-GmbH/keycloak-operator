@@ -1,9 +1,17 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+#
+# Teardown the Kind development cluster and clean up resources
+#
 
-CLUSTER_NAME="${CLUSTER_NAME:-keycloak-operator-e2e}"
+set -euo pipefail
 
-echo "Deleting Kind cluster: $CLUSTER_NAME"
-kind delete cluster --name "$CLUSTER_NAME"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLUSTER_NAME="${KIND_CLUSTER_NAME:-keycloak-operator-dev}"
 
-echo "Cluster deleted"
+echo "Deleting Kind cluster '${CLUSTER_NAME}'..."
+kind delete cluster --name "${CLUSTER_NAME}" 2>/dev/null || true
+
+echo "Pruning unused Docker resources..."
+docker system prune -f --volumes 2>/dev/null || true
+
+echo "Done!"

@@ -1,26 +1,58 @@
-# Helm Values
+# Helm Values Reference
 
-Complete reference for Helm chart configuration.
+Complete reference for all Helm chart values.
 
-## Image Configuration
-
-```yaml
-image:
-  repository: ghcr.io/hostzero/keycloak-operator
-  tag: latest
-  pullPolicy: IfNotPresent
-
-imagePullSecrets: []
-```
-
-## Replicas and Scaling
+## Global
 
 ```yaml
+# Number of replicas
 replicaCount: 1
 
-# For HA, use leader election
-args:
-  - --leader-elect=true
+# Image configuration
+image:
+  repository: ghcr.io/hostzero/keycloak-operator
+  pullPolicy: IfNotPresent
+  tag: ""  # Defaults to Chart.appVersion
+
+# Image pull secrets
+imagePullSecrets: []
+
+# Name overrides
+nameOverride: ""
+fullnameOverride: ""
+```
+
+## Service Account
+
+```yaml
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+```
+
+## Pod Configuration
+
+```yaml
+# Pod annotations
+podAnnotations: {}
+
+# Pod labels
+podLabels: {}
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
 ```
 
 ## Resources
@@ -35,23 +67,69 @@ resources:
     memory: 128Mi
 ```
 
-## Operator Arguments
+## Scheduling
 
 ```yaml
-args:
-  - --max-concurrent-requests=10
-  - --leader-elect=false
-  - --metrics-bind-address=:8080
-  - --health-probe-bind-address=:8081
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
 ```
 
-## Service Account
+## Leader Election
 
 ```yaml
-serviceAccount:
-  create: true
-  name: keycloak-operator
-  annotations: {}
+leaderElection:
+  enabled: true
+```
+
+## Metrics
+
+```yaml
+metrics:
+  enabled: true
+  port: 8080
+  serviceMonitor:
+    enabled: false
+    additionalLabels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+```
+
+## Health Probes
+
+```yaml
+health:
+  port: 8081
+```
+
+## Logging
+
+```yaml
+logging:
+  level: info      # debug, info, error
+  format: json     # json, console
+  development: false
+```
+
+## Performance Tuning
+
+```yaml
+performance:
+  # Sync period for re-checking successfully reconciled resources
+  # Higher values reduce Keycloak API load but increase drift detection time
+  syncPeriod: "5m"        # e.g., "5m", "30m", "1h"
+  
+  # Maximum concurrent requests to Keycloak (0 = no limit)
+  # Lower values reduce Keycloak load but slow reconciliation
+  maxConcurrentRequests: 10
+```
+
+For large deployments (100+ resources), consider:
+```yaml
+performance:
+  syncPeriod: "30m"
+  maxConcurrentRequests: 5
 ```
 
 ## RBAC
@@ -61,72 +139,44 @@ rbac:
   create: true
 ```
 
-## Metrics and Monitoring
-
-```yaml
-metrics:
-  enabled: true
-  port: 8080
-
-  serviceMonitor:
-    enabled: false
-    namespace: ""
-    interval: 30s
-    scrapeTimeout: 10s
-```
-
-## Node Selection
-
-```yaml
-nodeSelector: {}
-
-tolerations: []
-
-affinity: {}
-```
-
 ## CRDs
 
 ```yaml
 crds:
   install: true
+  keep: true  # Keep CRDs on uninstall
 ```
 
-## Complete Example
+## Extra Configuration
 
 ```yaml
-replicaCount: 2
+# Additional environment variables
+extraEnv: []
+  # - name: MY_VAR
+  #   value: my-value
 
-image:
-  repository: ghcr.io/hostzero/keycloak-operator
-  tag: v1.0.0
-  pullPolicy: IfNotPresent
+# Additional volumes
+extraVolumes: []
 
-args:
-  - --max-concurrent-requests=20
-  - --leader-elect=true
+# Additional volume mounts
+extraVolumeMounts: []
+```
 
-resources:
-  limits:
-    cpu: 500m
-    memory: 256Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
+## High Availability
 
-metrics:
-  enabled: true
-  serviceMonitor:
-    enabled: true
-    interval: 15s
+```yaml
+# Termination grace period
+terminationGracePeriodSeconds: 10
 
-affinity:
-  podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 100
-        podAffinityTerm:
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: keycloak-operator
-          topologyKey: kubernetes.io/hostname
+# Network policy
+networkPolicy:
+  enabled: false
+  ingress: []
+  egress: []
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  maxUnavailable: ""
 ```

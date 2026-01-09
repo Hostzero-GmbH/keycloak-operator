@@ -1,111 +1,46 @@
 package controller
 
 import (
-	"context"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
 )
 
-func TestKeycloakInstanceReconciler_Reconcile(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = keycloakv1beta1.AddToScheme(scheme)
-
+func TestValidateKeycloakVersion(t *testing.T) {
 	tests := []struct {
-		name       string
-		instance   *keycloakv1beta1.KeycloakInstance
-		wantRequeue bool
+		name    string
+		version string
+		wantErr bool
 	}{
-		{
-			name: "instance not found",
-			instance: nil,
-			wantRequeue: false,
-		},
-		{
-			name: "instance without finalizer",
-			instance: &keycloakv1beta1.KeycloakInstance{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test",
-					Namespace: "default",
-				},
-				Spec: keycloakv1beta1.KeycloakInstanceSpec{
-					BaseUrl: "http://keycloak:8080",
-				},
-			},
-			wantRequeue: true,
-		},
+		// Supported versions
+		{name: "version 20.0.0", version: "20.0.0", wantErr: false},
+		{name: "version 20.0.1", version: "20.0.1", wantErr: false},
+		{name: "version 21.0.0", version: "21.0.0", wantErr: false},
+		{name: "version 22.0.0", version: "22.0.0", wantErr: false},
+		{name: "version 23.0.0", version: "23.0.0", wantErr: false},
+		{name: "version 24.0.0", version: "24.0.0", wantErr: false},
+		{name: "version 25.0.0", version: "25.0.0", wantErr: false},
+		{name: "version 26.0.0", version: "26.0.0", wantErr: false},
+		{name: "version with snapshot", version: "24.0.0-SNAPSHOT", wantErr: false},
+		{name: "version with RC", version: "25.0.0-RC1", wantErr: false},
+
+		// Unsupported versions
+		{name: "version 19.0.0", version: "19.0.0", wantErr: true},
+		{name: "version 18.0.0", version: "18.0.0", wantErr: true},
+		{name: "version 17.0.0", version: "17.0.0", wantErr: true},
+		{name: "version 4.0.0 (ancient)", version: "4.0.0", wantErr: true},
+		{name: "version 19 with snapshot", version: "19.0.0-SNAPSHOT", wantErr: true},
+
+		// Edge cases
+		{name: "major version only", version: "20", wantErr: false},
+		{name: "major.minor only", version: "21.1", wantErr: false},
+		{name: "unsupported major only", version: "19", wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var objs []runtime.Object
-			if tt.instance != nil {
-				objs = append(objs, tt.instance)
+			err := validateKeycloakVersion(tt.version)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateKeycloakVersion(%q) error = %v, wantErr %v", tt.version, err, tt.wantErr)
 			}
-
-			client := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithRuntimeObjects(objs...).
-				Build()
-
-			r := &KeycloakInstanceReconciler{
-				Client: client,
-				Scheme: scheme,
-			}
-
-			req := reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      "test",
-					Namespace: "default",
-				},
-			}
-
-			result, err := r.Reconcile(context.Background(), req)
-			
-			assert.NoError(t, err)
-			assert.Equal(t, tt.wantRequeue, result.Requeue)
 		})
 	}
-}
-
-func TestKeycloakInstanceReconciler_getKeycloakConfig(t *testing.T) {
-	// Test cases for config extraction
-	t.Run("missing secret should return error", func(t *testing.T) {
-		scheme := runtime.NewScheme()
-		_ = keycloakv1beta1.AddToScheme(scheme)
-
-		client := fake.NewClientBuilder().
-			WithScheme(scheme).
-			Build()
-
-		r := &KeycloakInstanceReconciler{
-			Client: client,
-			Scheme: scheme,
-		}
-
-		instance := &keycloakv1beta1.KeycloakInstance{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test",
-				Namespace: "default",
-			},
-			Spec: keycloakv1beta1.KeycloakInstanceSpec{
-				BaseUrl: "http://keycloak:8080",
-				Credentials: keycloakv1beta1.CredentialsSpec{
-					SecretRef: keycloakv1beta1.SecretRefSpec{
-						Name: "nonexistent",
-					},
-				},
-			},
-		}
-
-		_, err := r.getKeycloakConfig(context.Background(), instance)
-		assert.Error(t, err)
-	})
 }

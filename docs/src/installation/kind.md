@@ -1,104 +1,147 @@
-# Kind Development Setup
+# Kind Cluster Setup
 
-Set up a local development environment using Kind.
+This guide explains how to set up a local development environment using Kind (Kubernetes in Docker).
 
 ## Prerequisites
 
 - Docker
-- Kind
+- Kind (`brew install kind` or `go install sigs.k8s.io/kind@latest`)
 - kubectl
-- Go 1.21+
+- Helm
 
-## Create Kind Cluster
+## Quick Setup
 
-Use the provided script:
+The easiest way to get started is using the all-in-one command:
+
+```bash
+make kind-all
+```
+
+This will:
+1. Create a Kind cluster
+2. Build the operator image
+3. Load the image into Kind
+4. Install CRDs
+5. Deploy the operator via Helm
+6. Deploy Keycloak for testing
+7. Create a test KeycloakInstance
+
+## Step-by-Step Setup
+
+### Create the Cluster
 
 ```bash
 make kind-create
 ```
 
-This creates a Kind cluster with:
-- Keycloak deployed
-- Ingress controller configured
-- Port mappings for local access
+This creates a Kind cluster with the following features:
+- Multi-node setup (1 control plane + 2 workers)
+- Port mappings for Keycloak access (8080, 8443)
+- Ingress-ready configuration
 
-## Manual Setup
-
-If you prefer manual setup:
+### Deploy Keycloak
 
 ```bash
-# Create cluster
-kind create cluster --name keycloak-operator-e2e --config hack/kind-config.yaml
-
-# Deploy Keycloak
-kubectl apply -f hack/keycloak-kind.yaml
-
-# Wait for Keycloak
-kubectl wait --for=condition=available deployment/keycloak --timeout=300s
+make kind-deploy-keycloak
 ```
 
-## Build and Deploy Operator
+Keycloak will be available at:
+- **In-cluster**: `http://keycloak.keycloak.svc.cluster.local`
+- **External**: `http://localhost:8080` (via NodePort 30080)
+- **Credentials**: admin / admin
+
+> **Note**: The NodePort service maps port 30080 to the host's port 8080. If port 8080 is already in use, you can use `make kind-port-forward` as an alternative.
+
+### Deploy the Operator
 
 ```bash
-# Build the operator image
-make docker-build IMG=keycloak-operator:dev
-
-# Load into Kind
-kind load docker-image keycloak-operator:dev --name keycloak-operator-e2e
-
-# Deploy with Helm
-make helm-install-dev
+make kind-deploy
 ```
 
-## Access Keycloak
+This builds the operator image, loads it into Kind, and deploys via Helm.
 
-Keycloak is available at:
-- URL: http://localhost:8080
-- Admin Console: http://localhost:8080/admin
-- Username: admin
-- Password: admin
+## Useful Commands
 
-## Run Tests
+| Command | Description |
+|---------|-------------|
+| `make kind-create` | Create the Kind cluster |
+| `make kind-delete` | Delete the Kind cluster |
+| `make kind-reset` | Delete and recreate the cluster |
+| `make kind-status` | Show cluster status |
+| `make kind-deploy` | Build and deploy operator |
+| `make kind-deploy-keycloak` | Deploy Keycloak |
+| `make kind-logs` | Tail operator logs |
+| `make kind-port-forward` | Port-forward Keycloak to localhost:8080 |
+
+## Running Tests
+
+Run the full E2E test suite against the Kind cluster:
 
 ```bash
-# Run e2e tests
-make test-e2e
-
-# Or run with Kind management
-make test-e2e-kind
+make kind-test
 ```
 
-## Cleanup
+This sets up port-forwarding automatically and runs all E2E tests.
 
-```bash
-make kind-delete
+## Cluster Configuration
+
+The Kind cluster is configured in `hack/kind-config.yaml`:
+
+```yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: keycloak-operator-dev
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # Keycloak HTTP (NodePort 30080 -> localhost:8080)
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+      # Keycloak HTTPS
+      - containerPort: 30443
+        hostPort: 8443
+        protocol: TCP
+      # Ingress HTTP
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      # Ingress HTTPS
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+  - role: worker
+  - role: worker
 ```
 
 ## Troubleshooting
 
-### Keycloak not starting
-
-Check pod logs:
+### Check Operator Logs
 
 ```bash
-kubectl logs deployment/keycloak
+kubectl logs -n keycloak-operator -l app.kubernetes.io/name=keycloak-operator -f
 ```
 
-### Operator not connecting
-
-Verify the KeycloakInstance status:
+### Check Keycloak Logs
 
 ```bash
-kubectl describe keycloakinstance main
+kubectl logs -n keycloak -l app=keycloak -f
 ```
 
-### Port conflicts
+### Verify CRDs
 
-If port 8080 is in use, modify `hack/kind-config.yaml`:
+```bash
+kubectl get crds | grep keycloak
+```
 
-```yaml
-extraPortMappings:
-- containerPort: 80
-  hostPort: 8081  # Change this
-  protocol: TCP
+### Check Resource Status
+
+```bash
+kubectl get keycloakinstances,keycloakrealms,keycloakclients -A
 ```

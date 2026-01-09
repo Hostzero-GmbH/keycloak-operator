@@ -1,32 +1,86 @@
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: manager-role
 rules:
-  - apiGroups:
-      - keycloak.hostzero.com
-    resources:
-      - "*"
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - events
-    verbs:
-      - create
-      - patch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - keycloak.hostzero.com
+  resources:
+  - clusterkeycloakinstances
+  - clusterkeycloakrealms
+  - keycloakclients
+  - keycloakclientscopes
+  - keycloakcomponents
+  - keycloakgroups
+  - keycloakidentityproviders
+  - keycloakinstances
+  - keycloakorganizations
+  - keycloakprotocolmappers
+  - keycloakrealms
+  - keycloakrolemappings
+  - keycloakroles
+  - keycloakusercredentials
+  - keycloakusers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - keycloak.hostzero.com
+  resources:
+  - clusterkeycloakinstances/finalizers
+  - clusterkeycloakrealms/finalizers
+  - keycloakclients/finalizers
+  - keycloakclientscopes/finalizers
+  - keycloakcomponents/finalizers
+  - keycloakgroups/finalizers
+  - keycloakidentityproviders/finalizers
+  - keycloakinstances/finalizers
+  - keycloakorganizations/finalizers
+  - keycloakprotocolmappers/finalizers
+  - keycloakrealms/finalizers
+  - keycloakrolemappings/finalizers
+  - keycloakroles/finalizers
+  - keycloakusercredentials/finalizers
+  - keycloakusers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - keycloak.hostzero.com
+  resources:
+  - clusterkeycloakinstances/status
+  - clusterkeycloakrealms/status
+  - keycloakclients/status
+  - keycloakclientscopes/status
+  - keycloakcomponents/status
+  - keycloakgroups/status
+  - keycloakidentityproviders/status
+  - keycloakinstances/status
+  - keycloakorganizations/status
+  - keycloakprotocolmappers/status
+  - keycloakrealms/status
+  - keycloakrolemappings/status
+  - keycloakroles/status
+  - keycloakusercredentials/status
+  - keycloakusers/status
+  verbs:
+  - get
+  - patch
+  - update

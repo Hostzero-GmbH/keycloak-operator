@@ -17,6 +17,14 @@ type KeycloakInstanceSpec struct {
 	// Realm is the admin realm (defaults to "master")
 	// +optional
 	Realm *string `json:"realm,omitempty"`
+
+	// Client contains optional service account client configuration
+	// +optional
+	Client *ClientAuthSpec `json:"client,omitempty"`
+
+	// Token contains optional token caching configuration
+	// +optional
+	Token *TokenSpec `json:"token,omitempty"`
 }
 
 // CredentialsSpec defines admin credentials configuration
@@ -47,10 +55,40 @@ type SecretRefSpec struct {
 	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
+// ClientAuthSpec defines client authentication for service accounts
+type ClientAuthSpec struct {
+	// ID is the client ID for service account authentication
+	// +kubebuilder:validation:Required
+	ID string `json:"id"`
+
+	// Secret is the client secret (optional for public clients)
+	// +optional
+	Secret *string `json:"secret,omitempty"`
+}
+
+// TokenSpec defines token caching configuration
+type TokenSpec struct {
+	// SecretName is the name of the secret to cache the token
+	// +optional
+	SecretName *string `json:"secretName,omitempty"`
+
+	// TokenKey is the key in the secret for the token
+	// +optional
+	TokenKey *string `json:"tokenKey,omitempty"`
+
+	// ExpiresKey is the key in the secret for the token expiration
+	// +optional
+	ExpiresKey *string `json:"expiresKey,omitempty"`
+}
+
 // KeycloakInstanceStatus defines the observed state of KeycloakInstance
 type KeycloakInstanceStatus struct {
 	// Ready indicates if the Keycloak instance is accessible
 	Ready bool `json:"ready"`
+
+	// Version is the Keycloak server version
+	// +optional
+	Version string `json:"version,omitempty"`
 
 	// Status is a human-readable status message
 	// +optional
@@ -60,20 +98,22 @@ type KeycloakInstanceStatus struct {
 	// +optional
 	Message string `json:"message,omitempty"`
 
+	// ResourcePath is the API path for this resource
+	// +optional
+	ResourcePath string `json:"resourcePath,omitempty"`
+
 	// Conditions represent the latest available observations
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-
-	// Version is the Keycloak server version
-	// +optional
-	Version string `json:"version,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the instance is ready"
 // +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.spec.baseUrl`,description="The base URL of the Keycloak instance"
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.version`,description="Keycloak server version"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:resource:shortName=kci,categories={keycloak,all}
 
 // KeycloakInstance makes a Keycloak server known to the operator
 type KeycloakInstance struct {

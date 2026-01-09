@@ -1,98 +1,196 @@
 # Testing
 
-Guide to running tests.
+The Keycloak Operator has two levels of testing:
+
+1. **Unit Tests**: Fast, isolated tests using `envtest`
+2. **End-to-End Tests**: Full cluster tests against Kind with Keycloak
 
 ## Unit Tests
+
+Run unit tests with:
 
 ```bash
 make test
 ```
 
-This runs all unit tests with coverage.
+Unit tests use the controller-runtime's `envtest` package to provide a lightweight Kubernetes API server. These don't require a real Keycloak instance.
 
-## Integration Tests
-
-Integration tests require a running Keycloak instance:
+### Coverage
 
 ```bash
-# Start Kind cluster with Keycloak
-make kind-create
-
-# Run integration tests
-USE_EXISTING_CLUSTER=true go test -v ./internal/controller/... -tags=integration
+make test
+go tool cover -html=cover.out
 ```
 
 ## End-to-End Tests
 
-### Against Existing Cluster
+E2E tests run against a full Kind cluster with the operator and Keycloak deployed.
+
+### Understanding E2E Test Network Topology
+
+E2E tests involve two different network perspectives:
+
+1. **Operator's perspective** (inside the cluster): The operator connects to Keycloak using the in-cluster service URL (e.g., `http://keycloak.keycloak.svc.cluster.local`)
+2. **Test's perspective** (your local machine): When running tests locally, you need port-forwarding to access Keycloak directly for certain tests (drift detection, cleanup verification)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Kind Cluster                         │
+│  ┌─────────────┐      ┌──────────────────┐             │
+│  │  Operator   │──────│     Keycloak     │             │
+│  │             │      │  (port 80/8080)  │             │
+│  └─────────────┘      └────────┬─────────┘             │
+│                                │                        │
+└────────────────────────────────┼────────────────────────┘
+                                 │ port-forward
+                                 ▼
+                    ┌────────────────────────┐
+                    │   localhost:8080       │
+                    │   (your machine)       │
+                    └────────────────────────┘
+```
+
+### Running E2E Tests
+
+**Recommended approach** (fully automated):
 
 ```bash
-make test-e2e
+# Full setup: creates cluster, deploys operator and Keycloak, runs tests
+make kind-all
+make kind-test-e2e
 ```
 
-### With Kind Management
+The `kind-test-e2e` target runs `./hack/setup-kind.sh test-e2e`, which:
+1. Sets up port-forwarding to Keycloak automatically
+2. Configures environment variables
+3. Runs the e2e test suite with a 30-minute timeout
+
+**Manual setup** (for development):
 
 ```bash
-# Full cycle: create cluster, run tests, cleanup
-make test-e2e-kind
+# 1. Ensure cluster and operator are running
+make kind-all
+
+# 2. In a separate terminal, start port-forward
+kubectl port-forward -n keycloak svc/keycloak 8080:80
+
+# 3. Run tests with required environment variables
+export USE_EXISTING_CLUSTER=true
+export KEYCLOAK_URL="http://localhost:8080"                      # For test's direct Keycloak access
+export KEYCLOAK_INTERNAL_URL="http://keycloak.keycloak.svc.cluster.local"  # For operator (inside cluster)
+go test -v -timeout 30m ./test/e2e/...
 ```
 
-### Specific Tests
+> **Note**: Tests that require direct Keycloak access (drift detection, cleanup verification) will be **automatically skipped** if port-forward is not available. This allows running basic E2E tests without port-forwarding, while advanced tests require it.
 
-```bash
-# Run specific test
-go test -v ./test/e2e/... -run TestKeycloakInstance
+### E2E Test Configuration
 
-# Run with verbose output
-go test -v ./test/e2e/... -ginkgo.v
-```
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `USE_EXISTING_CLUSTER` | Set to `true` to use current kubeconfig | `false` |
+| `KEYCLOAK_INSTANCE_NAME` | Name of existing KeycloakInstance to use | (creates new) |
+| `KEYCLOAK_INSTANCE_NAMESPACE` | Namespace of existing instance | `keycloak-operator-e2e` |
+| `OPERATOR_NAMESPACE` | Namespace where operator is deployed | `keycloak-operator` |
+| `KEYCLOAK_URL` | URL for test's direct Keycloak access (via port-forward) | `http://localhost:8080` |
+| `KEYCLOAK_INTERNAL_URL` | URL operator uses to connect (in-cluster) | `http://keycloak.keycloak.svc.cluster.local` |
+| `TEST_NAMESPACE` | Namespace for test resources | `keycloak-operator-e2e` |
+| `KEEP_TEST_NAMESPACE` | Don't delete namespace after tests | `false` |
 
-## Test Structure
+### Test Categories
 
-```
-test/
-└── e2e/
-    ├── suite_test.go          # Test suite setup
-    ├── instance_test.go       # KeycloakInstance tests
-    ├── realm_test.go          # KeycloakRealm tests
-    ├── client_test.go         # KeycloakClient tests
-    ├── user_test.go           # KeycloakUser tests
-    └── ...
-```
+| Category | Requires Port-Forward | Description |
+|----------|----------------------|-------------|
+| Basic CRUD | No | Create, update, delete resources via Kubernetes API |
+| Status verification | No | Verify `.status.ready` and conditions |
+| Drift detection | **Yes** | Tests that modify Keycloak directly and verify reconciliation |
+| Cleanup verification | **Yes** | Tests that verify resources are deleted from Keycloak |
+| Edge cases | Mixed | Some require direct access, some don't |
 
 ## Writing Tests
 
 ### Unit Test Example
 
 ```go
-func TestMyFunction(t *testing.T) {
-    result := MyFunction("input")
-    assert.Equal(t, "expected", result)
+func TestRealmController_Reconcile(t *testing.T) {
+    // Setup
+    scheme := runtime.NewScheme()
+    _ = keycloakv1beta1.AddToScheme(scheme)
+    
+    realm := &keycloakv1beta1.KeycloakRealm{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      "test-realm",
+            Namespace: "default",
+        },
+        Spec: keycloakv1beta1.KeycloakRealmSpec{
+            InstanceRef: "test-instance",
+        },
+    }
+    
+    client := fake.NewClientBuilder().
+        WithScheme(scheme).
+        WithObjects(realm).
+        Build()
+    
+    // Test reconciliation...
 }
 ```
 
 ### E2E Test Example
 
 ```go
-var _ = Describe("KeycloakRealm", func() {
-    It("should create realm", func() {
-        realm := &keycloakv1beta1.KeycloakRealm{
-            // ...
-        }
-        Expect(k8sClient.Create(ctx, realm)).Should(Succeed())
-        
-        Eventually(func() bool {
-            // check status
-        }).Should(BeTrue())
+func TestKeycloakRealmE2E(t *testing.T) {
+    skipIfNoCluster(t)
+    
+    realm := &keycloakv1beta1.KeycloakRealm{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      "e2e-realm",
+            Namespace: testNamespace,
+        },
+        Spec: keycloakv1beta1.KeycloakRealmSpec{
+            InstanceRef: instanceName,
+            Definition: rawJSON(`{"realm": "e2e-realm", "enabled": true}`),
+        },
+    }
+    
+    require.NoError(t, k8sClient.Create(ctx, realm))
+    t.Cleanup(func() {
+        k8sClient.Delete(ctx, realm)
     })
-})
+    
+    // Wait for ready
+    err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, 
+        func(ctx context.Context) (bool, error) {
+            updated := &keycloakv1beta1.KeycloakRealm{}
+            if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(realm), updated); err != nil {
+                return false, nil
+            }
+            return updated.Status.Ready, nil
+        })
+    require.NoError(t, err)
+}
+
+// Example: Test requiring direct Keycloak access (drift detection)
+func TestDriftDetection(t *testing.T) {
+    skipIfNoCluster(t)
+    skipIfNoKeycloakAccess(t)  // Skips if port-forward not available
+    
+    // ... test that modifies Keycloak directly ...
+}
 ```
 
-## Coverage
+## CI/CD
 
-Generate coverage report:
+Tests run automatically in GitHub Actions:
 
-```bash
-make test
-go tool cover -html=cover.out
-```
+- Unit tests on every PR
+- E2E tests on merge to main
+
+## Test Utilities
+
+Common test utilities are in `test/e2e/suite_test.go`:
+
+- `skipIfNoCluster(t)`: Skip test if `USE_EXISTING_CLUSTER` is not set
+- `skipIfNoKeycloakAccess(t)`: Skip test if direct Keycloak access (port-forward) is unavailable
+- `getInternalKeycloakClient(t)`: Create authenticated Keycloak client for direct API access
+- `rawJSON(s string)`: Create `runtime.RawExtension` from JSON string
+- `canConnectToKeycloak()`: Check if direct Keycloak connection is available

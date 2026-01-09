@@ -4,19 +4,24 @@ metadata:
   name: controller-manager
   namespace: system
   labels:
-    control-plane: controller-manager
+    app.kubernetes.io/name: keycloak-operator
+    app.kubernetes.io/component: manager
 spec:
   selector:
     matchLabels:
-      control-plane: controller-manager
+      app.kubernetes.io/name: keycloak-operator
+      app.kubernetes.io/component: manager
   replicas: 1
   template:
     metadata:
       labels:
-        control-plane: controller-manager
+        app.kubernetes.io/name: keycloak-operator
+        app.kubernetes.io/component: manager
     spec:
       securityContext:
         runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: manager
           image: controller:latest
@@ -27,24 +32,31 @@ spec:
             capabilities:
               drop:
                 - ALL
+          ports:
+            - name: metrics
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
           livenessProbe:
             httpGet:
               path: /healthz
-              port: 8081
+              port: health
             initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
             httpGet:
               path: /readyz
-              port: 8081
+              port: health
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
             limits:
               cpu: 500m
-              memory: 128Mi
+              memory: 256Mi
             requests:
-              cpu: 10m
-              memory: 64Mi
+              cpu: 100m
+              memory: 128Mi
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10

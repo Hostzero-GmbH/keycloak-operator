@@ -1,54 +1,41 @@
 # Environment Variables
 
-Runtime environment configuration.
+The operator can be configured using environment variables, which are automatically set when deploying via Helm.
+
+## Operator Settings
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `POD_NAMESPACE` | Namespace where the operator is running | Injected by Kubernetes |
+| `POD_NAME` | Name of the operator pod | Injected by Kubernetes |
 
 ## Logging
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LOG_LEVEL` | Log verbosity (debug, info, warn, error) | info |
-| `LOG_FORMAT` | Log format (json, console) | json |
+| `LOG_LEVEL` | Log level (debug, info, error) | `info` |
+| `LOG_FORMAT` | Log format (json, console) | `json` |
 
-## Kubernetes
+## Metrics
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `KUBECONFIG` | Path to kubeconfig file | In-cluster config |
-| `WATCH_NAMESPACE` | Namespace to watch (empty = all) | "" |
+| `METRICS_BIND_ADDRESS` | Address for metrics endpoint | `:8080` |
 
-## Setting Environment Variables
+## Health Probes
 
-### Via Helm
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HEALTH_PROBE_BIND_ADDRESS` | Address for health probes | `:8081` |
 
-```yaml
-env:
-  - name: LOG_LEVEL
-    value: debug
-  - name: WATCH_NAMESPACE
-    value: my-namespace
+## Development
+
+For local development, you can set these in your shell:
+
+```bash
+export LOG_LEVEL=debug
+export LOG_FORMAT=console
+make run
 ```
 
-### Via Deployment
-
-```yaml
-spec:
-  containers:
-    - name: manager
-      env:
-        - name: LOG_LEVEL
-          value: debug
-```
-
-## Namespace Scoping
-
-By default, the operator watches all namespaces. To restrict to a single namespace:
-
-```yaml
-env:
-  - name: WATCH_NAMESPACE
-    valueFrom:
-      fieldRef:
-        fieldPath: metadata.namespace
-```
-
-This configures the operator to only watch its own namespace.
+Or use a `.env` file with your IDE.

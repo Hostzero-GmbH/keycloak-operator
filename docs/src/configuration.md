@@ -1,25 +1,65 @@
 # Configuration
 
-This section covers operator configuration options.
+The Keycloak Operator can be configured through various mechanisms:
 
-## Configuration Methods
+- **Helm Values**: For deployment-time configuration
+- **Environment Variables**: For runtime configuration
+- **Command-Line Flags**: For operator behavior
 
-The operator can be configured through:
+## Operator Configuration
 
-1. **Helm Values** - Primary configuration method for Kubernetes deployments
-2. **Command-line Arguments** - Direct flags to the operator binary
-3. **Environment Variables** - Runtime configuration
+The operator accepts the following configuration options:
 
-## Quick Reference
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--metrics-bind-address` | Address for metrics endpoint | `:8080` |
+| `--health-probe-bind-address` | Address for health probes | `:8081` |
+| `--leader-elect` | Enable leader election | `false` |
 
-| Setting | Helm Value | CLI Flag | Default |
-|---------|------------|----------|---------|
-| Max concurrent requests | `args` | `--max-concurrent-requests` | 10 |
-| Leader election | `args` | `--leader-elect` | false |
-| Metrics address | `args` | `--metrics-bind-address` | :8080 |
-| Health probe address | `args` | `--health-probe-bind-address` | :8081 |
+## Keycloak Connection
 
-## Sections
+Each `KeycloakInstance` resource defines how to connect to a Keycloak server:
 
-- [Helm Values](./configuration/helm-values.md) - Complete Helm chart configuration
-- [Environment Variables](./configuration/environment.md) - Runtime environment options
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakInstance
+metadata:
+  name: my-keycloak
+spec:
+  # Base URL of the Keycloak server
+  baseUrl: https://keycloak.example.com
+  
+  # Realm to authenticate against (default: master)
+  realm: master
+  
+  # Credentials for admin access
+  credentials:
+    secretRef:
+      name: keycloak-credentials
+      namespace: keycloak-operator  # Optional, defaults to resource namespace
+      usernameKey: username         # Optional, defaults to "username"
+      passwordKey: password         # Optional, defaults to "password"
+```
+
+## Resource References
+
+Resources reference their parent using `*Ref` fields:
+
+```yaml
+# Realm references an Instance
+spec:
+  instanceRef:
+    name: my-keycloak
+    namespace: default  # Optional
+
+# Client references a Realm
+spec:
+  realmRef:
+    name: my-realm
+    namespace: default  # Optional
+```
+
+## See Also
+
+- [Environment Variables](./configuration/environment.md)
+- [Helm Values](./configuration/helm-values.md)

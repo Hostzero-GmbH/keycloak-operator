@@ -1,0 +1,20 @@
+# Sample KeycloakRealm
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: example-realm
+  namespace: default
+spec:
+  instanceRef: keycloak-instance
+  definition:
+    realm: example-realm
+    displayName: "Example Realm"
+    enabled: true
+    registrationAllowed: false
+    loginWithEmailAllowed: true
+    resetPasswordAllowed: true
+    verifyEmail: false
+    sslRequired: external
+    accessTokenLifespan: 300
+    ssoSessionIdleTimeout: 1800
+    ssoSessionMaxLifespan: 36000

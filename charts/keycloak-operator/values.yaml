@@ -1,26 +1,48 @@
 # Default values for keycloak-operator
+# This is a YAML-formatted file.
 
+# -- Number of replicas for the operator deployment
 replicaCount: 1
 
 image:
+  # -- Container image repository
   repository: ghcr.io/hostzero/keycloak-operator
+  # -- Image pull policy
   pullPolicy: IfNotPresent
+  # -- Overrides the image tag whose default is the chart appVersion
   tag: ""
 
+# -- Image pull secrets for private registries
 imagePullSecrets: []
+
+# -- Override the name of the chart
 nameOverride: ""
+
+# -- Override the full name of the chart
 fullnameOverride: ""
 
 serviceAccount:
+  # -- Specifies whether a service account should be created
   create: true
+  # -- Annotations to add to the service account
   annotations: {}
+  # -- The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+# -- Pod annotations
 podAnnotations: {}
 
+# -- Pod labels
+podLabels: {}
+
+# -- Pod security context
 podSecurityContext:
   runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
 
+# -- Container security context
 securityContext:
   allowPrivilegeEscalation: false
   capabilities:
@@ -28,32 +50,113 @@ securityContext:
       - ALL
   readOnlyRootFilesystem: true
 
+# -- Resource limits and requests
 resources:
   limits:
     cpu: 500m
-    memory: 128Mi
+    memory: 256Mi
   requests:
-    cpu: 10m
-    memory: 64Mi
+    cpu: 100m
+    memory: 128Mi
 
+# -- Node selector for pod scheduling
 nodeSelector: {}
 
+# -- Tolerations for pod scheduling
 tolerations: []
 
+# -- Affinity rules for pod scheduling
 affinity: {}
 
-# Operator configuration
-operator:
-  metricsBindAddress: ":8080"
-  healthProbeBindAddress: ":8081"
-  leaderElect: true
-  maxConcurrentRequests: 10
+# Leader election configuration
+leaderElection:
+  # -- Enable leader election for controller manager
+  enabled: true
+
+# Metrics configuration
+metrics:
+  # -- Enable metrics endpoint
+  enabled: true
+  # -- Metrics service port
+  port: 8080
+  # -- Create ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: false
+    # -- Additional labels for the ServiceMonitor
+    additionalLabels: {}
+    # -- Scrape interval
+    interval: 30s
+    # -- Scrape timeout
+    scrapeTimeout: 10s
+
+# Health probes configuration
+health:
+  # -- Health probe port
+  port: 8081
 
 # Logging configuration
 logging:
+  # -- Log level (debug, info, error)
   level: info
+  # -- Log format (json, console)
   format: json
+  # -- Enable development mode (more verbose)
+  development: false
 
-# CRD installation
+# Performance tuning
+performance:
+  # -- Sync period for re-checking successfully reconciled resources (e.g., "5m", "30m", "1h")
+  # Higher values reduce Keycloak API load but increase time to detect external drift.
+  # For large deployments (100+ resources), consider increasing to 30m or 1h.
+  syncPeriod: "5m"
+  # -- Maximum concurrent requests to Keycloak (0 = no limit)
+  # Limits parallel API calls to prevent overwhelming Keycloak.
+  # Lower values reduce load but slow down reconciliation on startup.
+  maxConcurrentRequests: 10
+
+# RBAC configuration
+rbac:
+  # -- Create RBAC resources
+  create: true
+
+# CRD configuration
 crds:
+  # -- Install CRDs
   install: true
+  # -- Keep CRDs on chart uninstall
+  keep: true
+
+# -- Additional environment variables
+extraEnv: []
+  # - name: MY_VAR
+  #   value: my-value
+
+# -- Additional volumes
+extraVolumes: []
+
+# -- Additional volume mounts
+extraVolumeMounts: []
+
+# -- Priority class name for the pod
+priorityClassName: ""
+
+# -- Termination grace period in seconds
+terminationGracePeriodSeconds: 10
+
+# Network policy configuration
+networkPolicy:
+  # -- Enable network policy
+  enabled: false
+  # -- Additional ingress rules
+  ingress: []
+  # -- Additional egress rules
+  egress: []
+
+# Pod disruption budget
+podDisruptionBudget:
+  # -- Enable PodDisruptionBudget
+  enabled: false
+  # -- Minimum available pods
+  minAvailable: 1
+  # -- Maximum unavailable pods (takes precedence over minAvailable)
+  maxUnavailable: ""

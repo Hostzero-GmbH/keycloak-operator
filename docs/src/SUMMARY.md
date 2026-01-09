@@ -1,41 +1,32 @@
 # Summary
 
-[Introduction](./index.md)
-
-# Getting Started
-
+- [About](./index.md)
 - [Installation](./installation.md)
   - [Quick Start](./installation/quick-start.md)
-  - [Helm Installation](./installation/helm.md)
-  - [Kind Development Setup](./installation/kind.md)
-
-# User Guide
-
-- [Architecture](./architecture.md)
-- [Custom Resources](./crds.md)
-  - [KeycloakInstance](./crds/keycloakinstance.md)
-  - [KeycloakRealm](./crds/keycloakrealm.md)
-  - [KeycloakClient](./crds/keycloakclient.md)
-  - [KeycloakUser](./crds/keycloakuser.md)
-  - [KeycloakRole](./crds/keycloakrole.md)
-  - [KeycloakGroup](./crds/keycloakgroup.md)
-  - [KeycloakClientScope](./crds/keycloakclientscope.md)
-  - [KeycloakRoleMapping](./crds/keycloakrolemapping.md)
-  - [KeycloakUserCredential](./crds/keycloakusercredential.md)
-  - [KeycloakProtocolMapper](./crds/keycloakprotocolmapper.md)
-  - [KeycloakIdentityProvider](./crds/keycloakidentityprovider.md)
-  - [KeycloakComponent](./crds/keycloakcomponent.md)
-  - [KeycloakOrganization](./crds/keycloakorganization.md)
-  - [ClusterKeycloakInstance](./crds/clusterkeycloakinstance.md)
-  - [ClusterKeycloakRealm](./crds/clusterkeycloakrealm.md)
+  - [Helm Chart](./installation/helm.md)
+  - [Kind Cluster](./installation/kind.md)
 - [Configuration](./configuration.md)
-  - [Helm Values](./configuration/helm-values.md)
   - [Environment Variables](./configuration/environment.md)
+  - [Helm Values](./configuration/helm-values.md)
+- [Custom Resource Definitions](./crds.md)
+  - [KeycloakInstance](./crds/keycloakinstance.md)
+  - [ClusterKeycloakInstance](./crds/clusterkeycloakinstance.md)
+  - [KeycloakRealm](./crds/keycloakrealm.md)
+  - [ClusterKeycloakRealm](./crds/clusterkeycloakrealm.md)
+  - [KeycloakClient](./crds/keycloakclient.md)
+  - [KeycloakClientScope](./crds/keycloakclientscope.md)
+  - [KeycloakProtocolMapper](./crds/keycloakprotocolmapper.md)
+  - [KeycloakUser](./crds/keycloakuser.md)
+  - [KeycloakUserCredential](./crds/keycloakusercredential.md)
+  - [KeycloakGroup](./crds/keycloakgroup.md)
+  - [KeycloakRole](./crds/keycloakrole.md)
+  - [KeycloakRoleMapping](./crds/keycloakrolemapping.md)
+  - [KeycloakComponent](./crds/keycloakcomponent.md)
+  - [KeycloakIdentityProvider](./crds/keycloakidentityprovider.md)
+  - [KeycloakOrganization](./crds/keycloakorganization.md)
 - [Monitoring](./monitoring.md)
-
-# Development
-
-- [Development Guide](./development.md)
+- [Architecture](./architecture.md)
+- [Development](./development.md)
   - [Local Setup](./development/local-setup.md)
   - [Testing](./development/testing.md)
   - [Contributing](./development/contributing.md)

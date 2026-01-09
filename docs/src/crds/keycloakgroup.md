@@ -1,24 +1,49 @@
 # KeycloakGroup
 
-Manages a user group in a realm.
+A `KeycloakGroup` represents a group within a Keycloak realm.
 
-## Spec
+## Specification
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `realmRef` | ResourceRef | Yes | Reference to KeycloakRealm |
-| `definition` | object | Yes | Group representation |
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakGroup
+metadata:
+  name: my-group
+spec:
+  # One of realmRef or clusterRealmRef must be specified
+  
+  # Option 1: Reference to a namespaced KeycloakRealm
+  realmRef:
+    name: my-realm
+    namespace: default  # Optional, defaults to same namespace
+  
+  # Option 2: Reference to a ClusterKeycloakRealm
+  clusterRealmRef:
+    name: my-cluster-realm
+  
+  # Optional: Reference to parent group (for nested groups)
+  parentGroupRef:
+    name: parent-group
+    namespace: default  # Optional, defaults to same namespace
+  
+  # Required: Group definition
+  definition:
+    name: my-group
+    # ... any other properties
+```
 
 ## Status
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `ready` | bool | Group is synced |
-| `status` | string | Human-readable status |
-| `message` | string | Detailed message |
-| `groupId` | string | Keycloak group UUID |
+```yaml
+status:
+  ready: true
+  groupId: "12345678-1234-1234-1234-123456789abc"
+  message: "Group synchronized successfully"
+```
 
 ## Example
+
+### Basic Group
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -27,35 +52,78 @@ metadata:
   name: developers
 spec:
   realmRef:
-    name: my-app
+    name: my-realm
   definition:
     name: developers
-    attributes:
-      team:
-        - platform
 ```
 
-## Nested Groups
+### Group with Attributes
 
 ```yaml
-definition:
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakGroup
+metadata:
   name: engineering
-  subGroups:
-    - name: frontend
-    - name: backend
-    - name: devops
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    name: engineering
+    attributes:
+      department:
+        - Engineering
+      cost_center:
+        - "1234"
 ```
 
-## Group with Role Mappings
+### Nested Group
 
-Groups can have default role mappings. Users added to the group automatically receive these roles.
+First, create the parent group:
 
 ```yaml
-definition:
-  name: admins
-  realmRoles:
-    - admin
-  clientRoles:
-    my-api:
-      - admin
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakGroup
+metadata:
+  name: organization
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    name: organization
+```
+
+Then create child groups:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakGroup
+metadata:
+  name: team-alpha
+spec:
+  realmRef:
+    name: my-realm
+  parentGroupRef:
+    name: organization
+  definition:
+    name: team-alpha
+```
+
+## Definition Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | string | Group name (required) |
+| `path` | string | Full group path (auto-generated) |
+| `attributes` | map | Custom group attributes |
+| `realmRoles` | string[] | Realm roles assigned to group |
+| `clientRoles` | map | Client roles assigned to group |
+
+## Short Names
+
+| Alias | Full Name |
+|-------|-----------|
+| `kcg` | `keycloakgroups` |
+
+```bash
+kubectl get kcg
 ```

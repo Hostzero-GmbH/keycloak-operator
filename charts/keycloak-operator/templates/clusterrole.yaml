@@ -1,7 +1,8 @@
+{{- if .Values.rbac.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "keycloak-operator.fullname" . }}
+  name: {{ include "keycloak-operator.fullname" . }}-manager-role
   labels:
     {{- include "keycloak-operator.labels" . | nindent 4 }}
 rules:
@@ -13,17 +14,9 @@ rules:
       - keycloakrealms
       - keycloakclients
       - keycloakusers
-      - keycloakroles
-      - keycloakgroups
       - keycloakclientscopes
-      - keycloakrolemappings
-      - keycloakusercredentials
-      - keycloakprotocolmappers
+      - keycloakgroups
       - keycloakidentityproviders
-      - keycloakcomponents
-      - keycloakorganizations
-      - clusterkeycloakinstances
-      - clusterkeycloakrealms
     verbs:
       - create
       - delete
@@ -32,24 +25,48 @@ rules:
       - patch
       - update
       - watch
+  # Status subresources
   - apiGroups:
       - keycloak.hostzero.com
     resources:
-      - "*/status"
-      - "*/finalizers"
+      - keycloakinstances/status
+      - keycloakrealms/status
+      - keycloakclients/status
+      - keycloakusers/status
+      - keycloakclientscopes/status
+      - keycloakgroups/status
+      - keycloakidentityproviders/status
     verbs:
       - get
       - patch
       - update
-  # Core resources
+  # Finalizers
+  - apiGroups:
+      - keycloak.hostzero.com
+    resources:
+      - keycloakinstances/finalizers
+      - keycloakrealms/finalizers
+      - keycloakclients/finalizers
+      - keycloakusers/finalizers
+      - keycloakclientscopes/finalizers
+      - keycloakgroups/finalizers
+      - keycloakidentityproviders/finalizers
+    verbs:
+      - update
+  # Secrets (for credentials and client secrets)
   - apiGroups:
       - ""
     resources:
       - secrets
     verbs:
+      - create
+      - delete
       - get
       - list
+      - patch
+      - update
       - watch
+  # Events (for recording events)
   - apiGroups:
       - ""
     resources:
@@ -57,16 +74,29 @@ rules:
     verbs:
       - create
       - patch
-  # Leader election
+  # ConfigMaps and Leases for leader election
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
   - apiGroups:
       - coordination.k8s.io
     resources:
       - leases
     verbs:
-      - create
-      - delete
       - get
       - list
-      - patch
-      - update
       - watch
+      - create
+      - update
+      - patch
+      - delete
+{{- end }}

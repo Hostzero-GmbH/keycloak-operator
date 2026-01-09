@@ -1,63 +1,71 @@
-# Keycloak Operator
+# About
 
-A Kubernetes operator for managing Keycloak resources declaratively.
+<p align="center">
+  <a href="https://hostzero.com">
+    <img src="./assets/hostzero-logo.svg" alt="Hostzero" width="180">
+  </a>
+</p>
 
-## Overview
-
-The Keycloak Operator allows you to manage your Keycloak configuration as Kubernetes custom resources. This enables GitOps workflows, version control, and automated deployment of your identity and access management configuration.
+The Keycloak Operator is a Kubernetes operator developed by [**Hostzero**](https://hostzero.com) that manages Keycloak instances through the [Keycloak Admin API][1]. The overall goal is to provide a cloud-native management interface for Keycloak instances.
 
 ## Features
 
-- **Declarative Configuration**: Define Keycloak resources as Kubernetes CRDs
-- **GitOps Ready**: Store your Keycloak configuration in Git
-- **Full Lifecycle Management**: Create, update, and delete resources automatically
-- **Multi-Instance Support**: Manage multiple Keycloak instances from a single operator
-- **Cluster-Scoped Resources**: Share instances and realms across namespaces
-- **Keycloak 26+ Support**: Includes organization management for Keycloak 26+
+- **Declarative Configuration**: Manage Keycloak resources as Kubernetes Custom Resources
+- **Automatic Synchronization**: Changes to CRs are automatically applied to Keycloak
+- **Secret Management**: Client secrets are automatically synced to Kubernetes Secrets
+- **Status Tracking**: Resource status reflects the current state in Keycloak
+- **Finalizers**: Proper cleanup when resources are deleted
+
+## Goals
+
+* Manage Keycloak instances solely through Kubernetes resources
+* Provide a GitOps-friendly way to manage Keycloak configuration
+* Enable infrastructure-as-code for identity management
+* Support multiple Keycloak instances from a single operator
+
+## Non-Goals
+
+* Manage the deployment of Keycloak instances (use Keycloak Operator or Helm for that)
+* Support other IdM solutions than Keycloak
 
 ## Supported Resources
 
 | Resource | Description |
 |----------|-------------|
-| KeycloakInstance | Connection to a Keycloak server |
-| KeycloakRealm | Keycloak realm configuration |
-| KeycloakClient | OAuth2/OIDC clients |
-| KeycloakUser | User accounts |
-| KeycloakRole | Realm and client roles |
-| KeycloakGroup | User groups |
-| KeycloakClientScope | Client scopes |
-| KeycloakRoleMapping | Role assignments to users |
-| KeycloakUserCredential | User passwords |
-| KeycloakProtocolMapper | Token mappers |
-| KeycloakIdentityProvider | External identity providers |
-| KeycloakComponent | Keycloak components (keys, LDAP, etc.) |
-| KeycloakOrganization | Organizations (Keycloak 26+) |
+| `KeycloakInstance` | Connection to a Keycloak server (namespaced) |
+| `ClusterKeycloakInstance` | Connection to a Keycloak server (cluster-scoped) |
+| `KeycloakRealm` | Realm configuration (namespaced) |
+| `ClusterKeycloakRealm` | Realm configuration (cluster-scoped) |
+| `KeycloakClient` | OAuth2/OIDC client configuration |
+| `KeycloakClientScope` | Client scope configuration |
+| `KeycloakProtocolMapper` | Token claim mappers for clients/scopes |
+| `KeycloakUser` | User management |
+| `KeycloakUserCredential` | User password management |
+| `KeycloakGroup` | Group management |
+| `KeycloakRole` | Realm and client role definitions |
+| `KeycloakRoleMapping` | Role-to-user/group assignments |
+| `KeycloakIdentityProvider` | External identity provider configuration |
+| `KeycloakComponent` | LDAP federation, key providers, etc. |
+| `KeycloakOrganization` | Organization management (Keycloak 26+) |
 
-## Quick Example
+## Enterprise Support
 
-```yaml
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakInstance
-metadata:
-  name: main
-spec:
-  baseUrl: https://keycloak.example.com
-  credentials:
-    secretRef:
-      name: keycloak-admin
----
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakRealm
-metadata:
-  name: my-app
-spec:
-  instanceRef:
-    name: main
-  definition:
-    realm: my-app
-    enabled: true
-```
+This operator is developed and maintained by [**Hostzero GmbH**](https://hostzero.com), a provider of sovereign IT infrastructure and security solutions based in Germany.
 
-## Getting Started
+**For organizations with critical infrastructure needs (KRITIS), we offer:**
 
-Head over to the [Quick Start](./installation/quick-start.md) guide to deploy the operator in minutes.
+| Service | Description |
+|---------|-------------|
+| Enterprise Support | SLA-backed support with guaranteed response times |
+| Security Consulting | Hardening, compliance audits, and KRITIS certification support |
+| On-Premises Deployment | Air-gapped and sovereign cloud deployments |
+| Incident Response | 24/7 emergency support for production environments |
+| Training | Workshops and certification programs |
+
+→ [Contact Hostzero](https://hostzero.com/contact) for enterprise solutions
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/hostzero/keycloak-operator/blob/main/LICENSE) file for details.
+
+[1]: https://www.keycloak.org/docs-api/latest/rest-api/

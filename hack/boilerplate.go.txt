@@ -1,5 +1,5 @@
 /*
-Copyright 2024 HostZero.
+Copyright 2026 HostZero.
 
 Licensed under the BSD 2-Clause License.
 */
