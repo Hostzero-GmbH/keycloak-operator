@@ -4,6 +4,7 @@
 [![Release](https://github.com/Hostzero-GmbH/keycloak-operator/actions/workflows/release.yaml/badge.svg)](https://github.com/Hostzero-GmbH/keycloak-operator/actions/workflows/release.yaml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Hostzero-GmbH/keycloak-operator)](https://goreportcard.com/report/github.com/Hostzero-GmbH/keycloak-operator)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/hostzero-keycloak-operator)](https://artifacthub.io/packages/search?repo=hostzero-keycloak-operator)
 
 <sub>Sponsored by [Hostzero](https://hostzero.com)</sub>
 
