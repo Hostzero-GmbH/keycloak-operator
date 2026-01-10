@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Documentation
-    url: https://hostzero-gmbh.github.io/keycloak-operator/
+    url: https://keycloak-operator.hostzero.com
     about: Check the documentation before opening an issue
   - name: Discussions
     url: https://github.com/Hostzero-GmbH/keycloak-operator/discussions

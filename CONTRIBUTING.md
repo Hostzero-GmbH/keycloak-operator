@@ -165,7 +165,7 @@ Releases are automated via GitHub Actions. To create a release:
 ## Getting Help
 
 - Open a [discussion](https://github.com/Hostzero-GmbH/keycloak-operator/discussions) for questions
-- Check the [documentation](https://hostzero-gmbh.github.io/keycloak-operator/)
+- Check the [documentation](https://keycloak-operator.hostzero.com)
 - Review existing [issues](https://github.com/Hostzero-GmbH/keycloak-operator/issues)
 
 ## License

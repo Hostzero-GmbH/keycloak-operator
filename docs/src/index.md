@@ -1,11 +1,5 @@
 # About
 
-<p align="center">
-  <a href="https://hostzero.com">
-    <img src="./assets/hostzero-logo.svg" alt="Hostzero" width="180">
-  </a>
-</p>
-
 The Keycloak Operator is a Kubernetes operator developed by [**Hostzero**](https://hostzero.com) that manages Keycloak instances through the [Keycloak Admin API][1]. The overall goal is to provide a cloud-native management interface for Keycloak instances.
 
 ## Features
@@ -49,6 +43,12 @@ The Keycloak Operator is a Kubernetes operator developed by [**Hostzero**](https
 | `KeycloakOrganization` | Organization management (Keycloak 26+) |
 
 ## Enterprise Support
+
+<p align="center">
+  <a href="https://hostzero.com">
+    <img src="./assets/hostzero-logo.svg" alt="Hostzero" width="180">
+  </a>
+</p>
 
 This operator is developed and maintained by [**Hostzero GmbH**](https://hostzero.com), a provider of sovereign IT infrastructure and security solutions based in Germany.
 

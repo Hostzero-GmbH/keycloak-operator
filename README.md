@@ -33,7 +33,7 @@ The operator validates the Keycloak version on connection and will fail to becom
 
 ## Documentation
 
-📖 **[Read the full documentation](./docs/src/index.md)**
+📖 **[Read the full documentation](https://keycloak-operator.hostzero.com)**
 
 ## Overview
 
@@ -160,7 +160,7 @@ Key alerts to configure:
 - High error rate (>10% reconciliation failures)
 - Resources not ready for extended periods
 
-See the [Monitoring Documentation](./docs/src/monitoring.md) for detailed metrics reference, alerting rules, and Grafana dashboard recommendations.
+See the [Monitoring Documentation](https://keycloak-operator.hostzero.com/monitoring.html) for detailed metrics reference, alerting rules, and Grafana dashboard recommendations.
 
 ## API Reference
 
