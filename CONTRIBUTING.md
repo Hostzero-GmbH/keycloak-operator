@@ -43,11 +43,12 @@ Feature suggestions are welcome! Please:
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.25+
 - Docker
 - kubectl
 - Kind (`brew install kind` or `go install sigs.k8s.io/kind@latest`)
 - Helm
+- Trivy (`brew install trivy`) — for security scanning
 
 ### Quick Start
 
@@ -122,6 +123,22 @@ make lint
 make kind-test
 ```
 
+### Security Scanning
+
+Run [Trivy](https://trivy.dev/) locally before pushing to catch vulnerabilities early:
+
+```bash
+# Install Trivy (macOS)
+brew install trivy
+
+# Scan Go dependencies
+trivy fs --scanners vuln .
+
+# Build and scan Docker image
+docker build -t keycloak-operator:dev .
+trivy image keycloak-operator:dev
+```
+
 ## Project Structure
 
 ```
@@ -148,15 +165,13 @@ Releases are automated via GitHub Actions. To create a release:
 
 1. Update version in `charts/keycloak-operator/Chart.yaml` (both `version` and `appVersion`)
 
-2. Update `CHANGELOG.md` with release notes
-
-3. Create and push a tag:
+2. Create and push a tag:
    ```bash
    git tag v0.2.0
    git push origin v0.2.0
    ```
 
-4. The CI will automatically:
+3. The CI will automatically:
    - Run tests
    - Build and push Docker images to `ghcr.io/hostzero-gmbh/keycloak-operator`
    - Publish the Helm chart to `oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator`
