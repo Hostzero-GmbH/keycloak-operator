@@ -70,4 +70,4 @@
 
 {{- end }}
 
-For more information, visit: https://github.com/hostzero/keycloak-operator
+For more information, visit: https://github.com/Hostzero-GmbH/keycloak-operator

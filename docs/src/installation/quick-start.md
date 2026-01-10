@@ -11,7 +11,15 @@ This guide will walk you through setting up the Keycloak Operator and creating y
 
 ## Step 1: Install the Operator
 
-### Option A: Using Helm
+### Option A: Using Helm (Recommended)
+
+```bash
+helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator \
+  --namespace keycloak-operator \
+  --create-namespace
+```
+
+### Option B: Using Helm from Source
 
 ```bash
 helm install keycloak-operator ./charts/keycloak-operator \
@@ -19,7 +27,7 @@ helm install keycloak-operator ./charts/keycloak-operator \
   --create-namespace
 ```
 
-### Option B: Using Kind (for development)
+### Option C: Using Kind (for development)
 
 ```bash
 # This creates a Kind cluster with Keycloak and deploys the operator

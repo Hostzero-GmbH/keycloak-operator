@@ -14,7 +14,7 @@ This section covers how to set up a development environment and contribute to th
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/hostzero/keycloak-operator.git
+   git clone https://github.com/Hostzero-GmbH/keycloak-operator.git
    cd keycloak-operator
    ```
 

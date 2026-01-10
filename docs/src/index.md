@@ -66,6 +66,6 @@ This operator is developed and maintained by [**Hostzero GmbH**](https://hostzer
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](https://github.com/hostzero/keycloak-operator/blob/main/LICENSE) file for details.
+This project is licensed under the MIT License. See the [LICENSE](https://github.com/Hostzero-GmbH/keycloak-operator/blob/main/LICENSE) file for details.
 
 [1]: https://www.keycloak.org/docs-api/latest/rest-api/

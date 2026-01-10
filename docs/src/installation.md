@@ -4,10 +4,19 @@ There are several ways to install the Keycloak Operator:
 
 ## Helm Chart (Recommended)
 
-The preferred way to install the Keycloak Operator is using the provided Helm chart.
+The preferred way to install the Keycloak Operator is using the provided Helm chart from our OCI registry.
 
 ```shell
-helm install keycloak-operator ./charts/keycloak-operator \
+helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator \
+  --namespace keycloak-operator \
+  --create-namespace
+```
+
+To install a specific version:
+
+```shell
+helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator \
+  --version 0.1.0 \
   --namespace keycloak-operator \
   --create-namespace
 ```
@@ -32,7 +41,7 @@ For development or customization:
 
 ```shell
 # Clone the repository
-git clone https://github.com/hostzero/keycloak-operator.git
+git clone https://github.com/Hostzero-GmbH/keycloak-operator.git
 cd keycloak-operator
 
 # Install CRDs

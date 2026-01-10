@@ -4,6 +4,23 @@ The Keycloak Operator Helm chart provides a flexible way to deploy the operator 
 
 ## Installation
 
+### From OCI Registry (Recommended)
+
+```bash
+helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator \
+  --namespace keycloak-operator \
+  --create-namespace
+```
+
+To install a specific version:
+
+```bash
+helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator \
+  --version 0.1.0 \
+  --namespace keycloak-operator \
+  --create-namespace
+```
+
 ### From Local Chart
 
 ```bash
@@ -28,7 +45,7 @@ helm install keycloak-operator ./charts/keycloak-operator \
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `replicaCount` | Number of operator replicas | `1` |
-| `image.repository` | Container image repository | `ghcr.io/hostzero/keycloak-operator` |
+| `image.repository` | Container image repository | `ghcr.io/hostzero-gmbh/keycloak-operator` |
 | `image.tag` | Container image tag | Chart appVersion |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
 

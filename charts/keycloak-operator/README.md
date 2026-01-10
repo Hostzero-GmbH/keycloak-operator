@@ -9,14 +9,15 @@ A Helm chart for deploying the Keycloak Operator to Kubernetes.
 
 ## Installation
 
-### Add the repository (if published)
+### From OCI Registry (Recommended)
 
 ```bash
-helm repo add keycloak-operator https://hostzero.github.io/keycloak-operator
-helm repo update
+helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator \
+  --namespace keycloak-operator \
+  --create-namespace
 ```
 
-### Install from local chart
+### From local chart
 
 ```bash
 helm install keycloak-operator ./charts/keycloak-operator \
@@ -42,7 +43,7 @@ See [values.yaml](values.yaml) for the full list of configurable parameters.
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `replicaCount` | Number of replicas | `1` |
-| `image.repository` | Container image repository | `ghcr.io/hostzero/keycloak-operator` |
+| `image.repository` | Container image repository | `ghcr.io/hostzero-gmbh/keycloak-operator` |
 | `image.tag` | Container image tag | Chart appVersion |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `resources.limits.cpu` | CPU limit | `500m` |

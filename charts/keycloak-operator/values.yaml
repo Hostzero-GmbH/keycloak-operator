@@ -6,7 +6,7 @@ replicaCount: 1
 
 image:
   # -- Container image repository
-  repository: ghcr.io/hostzero/keycloak-operator
+  repository: ghcr.io/hostzero-gmbh/keycloak-operator
   # -- Image pull policy
   pullPolicy: IfNotPresent
   # -- Overrides the image tag whose default is the chart appVersion

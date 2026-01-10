@@ -1,0 +1,83 @@
+name: Bug Report
+description: Report a bug in the Keycloak Operator
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below.
+
+  - type: input
+    id: version
+    attributes:
+      label: Operator Version
+      description: What version of the operator are you running?
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: keycloak-version
+    attributes:
+      label: Keycloak Version
+      description: What version of Keycloak are you using?
+      placeholder: "26.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: kubernetes-version
+    attributes:
+      label: Kubernetes Version
+      description: Output of `kubectl version`
+      placeholder: "v1.30.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Create a KeycloakInstance with...
+        2. Create a KeycloakRealm...
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Operator Logs
+      description: Please include relevant operator logs
+      render: shell
+
+  - type: textarea
+    id: manifests
+    attributes:
+      label: Resource Manifests
+      description: Include any relevant CRD manifests (sanitized of secrets)
+      render: yaml
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context about the problem

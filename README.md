@@ -1,5 +1,10 @@
 # Keycloak Operator
 
+[![CI](https://github.com/Hostzero-GmbH/keycloak-operator/actions/workflows/ci.yaml/badge.svg)](https://github.com/Hostzero-GmbH/keycloak-operator/actions/workflows/ci.yaml)
+[![Release](https://github.com/Hostzero-GmbH/keycloak-operator/actions/workflows/release.yaml/badge.svg)](https://github.com/Hostzero-GmbH/keycloak-operator/actions/workflows/release.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Hostzero-GmbH/keycloak-operator)](https://goreportcard.com/report/github.com/Hostzero-GmbH/keycloak-operator)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 <sub>Sponsored by [Hostzero](https://hostzero.com)</sub>
 
 A Kubernetes operator for managing Keycloak resources declaratively. It uses the `keycloak.hostzero.com/v1beta1` API group.
@@ -110,7 +115,16 @@ keycloak-operator/
 - Kind (`brew install kind`)
 - Helm
 
-### Quick Start
+### Installation
+
+```bash
+# Install from OCI registry
+helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-operator \
+  --namespace keycloak-operator \
+  --create-namespace
+```
+
+### Quick Start (Development)
 
 ```bash
 # Create Kind cluster with Keycloak and operator deployed
@@ -217,6 +231,14 @@ This operator is developed and maintained by [**Hostzero GmbH**](https://hostzer
 - Training and workshops
 
 [Contact us](https://hostzero.com/contact) for enterprise licensing and support options.
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our development process and how to submit pull requests.
+
+## Security
+
+For security concerns, please see our [Security Policy](SECURITY.md).
 
 ## License
 
