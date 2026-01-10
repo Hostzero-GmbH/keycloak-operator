@@ -117,8 +117,10 @@ jobs:
         run: helm package charts/keycloak-operator
 
       - name: Push Helm chart to OCI registry
+        env:
+          REPO_OWNER: ${{ github.repository_owner }}
         run: |
-          helm push keycloak-operator-*.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+          helm push keycloak-operator-*.tgz oci://${{ env.REGISTRY }}/${REPO_OWNER,,}/charts
 
   create-release:
     name: Create GitHub Release
