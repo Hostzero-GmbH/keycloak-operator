@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
-	"github.com/hostzero/keycloak-operator/internal/keycloak"
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 // requiredContext is the only Kubernetes context that E2E tests are allowed to run against.

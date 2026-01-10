@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
-	"github.com/hostzero/keycloak-operator/internal/keycloak"
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 // KeycloakUserReconciler reconciles a KeycloakUser object

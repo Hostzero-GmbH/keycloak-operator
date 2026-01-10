@@ -1,4 +1,4 @@
-module github.com/hostzero/keycloak-operator
+module github.com/Hostzero-GmbH/keycloak-operator
 
 go 1.22.0
 

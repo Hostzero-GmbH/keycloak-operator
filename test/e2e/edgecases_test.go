@@ -14,8 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
-	"github.com/hostzero/keycloak-operator/internal/keycloak"
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 // TestSecretChangeDetection tests that KeycloakUserCredential re-syncs when the referenced Secret changes

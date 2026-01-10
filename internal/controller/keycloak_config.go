@@ -11,8 +11,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
-	"github.com/hostzero/keycloak-operator/internal/keycloak"
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 // Default timing constants

@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 )
 
 func TestKeycloakUserE2E(t *testing.T) {

@@ -16,9 +16,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
-	"github.com/hostzero/keycloak-operator/internal/controller"
-	"github.com/hostzero/keycloak-operator/internal/keycloak"
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/controller"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 var (

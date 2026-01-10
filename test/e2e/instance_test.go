@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 )
 
 func TestKeycloakInstanceE2E(t *testing.T) {
