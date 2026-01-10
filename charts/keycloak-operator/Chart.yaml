@@ -2,8 +2,8 @@ apiVersion: v2
 name: keycloak-operator
 description: A Kubernetes operator for managing Keycloak resources
 type: application
-version: 0.1.0
-appVersion: "0.1.0"
+version: 0.1.1
+appVersion: "0.1.1"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/Hostzero-GmbH/keycloak-operator
 sources:
