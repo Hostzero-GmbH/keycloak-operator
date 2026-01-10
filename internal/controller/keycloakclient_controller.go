@@ -239,7 +239,7 @@ func (r *KeycloakClientReconciler) getKeycloakClientAndRealm(ctx context.Context
 
 	kc := r.ClientManager.GetOrCreateClient(instanceName.String(), cfg)
 	if kc == nil {
-		return nil, "", instanceRef, realmRef, fmt.Errorf("Keycloak client not available for instance %s", instanceName)
+		return nil, "", instanceRef, realmRef, fmt.Errorf("keycloak client not available for instance %s", instanceName)
 	}
 
 	return kc, realmDef.Realm, instanceRef, realmRef, nil

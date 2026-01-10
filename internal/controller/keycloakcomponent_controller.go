@@ -405,14 +405,6 @@ func (r *KeycloakComponentReconciler) updateStatus(ctx context.Context, componen
 	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
 }
 
-// safeDeref safely dereferences a string pointer
-func safeDeref(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).

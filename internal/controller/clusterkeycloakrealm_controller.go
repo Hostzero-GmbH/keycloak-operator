@@ -154,7 +154,7 @@ func (r *ClusterKeycloakRealmReconciler) getKeycloakClient(ctx context.Context, 
 
 		kc := r.ClientManager.GetOrCreateClient(clusterInstanceKey(realm.Spec.ClusterInstanceRef.Name), cfg)
 		if kc == nil {
-			return nil, instanceRef, fmt.Errorf("Keycloak client not available for cluster instance %s", realm.Spec.ClusterInstanceRef.Name)
+			return nil, instanceRef, fmt.Errorf("keycloak client not available for cluster instance %s", realm.Spec.ClusterInstanceRef.Name)
 		}
 
 		return kc, instanceRef, nil
@@ -187,7 +187,7 @@ func (r *ClusterKeycloakRealmReconciler) getKeycloakClient(ctx context.Context, 
 
 		kc := r.ClientManager.GetOrCreateClient(instanceName.String(), cfg)
 		if kc == nil {
-			return nil, instanceRef, fmt.Errorf("Keycloak client not available for instance %s", instanceName)
+			return nil, instanceRef, fmt.Errorf("keycloak client not available for instance %s", instanceName)
 		}
 
 		return kc, instanceRef, nil

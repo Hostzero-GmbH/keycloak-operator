@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	keycloakv1beta1 "github.com/hostzero/keycloak-operator/api/v1beta1"
+	"github.com/hostzero/keycloak-operator/internal/keycloak"
 )
 
 // TestSecretChangeDetection tests that KeycloakUserCredential re-syncs when the referenced Secret changes
@@ -425,9 +426,11 @@ func TestDriftDetection(t *testing.T) {
 		// Get the actual realm name from the resource
 		keycloakRealmName := realmName // In our test, realm name matches resource name
 
-		// Update user directly in Keycloak
-		user, err := kc.GetUser(ctx, keycloakRealmName, updatedUser.Status.UserID)
+		// Verify user exists in Keycloak
+		var user *keycloak.UserRepresentation
+		user, err = kc.GetUser(ctx, keycloakRealmName, updatedUser.Status.UserID)
 		require.NoError(t, err)
+		require.NotNil(t, user)
 
 		// Modify the user - create a modified definition
 		modifiedFirstName := "Modified"

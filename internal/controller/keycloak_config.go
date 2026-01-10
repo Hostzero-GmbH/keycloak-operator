@@ -183,11 +183,6 @@ func ptrString(s string) *string {
 	return &s
 }
 
-// ptrBool is a helper to create a pointer to a bool
-func ptrBool(b bool) *bool {
-	return &b
-}
-
 // setFieldInDefinition sets a field value in a JSON definition
 func setFieldInDefinition(definition json.RawMessage, field string, value interface{}) json.RawMessage {
 	// Parse the definition as a map
