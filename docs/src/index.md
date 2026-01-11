@@ -62,7 +62,7 @@ This operator is developed and maintained by [**Hostzero GmbH**](https://hostzer
 | Incident Response | 24/7 emergency support for production environments |
 | Training | Workshops and certification programs |
 
-→ [Contact Hostzero](https://hostzero.com/contact) for enterprise solutions
+→ [Contact Hostzero](https://hostzero.com/contact-us) for enterprise solutions
 
 ## License
 

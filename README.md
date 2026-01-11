@@ -231,7 +231,7 @@ This operator is developed and maintained by [**Hostzero GmbH**](https://hostzer
 - 24/7 incident response
 - Training and workshops
 
-[Contact us](https://hostzero.com/contact) for enterprise licensing and support options.
+[Contact us](https://hostzero.com/contact-us) for enterprise licensing and support options.
 
 ## Contributing
 
