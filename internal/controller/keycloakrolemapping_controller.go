@@ -70,7 +70,10 @@ func (r *KeycloakRoleMappingReconciler) Reconcile(ctx context.Context, req ctrl.
 	// Handle deletion
 	if !mapping.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(mapping, FinalizerName) {
-			if err := r.removeRoleMapping(ctx, mapping); err != nil {
+			// Remove role mapping from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(mapping) {
+				log.Info("preserving role mapping in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.removeRoleMapping(ctx, mapping); err != nil {
 				log.Error(err, "failed to remove role mapping")
 			}
 

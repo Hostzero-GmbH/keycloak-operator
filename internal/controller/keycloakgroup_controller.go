@@ -56,7 +56,10 @@ func (r *KeycloakGroupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Handle deletion
 	if !group.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(group, FinalizerName) {
-			if err := r.deleteGroup(ctx, group); err != nil {
+			// Delete group from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(group) {
+				log.Info("preserving group in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteGroup(ctx, group); err != nil {
 				log.Error(err, "failed to delete group from Keycloak")
 			}
 

@@ -58,7 +58,10 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Handle deletion
 	if !user.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(user, FinalizerName) {
-			if err := r.deleteUser(ctx, user); err != nil {
+			// Delete user from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(user) {
+				log.Info("preserving user in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteUser(ctx, user); err != nil {
 				log.Error(err, "failed to delete user from Keycloak")
 			}
 

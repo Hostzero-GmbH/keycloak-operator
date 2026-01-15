@@ -57,8 +57,10 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 	// Handle deletion
 	if !realm.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(realm, FinalizerName) {
-			// Delete realm from Keycloak
-			if err := r.deleteRealm(ctx, realm); err != nil {
+			// Delete realm from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(realm) {
+				log.Info("preserving realm in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteRealm(ctx, realm); err != nil {
 				log.Error(err, "failed to delete realm from Keycloak")
 				// Continue with finalizer removal even on error
 			}

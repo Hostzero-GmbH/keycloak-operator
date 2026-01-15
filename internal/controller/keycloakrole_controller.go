@@ -56,7 +56,10 @@ func (r *KeycloakRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Handle deletion
 	if !role.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(role, FinalizerName) {
-			if err := r.deleteRole(ctx, role); err != nil {
+			// Delete role from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(role) {
+				log.Info("preserving role in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteRole(ctx, role); err != nil {
 				log.Error(err, "failed to delete role from Keycloak")
 			}
 

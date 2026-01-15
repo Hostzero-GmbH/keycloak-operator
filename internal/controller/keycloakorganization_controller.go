@@ -63,7 +63,10 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	// Handle deletion
 	if !org.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(org, FinalizerName) {
-			if err := r.deleteOrganization(ctx, org); err != nil {
+			// Delete organization from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(org) {
+				log.Info("preserving organization in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteOrganization(ctx, org); err != nil {
 				log.Error(err, "failed to delete organization from Keycloak")
 			}
 

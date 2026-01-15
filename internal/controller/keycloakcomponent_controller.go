@@ -56,7 +56,10 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Handle deletion
 	if !component.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(component, FinalizerName) {
-			if err := r.deleteComponent(ctx, component); err != nil {
+			// Delete component from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(component) {
+				log.Info("preserving component in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteComponent(ctx, component); err != nil {
 				log.Error(err, "failed to delete component from Keycloak")
 			}
 

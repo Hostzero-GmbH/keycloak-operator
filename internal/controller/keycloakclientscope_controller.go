@@ -56,7 +56,10 @@ func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.
 	// Handle deletion
 	if !clientScope.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(clientScope, FinalizerName) {
-			if err := r.deleteClientScope(ctx, clientScope); err != nil {
+			// Delete client scope from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(clientScope) {
+				log.Info("preserving client scope in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteClientScope(ctx, clientScope); err != nil {
 				log.Error(err, "failed to delete client scope from Keycloak")
 			}
 

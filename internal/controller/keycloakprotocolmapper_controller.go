@@ -56,7 +56,10 @@ func (r *KeycloakProtocolMapperReconciler) Reconcile(ctx context.Context, req ct
 	// Handle deletion
 	if !mapper.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(mapper, FinalizerName) {
-			if err := r.deleteMapper(ctx, mapper); err != nil {
+			// Delete protocol mapper from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(mapper) {
+				log.Info("preserving protocol mapper in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteMapper(ctx, mapper); err != nil {
 				log.Error(err, "failed to delete protocol mapper from Keycloak")
 			}
 

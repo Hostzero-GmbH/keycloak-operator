@@ -59,8 +59,10 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Handle deletion
 	if !kcClient.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(kcClient, FinalizerName) {
-			// Delete client from Keycloak
-			if err := r.deleteClient(ctx, kcClient); err != nil {
+			// Delete client from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(kcClient) {
+				log.Info("preserving client in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteClient(ctx, kcClient); err != nil {
 				log.Error(err, "failed to delete client from Keycloak")
 				// Continue with finalizer removal even on error
 			}

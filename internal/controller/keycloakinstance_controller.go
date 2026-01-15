@@ -26,6 +26,10 @@ const (
 	// FinalizerName is the finalizer used by all controllers
 	FinalizerName = "keycloak.hostzero.com/finalizer"
 
+	// PreserveResourceAnnotation is the annotation that prevents deletion of the resource in Keycloak
+	// when the CR is deleted. Set to "true" to preserve the resource.
+	PreserveResourceAnnotation = "keycloak.hostzero.com/preserve-resource"
+
 	// RequeueDelay is the default requeue delay
 	RequeueDelay = 10 * time.Second
 
@@ -38,6 +42,17 @@ const (
 	// MinKeycloakVersionString is the human-readable minimum version
 	MinKeycloakVersionString = "20.0.0"
 )
+
+// ShouldPreserveResource returns true if the resource should be preserved in Keycloak
+// when the CR is deleted. This is determined by the PreserveResourceAnnotation.
+func ShouldPreserveResource(obj client.Object) bool {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		return false
+	}
+	value, ok := annotations[PreserveResourceAnnotation]
+	return ok && value == "true"
+}
 
 // KeycloakInstanceReconciler reconciles a KeycloakInstance object
 type KeycloakInstanceReconciler struct {

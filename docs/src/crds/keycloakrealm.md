@@ -129,6 +129,27 @@ Common properties:
 | `ssoSessionIdleTimeout` | integer | SSO session idle timeout (seconds) |
 | `accessTokenLifespan` | integer | Access token lifespan (seconds) |
 
+## Preserving Realm on Deletion
+
+To keep the realm in Keycloak when deleting the CR:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: my-realm
+  annotations:
+    keycloak.hostzero.com/preserve-resource: "true"
+spec:
+  instanceRef:
+    name: my-keycloak
+  definition:
+    realm: my-realm
+    enabled: true
+```
+
+See [Common Patterns](../crds.md#preserving-resources-on-deletion) for more details.
+
 ## Short Names
 
 | Alias | Full Name |

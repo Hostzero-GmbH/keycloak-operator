@@ -56,7 +56,10 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 	// Handle deletion
 	if !idp.DeletionTimestamp.IsZero() {
 		if controllerutil.ContainsFinalizer(idp, FinalizerName) {
-			if err := r.deleteIdentityProvider(ctx, idp); err != nil {
+			// Delete identity provider from Keycloak unless preserve annotation is set
+			if ShouldPreserveResource(idp) {
+				log.Info("preserving identity provider in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if err := r.deleteIdentityProvider(ctx, idp); err != nil {
 				log.Error(err, "failed to delete identity provider from Keycloak")
 			}
 

@@ -116,6 +116,34 @@ metadata:
     - keycloak.hostzero.com/finalizer
 ```
 
+### Preserving Resources on Deletion
+
+By default, when you delete a Custom Resource, the operator also deletes the corresponding resource in Keycloak. If you want to keep the resource in Keycloak while removing the CR from Kubernetes, use the `keycloak.hostzero.com/preserve-resource` annotation:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: my-realm
+  annotations:
+    keycloak.hostzero.com/preserve-resource: "true"
+spec:
+  # ...
+```
+
+When this annotation is set to `"true"`, deleting the CR will:
+- Remove the CR from Kubernetes
+- **Keep** the resource in Keycloak untouched
+
+This is useful for scenarios like:
+- Migrating management of a resource to a different system
+- Temporarily removing operator control without losing data
+- Testing or debugging without affecting production resources
+
+> **Note**: The annotation value must be exactly `"true"` (as a string) to preserve the resource. Any other value (or absence of the annotation) will result in normal deletion behavior.
+
+**Supported Resources**: This annotation works with all resource types except `KeycloakInstance` and `ClusterKeycloakInstance` (which don't manage Keycloak resources directly).
+
 ## API Version
 
 All CRDs use the `keycloak.hostzero.com/v1beta1` API version:
