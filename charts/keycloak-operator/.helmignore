@@ -24,7 +24,6 @@
 # Test files
 *_test.yaml
 # Documentation
-README.md
 docs/
 # CI files
 .github/
