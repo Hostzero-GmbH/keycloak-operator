@@ -65,6 +65,6 @@ Create the name of the service account to use
 Return the image name
 */}}
 {{- define "keycloak-operator.image" -}}
-{{- $tag := .Values.image.tag | default .Chart.AppVersion }}
+{{- $tag := .Values.image.tag | default (printf "v%s" .Chart.AppVersion) }}
 {{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}
