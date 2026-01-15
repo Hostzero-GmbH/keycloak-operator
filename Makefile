@@ -188,8 +188,8 @@ helm-install: ## Install the Helm chart.
 
 .PHONY: helm-install-dev
 helm-install-dev: docker-build ## Install the Helm chart with dev values (builds and loads local image).
-	@if command -v kind &> /dev/null && kind get clusters 2>/dev/null | grep -q .; then \
-		kind load docker-image $(IMG); \
+	@if command -v kind &> /dev/null && kind get clusters 2>/dev/null | grep -q "$(KIND_CLUSTER_NAME)"; then \
+		kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME); \
 	elif command -v minikube &> /dev/null && minikube status &> /dev/null; then \
 		minikube image load $(IMG); \
 	fi
@@ -241,6 +241,21 @@ kind-load: docker-build ## Build and load the operator image into Kind.
 kind-deploy: kind-load install helm-install-dev ## Deploy operator to Kind cluster.
 	@echo "Operator deployed to Kind cluster"
 
+.PHONY: kind-redeploy
+kind-redeploy: ## Rebuild, reload and restart operator in Kind (for quick iteration).
+	@echo "Building operator image..."
+	$(CONTAINER_TOOL) build -t $(IMG) .
+	@echo "Removing old image from Kind nodes (avoids tag caching)..."
+	@for node in $$(kind get nodes --name $(KIND_CLUSTER_NAME) 2>/dev/null); do \
+		docker exec $$node crictl rmi docker.io/library/$(IMG) 2>/dev/null || true; \
+	done
+	@echo "Loading image into Kind cluster..."
+	kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME)
+	@echo "Restarting operator pod..."
+	kubectl rollout restart deployment/keycloak-operator -n $(HELM_NAMESPACE)
+	kubectl rollout status deployment/keycloak-operator -n $(HELM_NAMESPACE) --timeout=60s
+	@echo "Operator redeployed successfully"
+
 .PHONY: kind-deploy-keycloak
 kind-deploy-keycloak: ## Deploy Keycloak to Kind cluster.
 	./hack/setup-kind.sh deploy-keycloak
@@ -254,8 +269,12 @@ kind-logs: ## Tail operator logs in Kind cluster.
 	kubectl logs -f -n $(HELM_NAMESPACE) -l app.kubernetes.io/name=keycloak-operator
 
 .PHONY: kind-test
-kind-test: ## Run all tests (unit + e2e) against Kind cluster.
+kind-test: ## Run e2e tests against Kind cluster (with auto port-forward).
 	./hack/setup-kind.sh test-e2e
+
+.PHONY: kind-test-run
+kind-test-run: ## Run e2e tests (assumes port-forward is already running). Use TEST_RUN to filter tests.
+	USE_EXISTING_CLUSTER=true KEYCLOAK_URL=http://localhost:8080 go test -v -timeout 30m ./test/e2e/... $(if $(TEST_RUN),-run $(TEST_RUN),)
 
 .PHONY: kind-port-forward
 kind-port-forward: ## Port-forward Keycloak from Kind cluster to localhost:8080.

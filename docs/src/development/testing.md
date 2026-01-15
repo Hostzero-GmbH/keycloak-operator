@@ -57,15 +57,40 @@ E2E tests involve two different network perspectives:
 ```bash
 # Full setup: creates cluster, deploys operator and Keycloak, runs tests
 make kind-all
-make kind-test-e2e
+make kind-test
 ```
 
-The `kind-test-e2e` target runs `./hack/setup-kind.sh test-e2e`, which:
+The `kind-test` target runs `./hack/setup-kind.sh test-e2e`, which:
 1. Sets up port-forwarding to Keycloak automatically
 2. Configures environment variables
 3. Runs the e2e test suite with a 30-minute timeout
 
-**Manual setup** (for development):
+**Development workflow** (for iterating on code changes):
+
+```bash
+# 1. Initial setup (only needed once)
+make kind-all
+
+# 2. In a separate terminal, start port-forward (keep this running)
+make kind-port-forward
+
+# 3. After making code changes, rebuild and redeploy the operator
+make kind-redeploy
+
+# 4. Run all e2e tests
+make kind-test-run
+
+# 5. Or run specific tests using TEST_RUN
+make kind-test-run TEST_RUN=TestPreserveResourceAnnotation
+```
+
+The `kind-redeploy` target handles the full update cycle:
+1. Rebuilds the Docker image (layer caching detects source changes automatically)
+2. Removes old images from Kind nodes (avoids containerd tag caching)
+3. Loads the new image into the Kind cluster
+4. Restarts the operator deployment and waits for it to be ready
+
+**Manual setup** (for full control):
 
 ```bash
 # 1. Ensure cluster and operator are running
@@ -82,6 +107,19 @@ go test -v -timeout 30m ./test/e2e/...
 ```
 
 > **Note**: Tests that require direct Keycloak access (drift detection, cleanup verification) will be **automatically skipped** if port-forward is not available. This allows running basic E2E tests without port-forwarding, while advanced tests require it.
+
+### Quick Reference: Make Targets
+
+| Target | Description |
+|--------|-------------|
+| `make kind-all` | Create cluster, build operator, deploy everything |
+| `make kind-redeploy` | Rebuild, reload, and restart operator (for code changes) |
+| `make kind-test` | Run all e2e tests with auto port-forward |
+| `make kind-test-run` | Run e2e tests (port-forward must be running) |
+| `make kind-test-run TEST_RUN=TestFoo` | Run specific test(s) matching pattern |
+| `make kind-port-forward` | Start port-forward to Keycloak |
+| `make kind-logs` | Tail operator logs |
+| `make kind-status` | Show cluster and operator status |
 
 ### E2E Test Configuration
 
@@ -105,8 +143,6 @@ go test -v -timeout 30m ./test/e2e/...
 | Drift detection | **Yes** | Tests that modify Keycloak directly and verify reconciliation |
 | Cleanup verification | **Yes** | Tests that verify resources are deleted from Keycloak |
 | Edge cases | Mixed | Some require direct access, some don't |
-
-## Writing Tests
 
 ### Unit Test Example
 

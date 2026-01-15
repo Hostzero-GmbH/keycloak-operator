@@ -1,0 +1,55 @@
+# Keycloak Operator Development Rules
+
+## Testing Requirements
+
+**Every new feature or modified behavior MUST include E2E tests.**
+
+- New features: Add tests in `test/e2e/`
+- Bug fixes: Add regression tests
+- Modified behavior: Update existing tests
+
+## Running Tests
+
+### Quick Commands
+
+```bash
+# Initial setup (once)
+make kind-all
+
+# Start port-forward (separate terminal, keep running)
+make kind-port-forward
+
+# After code changes: rebuild + redeploy operator
+make kind-redeploy
+
+# Run all E2E tests
+make kind-test-run
+
+# Run specific test
+make kind-test-run TEST_RUN=TestMyFeature
+```
+
+### What `kind-redeploy` Does
+
+1. Builds image (Docker layer cache detects source changes)
+2. Removes old images from Kind nodes (avoids tag caching)
+3. Loads new image into cluster
+4. Restarts operator pod
+
+## E2E Test Structure
+
+```go
+func TestMyFeature(t *testing.T) {
+    skipIfNoCluster(t)
+    skipIfNoKeycloakAccess(t)  // If test needs direct Keycloak access
+    
+    // Create resources, verify behavior, cleanup
+}
+```
+
+## Key Files
+
+- `test/e2e/suite_test.go` - Test utilities and setup
+- `test/e2e/*_test.go` - E2E test files
+- `internal/controller/*_test.go` - Unit tests
+- `docs/src/development/testing.md` - Full testing documentation
