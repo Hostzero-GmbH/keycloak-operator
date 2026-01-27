@@ -11,121 +11,53 @@ This guide explains how to set up a local development environment using Kind (Ku
 
 ## Quick Setup
 
-The easiest way to get started is using the all-in-one command:
-
 ```bash
 make kind-all
 ```
 
-This will:
-1. Create a Kind cluster
-2. Build the operator image
-3. Load the image into Kind
-4. Install CRDs
-5. Deploy the operator via Helm
-6. Deploy Keycloak for testing
-7. Create a test KeycloakInstance
+This creates a Kind cluster and deploys everything:
+- Kind cluster with 3 nodes
+- Keycloak instance (admin/admin at localhost:8080)
+- Operator deployment
+- Test KeycloakInstance resource
 
-## Step-by-Step Setup
-
-### Create the Cluster
+## Development Workflow
 
 ```bash
-make kind-create
+# 1. Initial setup (once)
+make kind-all
+
+# 2. Start port-forward in a separate terminal
+make kind-port-forward
+
+# 3. After code changes, rebuild and restart
+make kind-redeploy
+
+# 4. Run tests
+make kind-test-run
+
+# 5. Run specific test
+make kind-test-run TEST_RUN=TestMyFeature
 ```
 
-This creates a Kind cluster with the following features:
-- Multi-node setup (1 control plane + 2 workers)
-- Port mappings for Keycloak access (8080, 8443)
-- Ingress-ready configuration
-
-### Deploy Keycloak
-
-```bash
-make kind-deploy-keycloak
-```
-
-Keycloak will be available at:
-- **In-cluster**: `http://keycloak.keycloak.svc.cluster.local`
-- **External**: `http://localhost:8080` (via NodePort 30080)
-- **Credentials**: admin / admin
-
-> **Note**: The NodePort service maps port 30080 to the host's port 8080. If port 8080 is already in use, you can use `make kind-port-forward` as an alternative.
-
-### Deploy the Operator
-
-```bash
-make kind-deploy
-```
-
-This builds the operator image, loads it into Kind, and deploys via Helm.
-
-## Useful Commands
+## Commands
 
 | Command | Description |
 |---------|-------------|
-| `make kind-create` | Create the Kind cluster |
-| `make kind-delete` | Delete the Kind cluster |
-| `make kind-reset` | Delete and recreate the cluster |
-| `make kind-status` | Show cluster status |
-| `make kind-deploy` | Build and deploy operator |
-| `make kind-deploy-keycloak` | Deploy Keycloak |
+| `make kind-all` | Full setup: cluster + Keycloak + operator |
+| `make kind-redeploy` | Rebuild and restart operator (fast iteration) |
+| `make kind-test-run` | Run e2e tests (use `TEST_RUN=TestName` to filter) |
 | `make kind-logs` | Tail operator logs |
 | `make kind-port-forward` | Port-forward Keycloak to localhost:8080 |
-
-## Running Tests
-
-Run the full E2E test suite against the Kind cluster:
-
-```bash
-make kind-test
-```
-
-This sets up port-forwarding automatically and runs all E2E tests.
-
-## Cluster Configuration
-
-The Kind cluster is configured in `hack/kind-config.yaml`:
-
-```yaml
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-name: keycloak-operator-dev
-nodes:
-  - role: control-plane
-    kubeadmConfigPatches:
-      - |
-        kind: InitConfiguration
-        nodeRegistration:
-          kubeletExtraArgs:
-            node-labels: "ingress-ready=true"
-    extraPortMappings:
-      # Keycloak HTTP (NodePort 30080 -> localhost:8080)
-      - containerPort: 30080
-        hostPort: 8080
-        protocol: TCP
-      # Keycloak HTTPS
-      - containerPort: 30443
-        hostPort: 8443
-        protocol: TCP
-      # Ingress HTTP
-      - containerPort: 80
-        hostPort: 80
-        protocol: TCP
-      # Ingress HTTPS
-      - containerPort: 443
-        hostPort: 443
-        protocol: TCP
-  - role: worker
-  - role: worker
-```
+| `make kind-reset` | Reset cluster to clean state |
+| `make kind-delete` | Delete the Kind cluster |
 
 ## Troubleshooting
 
 ### Check Operator Logs
 
 ```bash
-kubectl logs -n keycloak-operator -l app.kubernetes.io/name=keycloak-operator -f
+make kind-logs
 ```
 
 ### Check Keycloak Logs

@@ -17,6 +17,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	exportcmd "github.com/Hostzero-GmbH/keycloak-operator/cmd/export"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/controller"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
@@ -32,6 +33,22 @@ func init() {
 }
 
 func main() {
+	// Check for subcommands before parsing flags
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "export":
+			exportcmd.Run(os.Args[2:])
+			return
+		case "help", "-h", "--help":
+			// Show help for subcommands
+			if len(os.Args) > 2 && os.Args[2] == "export" {
+				exportcmd.Run([]string{"-h"})
+				return
+			}
+			// Fall through to default operator help
+		}
+	}
+
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string

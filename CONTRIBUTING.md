@@ -43,7 +43,7 @@ Feature suggestions are welcome! Please:
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.22+
 - Docker
 - kubectl
 - Kind (`brew install kind` or `go install sigs.k8s.io/kind@latest`)
@@ -71,6 +71,17 @@ make test
 
 # Run E2E tests
 make kind-test
+```
+
+### Iterating on Code Changes
+
+```bash
+# After making changes, rebuild and redeploy the operator
+make kind-redeploy
+
+# Run specific E2E tests (requires port-forward in separate terminal)
+make kind-port-forward  # In terminal 1
+make kind-test-run TEST_RUN=TestMyFeature  # In terminal 2
 ```
 
 ### Building

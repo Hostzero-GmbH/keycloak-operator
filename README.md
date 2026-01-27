@@ -136,6 +136,9 @@ make kind-logs
 
 # Apply sample resources
 kubectl apply -f config/samples/
+
+# After code changes, rebuild and restart the operator
+make kind-redeploy
 ```
 
 ### Testing

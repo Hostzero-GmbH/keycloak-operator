@@ -52,20 +52,7 @@ E2E tests involve two different network perspectives:
 
 ### Running E2E Tests
 
-**Recommended approach** (fully automated):
-
-```bash
-# Full setup: creates cluster, deploys operator and Keycloak, runs tests
-make kind-all
-make kind-test
-```
-
-The `kind-test` target runs `./hack/setup-kind.sh test-e2e`, which:
-1. Sets up port-forwarding to Keycloak automatically
-2. Configures environment variables
-3. Runs the e2e test suite with a 30-minute timeout
-
-**Development workflow** (for iterating on code changes):
+**Development workflow**:
 
 ```bash
 # 1. Initial setup (only needed once)
@@ -112,14 +99,13 @@ go test -v -timeout 30m ./test/e2e/...
 
 | Target | Description |
 |--------|-------------|
-| `make kind-all` | Create cluster, build operator, deploy everything |
-| `make kind-redeploy` | Rebuild, reload, and restart operator (for code changes) |
-| `make kind-test` | Run all e2e tests with auto port-forward |
-| `make kind-test-run` | Run e2e tests (port-forward must be running) |
-| `make kind-test-run TEST_RUN=TestFoo` | Run specific test(s) matching pattern |
-| `make kind-port-forward` | Start port-forward to Keycloak |
+| `make kind-all` | Create cluster and deploy everything |
+| `make kind-redeploy` | Rebuild and restart operator (fast iteration) |
+| `make kind-test-run` | Run e2e tests (requires port-forward) |
+| `make kind-test-run TEST_RUN=TestFoo` | Run specific test(s) |
+| `make kind-port-forward` | Port-forward Keycloak to localhost:8080 |
 | `make kind-logs` | Tail operator logs |
-| `make kind-status` | Show cluster and operator status |
+| `make kind-reset` | Reset cluster to clean state |
 
 ### E2E Test Configuration
 
@@ -230,3 +216,4 @@ Common test utilities are in `test/e2e/suite_test.go`:
 - `getInternalKeycloakClient(t)`: Create authenticated Keycloak client for direct API access
 - `rawJSON(s string)`: Create `runtime.RawExtension` from JSON string
 - `canConnectToKeycloak()`: Check if direct Keycloak connection is available
+

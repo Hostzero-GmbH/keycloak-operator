@@ -1117,6 +1117,246 @@ func (c *Client) DeleteOrganization(ctx context.Context, realmName, orgID string
 }
 
 // ============================================================================
+// Raw JSON Operations (for export)
+// ============================================================================
+
+// GetRaw retrieves a resource as raw JSON (full representation)
+func (c *Client) GetRaw(ctx context.Context, path string) (json.RawMessage, error) {
+	req, err := c.request(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := req.Get(c.baseURL + path)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+
+	return resp.Body(), nil
+}
+
+// ListRaw retrieves a list of resources as raw JSON array
+func (c *Client) ListRaw(ctx context.Context, path string, params map[string]string) ([]json.RawMessage, error) {
+	req, err := c.request(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		req.SetQueryParams(params)
+	}
+
+	resp, err := req.Get(c.baseURL + path)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+
+	// Parse as array of raw messages
+	var items []json.RawMessage
+	if err := json.Unmarshal(resp.Body(), &items); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return items, nil
+}
+
+// GetRealmRaw gets a realm as raw JSON (full representation)
+func (c *Client) GetRealmRaw(ctx context.Context, realmName string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName))
+}
+
+// GetClientsRaw gets all clients in a realm as raw JSON
+func (c *Client) GetClientsRaw(ctx context.Context, realmName string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients", nil)
+}
+
+// GetClientRaw gets a client by internal ID as raw JSON
+func (c *Client) GetClientRaw(ctx context.Context, realmName, clientUUID string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID))
+}
+
+// GetUsersRaw gets all users in a realm as raw JSON
+func (c *Client) GetUsersRaw(ctx context.Context, realmName string, params map[string]string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users", params)
+}
+
+// GetUserRaw gets a user by ID as raw JSON
+func (c *Client) GetUserRaw(ctx context.Context, realmName, userID string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID))
+}
+
+// GetGroupsRaw gets all groups in a realm as raw JSON
+func (c *Client) GetGroupsRaw(ctx context.Context, realmName string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups", nil)
+}
+
+// GetGroupRaw gets a group by ID as raw JSON
+func (c *Client) GetGroupRaw(ctx context.Context, realmName, groupID string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID))
+}
+
+// GetClientScopesRaw gets all client scopes in a realm as raw JSON
+func (c *Client) GetClientScopesRaw(ctx context.Context, realmName string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes", nil)
+}
+
+// GetClientScopeRaw gets a client scope by ID as raw JSON
+func (c *Client) GetClientScopeRaw(ctx context.Context, realmName, scopeID string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes/"+url.PathEscape(scopeID))
+}
+
+// GetIdentityProviders gets all identity providers in a realm
+func (c *Client) GetIdentityProviders(ctx context.Context, realmName string) ([]IdentityProviderRepresentation, error) {
+	var idps []IdentityProviderRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/identity-provider/instances", nil, &idps); err != nil {
+		return nil, err
+	}
+	return idps, nil
+}
+
+// GetIdentityProvidersRaw gets all identity providers in a realm as raw JSON
+func (c *Client) GetIdentityProvidersRaw(ctx context.Context, realmName string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/identity-provider/instances", nil)
+}
+
+// GetIdentityProviderRaw gets an identity provider by alias as raw JSON
+func (c *Client) GetIdentityProviderRaw(ctx context.Context, realmName, alias string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/identity-provider/instances/"+url.PathEscape(alias))
+}
+
+// GetRealmRoles gets all realm roles
+func (c *Client) GetRealmRoles(ctx context.Context, realmName string) ([]RoleRepresentation, error) {
+	var roles []RoleRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/roles", nil, &roles); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// GetRealmRolesRaw gets all realm roles as raw JSON
+func (c *Client) GetRealmRolesRaw(ctx context.Context, realmName string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/roles", nil)
+}
+
+// GetRealmRoleRaw gets a realm role by name as raw JSON
+func (c *Client) GetRealmRoleRaw(ctx context.Context, realmName, roleName string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/roles/"+url.PathEscape(roleName))
+}
+
+// GetClientRoles gets all roles for a client
+func (c *Client) GetClientRoles(ctx context.Context, realmName, clientUUID string) ([]RoleRepresentation, error) {
+	var roles []RoleRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/roles", nil, &roles); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// GetClientRolesRaw gets all roles for a client as raw JSON
+func (c *Client) GetClientRolesRaw(ctx context.Context, realmName, clientUUID string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/roles", nil)
+}
+
+// GetClientRoleRaw gets a client role by name as raw JSON
+func (c *Client) GetClientRoleRaw(ctx context.Context, realmName, clientUUID, roleName string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/roles/"+url.PathEscape(roleName))
+}
+
+// GetUserRealmRoleMappings gets realm role mappings for a user
+func (c *Client) GetUserRealmRoleMappings(ctx context.Context, realmName, userID string) ([]RoleRepresentation, error) {
+	var roles []RoleRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/role-mappings/realm", nil, &roles); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// GetUserRealmRoleMappingsRaw gets realm role mappings for a user as raw JSON
+func (c *Client) GetUserRealmRoleMappingsRaw(ctx context.Context, realmName, userID string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/role-mappings/realm", nil)
+}
+
+// GetUserClientRoleMappings gets client role mappings for a user
+func (c *Client) GetUserClientRoleMappings(ctx context.Context, realmName, userID, clientUUID string) ([]RoleRepresentation, error) {
+	var roles []RoleRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/role-mappings/clients/"+url.PathEscape(clientUUID), nil, &roles); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// GetUserClientRoleMappingsRaw gets client role mappings for a user as raw JSON
+func (c *Client) GetUserClientRoleMappingsRaw(ctx context.Context, realmName, userID, clientUUID string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/role-mappings/clients/"+url.PathEscape(clientUUID), nil)
+}
+
+// GetGroupRealmRoleMappings gets realm role mappings for a group
+func (c *Client) GetGroupRealmRoleMappings(ctx context.Context, realmName, groupID string) ([]RoleRepresentation, error) {
+	var roles []RoleRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID)+"/role-mappings/realm", nil, &roles); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// GetGroupRealmRoleMappingsRaw gets realm role mappings for a group as raw JSON
+func (c *Client) GetGroupRealmRoleMappingsRaw(ctx context.Context, realmName, groupID string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID)+"/role-mappings/realm", nil)
+}
+
+// GetGroupClientRoleMappings gets client role mappings for a group
+func (c *Client) GetGroupClientRoleMappings(ctx context.Context, realmName, groupID, clientUUID string) ([]RoleRepresentation, error) {
+	var roles []RoleRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID)+"/role-mappings/clients/"+url.PathEscape(clientUUID), nil, &roles); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// GetGroupClientRoleMappingsRaw gets client role mappings for a group as raw JSON
+func (c *Client) GetGroupClientRoleMappingsRaw(ctx context.Context, realmName, groupID, clientUUID string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID)+"/role-mappings/clients/"+url.PathEscape(clientUUID), nil)
+}
+
+// GetComponentsRaw gets all components in a realm as raw JSON
+func (c *Client) GetComponentsRaw(ctx context.Context, realmName string, params map[string]string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/components", params)
+}
+
+// GetComponentRaw gets a component by ID as raw JSON
+func (c *Client) GetComponentRaw(ctx context.Context, realmName, componentID string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/components/"+url.PathEscape(componentID))
+}
+
+// GetOrganizationsRaw gets all organizations in a realm as raw JSON
+func (c *Client) GetOrganizationsRaw(ctx context.Context, realmName string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations", nil)
+}
+
+// GetOrganizationRaw gets an organization by ID as raw JSON
+func (c *Client) GetOrganizationRaw(ctx context.Context, realmName, orgID string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations/"+url.PathEscape(orgID))
+}
+
+// GetClientProtocolMappersRaw gets all protocol mappers for a client as raw JSON
+func (c *Client) GetClientProtocolMappersRaw(ctx context.Context, realmName, clientUUID string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/protocol-mappers/models", nil)
+}
+
+// GetClientScopeProtocolMappersRaw gets all protocol mappers for a client scope as raw JSON
+func (c *Client) GetClientScopeProtocolMappersRaw(ctx context.Context, realmName, scopeID string) ([]json.RawMessage, error) {
+	return c.ListRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/client-scopes/"+url.PathEscape(scopeID)+"/protocol-mappers/models", nil)
+}
+
+// ============================================================================
 // Client Manager
 // ============================================================================
 

@@ -29,11 +29,12 @@ This sets up:
 
 ```bash
 # After code changes, rebuild and redeploy
-make kind-deploy
+make kind-redeploy
 
 # Check operator logs
 make kind-logs
 ```
+
 
 ### Accessing Keycloak
 

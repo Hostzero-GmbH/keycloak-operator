@@ -116,7 +116,10 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Prepare definition JSON with clientId set
-	definition := kcClient.Spec.Definition.Raw
+	var definition []byte
+	if kcClient.Spec.Definition != nil {
+		definition = kcClient.Spec.Definition.Raw
+	}
 	if definition == nil {
 		definition = []byte("{}")
 	}

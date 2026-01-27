@@ -5,6 +5,7 @@
   - [Quick Start](./installation/quick-start.md)
   - [Helm Chart](./installation/helm.md)
   - [Kind Cluster](./installation/kind.md)
+- [Exporting Resources](./export.md)
 - [Configuration](./configuration.md)
   - [Environment Variables](./configuration/environment.md)
   - [Helm Values](./configuration/helm-values.md)

@@ -10,13 +10,21 @@ rules:
   - apiGroups:
       - keycloak.hostzero.com
     resources:
-      - keycloakinstances
-      - keycloakrealms
+      - clusterkeycloakinstances
+      - clusterkeycloakrealms
       - keycloakclients
-      - keycloakusers
       - keycloakclientscopes
+      - keycloakcomponents
       - keycloakgroups
       - keycloakidentityproviders
+      - keycloakinstances
+      - keycloakorganizations
+      - keycloakprotocolmappers
+      - keycloakrealms
+      - keycloakroles
+      - keycloakrolemappings
+      - keycloakusercredentials
+      - keycloakusers
     verbs:
       - create
       - delete
@@ -29,13 +37,21 @@ rules:
   - apiGroups:
       - keycloak.hostzero.com
     resources:
-      - keycloakinstances/status
-      - keycloakrealms/status
+      - clusterkeycloakinstances/status
+      - clusterkeycloakrealms/status
       - keycloakclients/status
-      - keycloakusers/status
       - keycloakclientscopes/status
+      - keycloakcomponents/status
       - keycloakgroups/status
       - keycloakidentityproviders/status
+      - keycloakinstances/status
+      - keycloakorganizations/status
+      - keycloakprotocolmappers/status
+      - keycloakrealms/status
+      - keycloakroles/status
+      - keycloakrolemappings/status
+      - keycloakusercredentials/status
+      - keycloakusers/status
     verbs:
       - get
       - patch
@@ -44,13 +60,21 @@ rules:
   - apiGroups:
       - keycloak.hostzero.com
     resources:
-      - keycloakinstances/finalizers
-      - keycloakrealms/finalizers
+      - clusterkeycloakinstances/finalizers
+      - clusterkeycloakrealms/finalizers
       - keycloakclients/finalizers
-      - keycloakusers/finalizers
       - keycloakclientscopes/finalizers
+      - keycloakcomponents/finalizers
       - keycloakgroups/finalizers
       - keycloakidentityproviders/finalizers
+      - keycloakinstances/finalizers
+      - keycloakorganizations/finalizers
+      - keycloakprotocolmappers/finalizers
+      - keycloakrealms/finalizers
+      - keycloakroles/finalizers
+      - keycloakrolemappings/finalizers
+      - keycloakusercredentials/finalizers
+      - keycloakusers/finalizers
     verbs:
       - update
   # Secrets (for credentials and client secrets)

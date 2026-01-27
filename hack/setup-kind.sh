@@ -24,6 +24,7 @@ KEYCLOAK_MANIFEST="${SCRIPT_DIR}/keycloak-kind.yaml"
 OPERATOR_IMAGE="${IMG:-keycloak-operator:dev}"
 KEYCLOAK_NAMESPACE="keycloak"
 OPERATOR_NAMESPACE="keycloak-operator"
+EXPECTED_CONTEXT="kind-${CLUSTER_NAME}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -46,6 +47,42 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Validate that we're using the correct kubectl context
+# This prevents accidentally running commands against production clusters
+validate_context() {
+    local current_context
+    current_context=$(kubectl config current-context 2>/dev/null || echo "")
+    
+    if [ -z "$current_context" ]; then
+        log_error "No kubectl context set"
+        return 1
+    fi
+    
+    if [ "$current_context" != "$EXPECTED_CONTEXT" ]; then
+        log_error "Wrong kubectl context!"
+        echo ""
+        echo "  Current context:  $current_context"
+        echo "  Expected context: $EXPECTED_CONTEXT"
+        echo ""
+        echo "This command only runs against the Kind development cluster."
+        echo ""
+        echo "To fix this, either:"
+        echo "  1. Switch context:  kubectl config use-context $EXPECTED_CONTEXT"
+        echo "  2. Create cluster:  ./hack/setup-kind.sh create"
+        echo ""
+        return 1
+    fi
+    
+    return 0
+}
+
+# Require correct context - exits on failure
+require_kind_context() {
+    if ! validate_context; then
+        exit 1
+    fi
 }
 
 check_prerequisites() {
@@ -128,6 +165,8 @@ show_status() {
         return 1
     fi
     
+    require_kind_context
+    
     echo ""
     log_info "Cluster: ${CLUSTER_NAME}"
     echo ""
@@ -179,6 +218,8 @@ load_image() {
 }
 
 install_crds() {
+    require_kind_context
+    
     log_info "Installing CRDs..."
     cd "${PROJECT_ROOT}"
     
@@ -188,6 +229,8 @@ install_crds() {
 }
 
 deploy_operator() {
+    require_kind_context
+    
     log_info "Deploying operator to cluster..."
     cd "${PROJECT_ROOT}"
     
@@ -210,6 +253,8 @@ deploy_operator() {
 }
 
 deploy_keycloak() {
+    require_kind_context
+    
     log_info "Deploying Keycloak to cluster for testing..."
     
     # Use manifest-based deployment (no Helm dependency)
@@ -234,6 +279,8 @@ deploy_keycloak() {
 }
 
 deploy_keycloak_helm() {
+    require_kind_context
+    
     log_info "Deploying Keycloak to cluster using Helm..."
     
     # Create namespace
@@ -261,6 +308,8 @@ deploy_keycloak_helm() {
 }
 
 create_test_resources() {
+    require_kind_context
+    
     log_info "Creating test resources..."
     
     # Create Keycloak admin credentials secret
@@ -311,6 +360,8 @@ run_all() {
 }
 
 run_e2e_tests() {
+    require_kind_context
+    
     log_info "Running e2e tests against Kind cluster..."
     
     cd "${PROJECT_ROOT}"

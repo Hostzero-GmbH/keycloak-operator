@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= keycloak-operator:latest
+IMG ?= keycloak-operator:dev
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.31.0
 
@@ -216,66 +216,56 @@ helm-docs: ## Generate Helm documentation (requires helm-docs).
 ##@ Kind Cluster
 
 KIND_CLUSTER_NAME ?= keycloak-operator-dev
+KIND_CONTEXT = kind-$(KIND_CLUSTER_NAME)
 
-.PHONY: kind-create
-kind-create: ## Create a Kind cluster for local development.
-	./hack/setup-kind.sh create
+##@ Kind Development Cluster
+# Simplified workflow: kind-all → kind-redeploy → kind-test-run
 
-.PHONY: kind-delete
-kind-delete: ## Delete the Kind cluster.
-	./hack/setup-kind.sh delete
-
-.PHONY: kind-reset
-kind-reset: ## Reset (delete and recreate) the Kind cluster.
-	./hack/setup-kind.sh reset
-
-.PHONY: kind-status
-kind-status: ## Show Kind cluster status.
-	./hack/setup-kind.sh status
-
-.PHONY: kind-load
-kind-load: docker-build ## Build and load the operator image into Kind.
-	kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME)
-
-.PHONY: kind-deploy
-kind-deploy: kind-load install helm-install-dev ## Deploy operator to Kind cluster.
-	@echo "Operator deployed to Kind cluster"
-
-.PHONY: kind-redeploy
-kind-redeploy: ## Rebuild, reload and restart operator in Kind (for quick iteration).
-	@echo "Building operator image..."
-	$(CONTAINER_TOOL) build -t $(IMG) .
-	@echo "Removing old image from Kind nodes (avoids tag caching)..."
-	@for node in $$(kind get nodes --name $(KIND_CLUSTER_NAME) 2>/dev/null); do \
-		docker exec $$node crictl rmi docker.io/library/$(IMG) 2>/dev/null || true; \
-	done
-	@echo "Loading image into Kind cluster..."
-	kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME)
-	@echo "Restarting operator pod..."
-	kubectl rollout restart deployment/keycloak-operator -n $(HELM_NAMESPACE)
-	kubectl rollout status deployment/keycloak-operator -n $(HELM_NAMESPACE) --timeout=60s
-	@echo "Operator redeployed successfully"
-
-.PHONY: kind-deploy-keycloak
-kind-deploy-keycloak: ## Deploy Keycloak to Kind cluster.
-	./hack/setup-kind.sh deploy-keycloak
+.PHONY: kind-check-context
+kind-check-context:
+	@current_ctx=$$(kubectl config current-context 2>/dev/null || echo "none"); \
+	if [ "$$current_ctx" != "$(KIND_CONTEXT)" ]; then \
+		echo ""; \
+		echo "\033[0;31m[ERROR] Wrong kubectl context!\033[0m"; \
+		echo "  Current: $$current_ctx | Expected: $(KIND_CONTEXT)"; \
+		echo "  Run: kubectl config use-context $(KIND_CONTEXT)"; \
+		echo "  Or create cluster: make kind-all"; \
+		echo ""; \
+		exit 1; \
+	fi
 
 .PHONY: kind-all
 kind-all: ## Create Kind cluster and deploy everything (operator + Keycloak).
 	./hack/setup-kind.sh all
 
-.PHONY: kind-logs
-kind-logs: ## Tail operator logs in Kind cluster.
-	kubectl logs -f -n $(HELM_NAMESPACE) -l app.kubernetes.io/name=keycloak-operator
-
-.PHONY: kind-test
-kind-test: ## Run e2e tests against Kind cluster (with auto port-forward).
-	./hack/setup-kind.sh test-e2e
+.PHONY: kind-redeploy
+kind-redeploy: kind-check-context ## Rebuild and restart operator (fast iteration).
+	@echo "Building and deploying operator..."
+	@$(CONTAINER_TOOL) build -t $(IMG) .
+	@for node in $$(kind get nodes --name $(KIND_CLUSTER_NAME) 2>/dev/null); do \
+		docker exec $$node crictl rmi $(IMG) 2>/dev/null || true; \
+	done
+	@kind load docker-image $(IMG) --name $(KIND_CLUSTER_NAME)
+	@kubectl rollout restart deployment/keycloak-operator -n $(HELM_NAMESPACE)
+	@kubectl rollout status deployment/keycloak-operator -n $(HELM_NAMESPACE) --timeout=60s
+	@echo "Done"
 
 .PHONY: kind-test-run
-kind-test-run: ## Run e2e tests (assumes port-forward is already running). Use TEST_RUN to filter tests.
+kind-test-run: ## Run e2e tests. Use TEST_RUN=TestName to filter.
 	USE_EXISTING_CLUSTER=true KEYCLOAK_URL=http://localhost:8080 go test -v -timeout 30m ./test/e2e/... $(if $(TEST_RUN),-run $(TEST_RUN),)
 
+.PHONY: kind-logs
+kind-logs: kind-check-context ## Tail operator logs.
+	kubectl logs -f -n $(HELM_NAMESPACE) -l app.kubernetes.io/name=keycloak-operator
+
 .PHONY: kind-port-forward
-kind-port-forward: ## Port-forward Keycloak from Kind cluster to localhost:8080.
+kind-port-forward: kind-check-context ## Port-forward Keycloak to localhost:8080.
 	kubectl port-forward svc/keycloak 8080:80 -n keycloak
+
+.PHONY: kind-reset
+kind-reset: ## Reset cluster to clean state.
+	./hack/setup-kind.sh reset
+
+.PHONY: kind-delete
+kind-delete: ## Delete the Kind cluster.
+	./hack/setup-kind.sh delete
