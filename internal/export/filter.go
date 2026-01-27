@@ -19,14 +19,14 @@ const (
 
 // Default Keycloak built-in clients to skip
 var defaultClients = map[string]bool{
-	"account":                     true,
-	"account-console":             true,
-	"admin-cli":                   true,
-	"broker":                      true,
-	"realm-management":            true,
-	"security-admin-console":      true,
-	"master-realm":                true, // Only in master realm
-	"{realm}-realm":               true, // Pattern for other realms
+	"account":                true,
+	"account-console":        true,
+	"admin-cli":              true,
+	"broker":                 true,
+	"realm-management":       true,
+	"security-admin-console": true,
+	"master-realm":           true, // Only in master realm
+	"{realm}-realm":          true, // Pattern for other realms
 }
 
 // Default Keycloak built-in client scopes to skip
@@ -45,11 +45,11 @@ var defaultClientScopes = map[string]bool{
 
 // Default Keycloak built-in roles to skip
 var defaultRealmRoles = map[string]bool{
-	"default-roles-{realm}":  true, // Pattern
-	"offline_access":         true,
-	"uma_authorization":      true,
-	"create-realm":           true, // Only in master
-	"admin":                  true, // Only in master
+	"default-roles-{realm}": true, // Pattern
+	"offline_access":        true,
+	"uma_authorization":     true,
+	"create-realm":          true, // Only in master
+	"admin":                 true, // Only in master
 }
 
 // Default Keycloak built-in client roles to skip
@@ -95,35 +95,35 @@ var defaultComponentProviderTypes = map[string]bool{
 // Default protocol mappers to skip
 var defaultProtocolMappers = map[string]bool{
 	// Built-in protocol mappers
-	"audience resolve":                    true,
-	"client roles":                        true,
-	"realm roles":                         true,
-	"allowed web origins":                 true,
-	"email":                               true,
-	"email verified":                      true,
-	"family name":                         true,
-	"full name":                           true,
-	"given name":                          true,
-	"groups":                              true,
-	"locale":                              true,
-	"phone number":                        true,
-	"phone number verified":               true,
-	"profile":                             true,
-	"acr loa level":                       true,
-	"address":                             true,
-	"nickname":                            true,
-	"picture":                             true,
-	"preferred_username":                  true,
-	"updated at":                          true,
-	"username":                            true,
-	"website":                             true,
-	"zoneinfo":                            true,
-	"upn":                                 true,
-	"birthdate":                           true,
-	"gender":                              true,
-	"middle name":                         true,
-	"audience":                            true,
-	"role list":                           true,
+	"audience resolve":      true,
+	"client roles":          true,
+	"realm roles":           true,
+	"allowed web origins":   true,
+	"email":                 true,
+	"email verified":        true,
+	"family name":           true,
+	"full name":             true,
+	"given name":            true,
+	"groups":                true,
+	"locale":                true,
+	"phone number":          true,
+	"phone number verified": true,
+	"profile":               true,
+	"acr loa level":         true,
+	"address":               true,
+	"nickname":              true,
+	"picture":               true,
+	"preferred_username":    true,
+	"updated at":            true,
+	"username":              true,
+	"website":               true,
+	"zoneinfo":              true,
+	"upn":                   true,
+	"birthdate":             true,
+	"gender":                true,
+	"middle name":           true,
+	"audience":              true,
+	"role list":             true,
 }
 
 // Filter determines which resources to include/exclude

@@ -2,7 +2,6 @@ package export
 
 import (
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"strings"
 
@@ -554,19 +553,4 @@ func removeServerFields(raw json.RawMessage, fields ...string) json.RawMessage {
 	}
 
 	return result
-}
-
-// formatJSON formats JSON for readability
-func formatJSON(raw json.RawMessage) (string, error) {
-	var data interface{}
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return "", fmt.Errorf("failed to parse JSON: %w", err)
-	}
-
-	formatted, err := json.MarshalIndent(data, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to format JSON: %w", err)
-	}
-
-	return string(formatted), nil
 }
