@@ -1,5 +1,8 @@
-# Build stage
-FROM golang:1.25-alpine AS builder
+# Build stage - run on native platform, cross-compile for target
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+ARG TARGETOS=linux
+ARG TARGETARCH
 
 WORKDIR /workspace
 
@@ -12,8 +15,8 @@ COPY cmd/ cmd/
 COPY api/ api/
 COPY internal/ internal/
 
-# Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o manager cmd/main.go
+# Build for the target platform (set automatically by buildx)
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
 
 # Runtime stage
 FROM gcr.io/distroless/static:nonroot
