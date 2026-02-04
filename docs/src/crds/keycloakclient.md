@@ -26,10 +26,12 @@ spec:
     publicClient: false
     # ... any other Keycloak client properties
   
-  # Optional: Sync client secret to a Kubernetes Secret
-  clientSecret:
-    secretName: my-app-credentials
-    key: clientSecret  # Default: clientSecret
+  # Optional: Configure client secret handling
+  clientSecretRef:
+    name: my-app-credentials
+    # clientIdKey: client-id       # Default: client-id
+    # clientSecretKey: client-secret  # Default: client-secret
+    # create: true                 # Default: true
 ```
 
 ## Status
@@ -42,7 +44,48 @@ status:
   message: "Client synchronized successfully"
 ```
 
-## Example
+## Client Secret Handling
+
+The `clientSecretRef` field controls how client secrets are managed:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | string | (required) | Name of the Kubernetes Secret |
+| `clientIdKey` | string | `client-id` | Key for the client ID in the secret |
+| `clientSecretKey` | string | `client-secret` | Key for the client secret in the secret |
+| `create` | boolean | `true` | Whether to create the secret if it doesn't exist |
+
+### Behavior
+
+- **If the secret exists**: The operator reads the client secret from the specified key and configures Keycloak to use it.
+- **If the secret doesn't exist and `create: true`**: The operator lets Keycloak auto-generate a secret and creates the Kubernetes Secret.
+- **If the secret doesn't exist and `create: false`**: The operator reports an error (strict mode for GitOps workflows).
+
+### Use Cases
+
+**Auto-generate secret (default):**
+```yaml
+clientSecretRef:
+  name: my-app-credentials
+  # create: true (default)
+```
+
+**Use pre-existing secret (GitOps/Sealed Secrets):**
+```yaml
+clientSecretRef:
+  name: my-sealed-secret
+  create: false
+```
+
+**Custom key names:**
+```yaml
+clientSecretRef:
+  name: my-credentials
+  clientIdKey: OIDC_CLIENT_ID
+  clientSecretKey: OIDC_CLIENT_SECRET
+```
+
+## Examples
 
 ### Public Client (SPA)
 
@@ -86,8 +129,8 @@ spec:
     serviceAccountsEnabled: true
     standardFlowEnabled: false
     directAccessGrantsEnabled: false
-  clientSecret:
-    secretName: my-api-credentials
+  clientSecretRef:
+    name: my-api-credentials
 ```
 
 ### Service Account with Roles
@@ -109,19 +152,53 @@ spec:
     standardFlowEnabled: false
     directAccessGrantsEnabled: false
     authorizationServicesEnabled: true
-  clientSecret:
-    secretName: my-service-credentials
+  clientSecretRef:
+    name: my-service-credentials
 ```
 
-## Client Secret Synchronization
+### Using Pre-existing Secret (Sealed Secrets / External Secrets)
 
-When `clientSecret` is specified, the operator creates a Kubernetes Secret with the client credentials:
+```yaml
+# First, create or have your secret management tool create the secret:
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-sealed-secret
+type: Opaque
+data:
+  client-id: bXktYXBw          # base64 encoded
+  client-secret: c2VjcmV0...   # base64 encoded
+---
+# Then reference it with create: false
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClient
+metadata:
+  name: my-app
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    clientId: my-app
+    enabled: true
+    publicClient: false
+  clientSecretRef:
+    name: my-sealed-secret
+    create: false  # Error if secret doesn't exist
+```
+
+## Generated Secret Format
+
+When the operator creates or manages a secret, it has this structure:
 
 ```yaml
 apiVersion: v1
 kind: Secret
 metadata:
   name: my-app-credentials
+  ownerReferences:
+    - apiVersion: keycloak.hostzero.com/v1beta1
+      kind: KeycloakClient
+      name: my-app
 type: Opaque
 data:
   client-id: bXktYXBw          # base64 encoded

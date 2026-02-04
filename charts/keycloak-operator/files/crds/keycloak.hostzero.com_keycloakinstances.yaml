@@ -1,45 +1,36 @@
-{{- if .Values.crds.install }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: keycloakrolemappings.keycloak.hostzero.com
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-    {{- if .Values.crds.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
-  labels:
-    {{- include "keycloak-operator.labels" . | nindent 4 }}
+  name: keycloakinstances.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakRoleMapping
-    listKind: KeycloakRoleMappingList
-    plural: keycloakrolemappings
+    kind: KeycloakInstance
+    listKind: KeycloakInstanceList
+    plural: keycloakinstances
     shortNames:
-    - kcrm
-    singular: keycloakrolemapping
+    - kci
+    singular: keycloakinstance
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the role mapping is applied
+    - description: Whether the instance is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
-    - description: Subject type (user/group)
-      jsonPath: .status.subjectType
-      name: Subject
+    - description: The base URL of the Keycloak instance
+      jsonPath: .spec.baseUrl
+      name: URL
       type: string
-    - description: Role name
-      jsonPath: .status.roleName
-      name: Role
-      type: string
-    - description: Role type (realm/client)
-      jsonPath: .status.roleType
-      name: Type
+    - description: Keycloak server version
+      jsonPath: .status.version
+      name: Version
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -47,7 +38,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KeycloakRoleMapping maps a role to a user or group
+        description: KeycloakInstance makes a Keycloak server known to the operator
         properties:
           apiVersion:
             description: |-
@@ -67,89 +58,79 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakRoleMappingSpec defines the desired state of KeycloakRoleMapping
+            description: KeycloakInstanceSpec defines the desired state of KeycloakInstance
             properties:
-              role:
-                description: |-
-                  Role defines the role to assign (inline definition)
-                  Either Role or RoleRef must be specified
+              baseUrl:
+                description: BaseUrl is the URL of the Keycloak server (e.g., http://keycloak:8080)
+                type: string
+              client:
+                description: Client contains optional service account client configuration
                 properties:
-                  clientId:
-                    description: ClientID is the client ID for client-level roles
-                      (alternative to ClientRef)
+                  id:
+                    description: ID is the client ID for service account authentication
                     type: string
-                  clientRef:
-                    description: |-
-                      ClientRef references a KeycloakClient for client-level roles
-                      If not specified, the role is a realm-level role
-                    properties:
-                      name:
-                        description: Name of the resource
-                        type: string
-                      namespace:
-                        description: Namespace of the resource (optional, defaults
-                          to the same namespace)
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  name:
-                    description: Name is the role name
+                  secret:
+                    description: Secret is the client secret (optional for public
+                      clients)
                     type: string
                 required:
-                - name
+                - id
                 type: object
-              roleRef:
-                description: |-
-                  RoleRef references an existing KeycloakRole resource
-                  Either Role or RoleRef must be specified
+              credentials:
+                description: Credentials contains the reference to the admin credentials
+                  secret
                 properties:
-                  name:
-                    description: Name of the resource
-                    type: string
-                  namespace:
-                    description: Namespace of the resource (optional, defaults to
-                      the same namespace)
-                    type: string
+                  secretRef:
+                    description: SecretRef contains the reference to the secret with
+                      credentials
+                    properties:
+                      name:
+                        description: Name is the name of the secret
+                        type: string
+                      namespace:
+                        description: Namespace is the namespace of the secret (defaults
+                          to resource namespace)
+                        type: string
+                      passwordKey:
+                        default: password
+                        description: PasswordKey is the key in the secret for the
+                          password (defaults to "password")
+                        type: string
+                      usernameKey:
+                        default: username
+                        description: UsernameKey is the key in the secret for the
+                          username (defaults to "username")
+                        type: string
+                    required:
+                    - name
+                    type: object
                 required:
-                - name
+                - secretRef
                 type: object
-              subject:
-                description: Subject defines who the role is assigned to (user or
-                  group)
+              realm:
+                description: Realm is the admin realm (defaults to "master")
+                type: string
+              token:
+                description: Token contains optional token caching configuration
                 properties:
-                  groupRef:
-                    description: GroupRef references a KeycloakGroup
-                    properties:
-                      name:
-                        description: Name of the resource
-                        type: string
-                      namespace:
-                        description: Namespace of the resource (optional, defaults
-                          to the same namespace)
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  userRef:
-                    description: UserRef references a KeycloakUser
-                    properties:
-                      name:
-                        description: Name of the resource
-                        type: string
-                      namespace:
-                        description: Namespace of the resource (optional, defaults
-                          to the same namespace)
-                        type: string
-                    required:
-                    - name
-                    type: object
+                  expiresKey:
+                    description: ExpiresKey is the key in the secret for the token
+                      expiration
+                    type: string
+                  secretName:
+                    description: SecretName is the name of the secret to cache the
+                      token
+                    type: string
+                  tokenKey:
+                    description: TokenKey is the key in the secret for the token
+                    type: string
                 type: object
             required:
-            - subject
+            - baseUrl
+            - credentials
             type: object
           status:
-            description: KeycloakRoleMappingStatus defines the observed state of KeycloakRoleMapping
+            description: KeycloakInstanceStatus defines the observed state of KeycloakInstance
             properties:
               conditions:
                 description: Conditions represent the latest available observations
@@ -208,49 +189,20 @@ spec:
                   - type
                   type: object
                 type: array
-              instance:
-                description: Instance contains the resolved instance reference
-                properties:
-                  clusterInstanceRef:
-                    description: ClusterInstanceRef is the name of the cluster instance
-                    type: string
-                  instanceRef:
-                    description: InstanceRef is the name of the namespaced instance
-                    type: string
-                type: object
               message:
-                description: Message contains additional information
+                description: Message contains additional information about the status
                 type: string
               ready:
-                description: Ready indicates if the role mapping is applied
+                description: Ready indicates if the Keycloak instance is accessible
                 type: boolean
-              realm:
-                description: Realm contains the resolved realm reference
-                properties:
-                  clusterRealmRef:
-                    description: ClusterRealmRef is the name of the cluster realm
-                    type: string
-                  realmRef:
-                    description: RealmRef is the name of the namespaced realm
-                    type: string
-                type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for this role mapping
-                type: string
-              roleName:
-                description: RoleName is the resolved role name
-                type: string
-              roleType:
-                description: RoleType is either "realm" or "client"
+                description: ResourcePath is the API path for this resource
                 type: string
               status:
                 description: Status is a human-readable status message
                 type: string
-              subjectID:
-                description: SubjectID is the Keycloak ID of the subject
-                type: string
-              subjectType:
-                description: SubjectType is either "user" or "group"
+              version:
+                description: Version is the Keycloak server version
                 type: string
             required:
             - ready
@@ -260,4 +212,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}

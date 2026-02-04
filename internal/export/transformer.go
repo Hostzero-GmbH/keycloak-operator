@@ -60,6 +60,15 @@ func (t *Transformer) TransformRealm(raw json.RawMessage, realmName string) (Exp
 
 // TransformClient transforms a client JSON to KeycloakClient
 func (t *Transformer) TransformClient(raw json.RawMessage, clientID string) (ExportedResource, error) {
+	// Parse client to check if it's confidential
+	var parsed struct {
+		PublicClient bool `json:"publicClient"`
+		BearerOnly   bool `json:"bearerOnly"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return ExportedResource{}, err
+	}
+
 	// Remove server-managed fields and secrets
 	definition := removeServerFields(raw, "id", "secret", "registrationAccessToken")
 
@@ -78,6 +87,13 @@ func (t *Transformer) TransformClient(raw json.RawMessage, clientID string) (Exp
 			},
 			Definition: &runtime.RawExtension{Raw: definition},
 		},
+	}
+
+	// Add clientSecretRef for confidential clients (not public, not bearer-only)
+	if !parsed.PublicClient && !parsed.BearerOnly {
+		client.Spec.ClientSecretRef = &keycloakv1beta1.ClientSecretRefSpec{
+			Name: sanitizeName(clientID) + "-secret",
+		}
 	}
 
 	return ExportedResource{

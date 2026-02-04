@@ -113,9 +113,8 @@ spec:
     enabled: true
     protocol: openid-connect
     publicClient: false
-  clientSecret:
-    secretName: my-app-credentials
-    key: clientSecret
+  clientSecretRef:
+    name: my-app-credentials
 ```
 
 ## Uninstallation

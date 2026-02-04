@@ -1,31 +1,26 @@
-{{- if .Values.crds.install }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: keycloakclients.keycloak.hostzero.com
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-    {{- if .Values.crds.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
-  labels:
-    {{- include "keycloak-operator.labels" . | nindent 4 }}
+  name: keycloakrealms.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakClient
-    listKind: KeycloakClientList
-    plural: keycloakclients
+    kind: KeycloakRealm
+    listKind: KeycloakRealmList
+    plural: keycloakrealms
     shortNames:
-    - kcc
-    singular: keycloakclient
+    - kcrm
+    singular: keycloakrealm
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the client is ready
+    - description: Whether the realm is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
@@ -39,7 +34,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KeycloakClient defines a client within a KeycloakRealm
+        description: KeycloakRealm defines a realm within a KeycloakInstance
         properties:
           apiVersion:
             description: |-
@@ -59,33 +54,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakClientSpec defines the desired state of KeycloakClient
+            description: KeycloakRealmSpec defines the desired state of KeycloakRealm
             properties:
-              clientId:
-                description: ClientId is the client ID in Keycloak (defaults to metadata.name)
-                type: string
-              clientSecret:
-                description: ClientSecret configures where to store the client secret
-                properties:
-                  clientIdKey:
-                    description: ClientIdKey is the key for the client ID in the secret
-                      (defaults to "client-id")
-                    type: string
-                  clientSecretKey:
-                    description: ClientSecretKey is the key for the client secret
-                      (defaults to "client-secret")
-                    type: string
-                  secretName:
-                    description: SecretName is the name of the Kubernetes secret to
-                      create
-                    type: string
-                required:
-                - secretName
-                type: object
-              clusterRealmRef:
+              clusterInstanceRef:
                 description: |-
-                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  ClusterInstanceRef is a reference to a ClusterKeycloakInstance
+                  One of instanceRef or clusterInstanceRef must be specified
                 properties:
                   name:
                     description: Name of the cluster-scoped resource
@@ -94,13 +68,13 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak ClientRepresentation
+                description: Definition contains the Keycloak RealmRepresentation
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
-              realmRef:
+              instanceRef:
                 description: |-
-                  RealmRef is a reference to a KeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  InstanceRef is a reference to a KeycloakInstance
+                  One of instanceRef or clusterInstanceRef must be specified
                 properties:
                   name:
                     description: Name of the resource
@@ -112,13 +86,16 @@ spec:
                 required:
                 - name
                 type: object
+              realmName:
+                description: RealmName is the name of the realm in Keycloak (defaults
+                  to metadata.name)
+                type: string
+            required:
+            - definition
             type: object
           status:
-            description: KeycloakClientStatus defines the observed state of KeycloakClient
+            description: KeycloakRealmStatus defines the observed state of KeycloakRealm
             properties:
-              clientUUID:
-                description: ClientUUID is the Keycloak internal ID
-                type: string
               conditions:
                 description: Conditions represent the latest available observations
                 items:
@@ -190,20 +167,10 @@ spec:
                 description: Message contains additional information
                 type: string
               ready:
-                description: Ready indicates if the client is ready
+                description: Ready indicates if the realm is ready
                 type: boolean
-              realm:
-                description: Realm contains the resolved realm reference
-                properties:
-                  clusterRealmRef:
-                    description: ClusterRealmRef is the name of the cluster realm
-                    type: string
-                  realmRef:
-                    description: RealmRef is the name of the namespaced realm
-                    type: string
-                type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for this client
+                description: ResourcePath is the Keycloak API path for this realm
                 type: string
               status:
                 description: Status is a human-readable status message
@@ -216,4 +183,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}

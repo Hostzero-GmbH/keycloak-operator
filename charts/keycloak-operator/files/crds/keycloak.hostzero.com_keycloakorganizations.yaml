@@ -1,31 +1,26 @@
-{{- if .Values.crds.install }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: keycloakrealms.keycloak.hostzero.com
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-    {{- if .Values.crds.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
-  labels:
-    {{- include "keycloak-operator.labels" . | nindent 4 }}
+  name: keycloakorganizations.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakRealm
-    listKind: KeycloakRealmList
-    plural: keycloakrealms
+    kind: KeycloakOrganization
+    listKind: KeycloakOrganizationList
+    plural: keycloakorganizations
     shortNames:
-    - kcrm
-    singular: keycloakrealm
+    - kcorg
+    singular: keycloakorganization
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the realm is ready
+    - description: Whether the organization is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
@@ -39,7 +34,9 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KeycloakRealm defines a realm within a KeycloakInstance
+        description: |-
+          KeycloakOrganization defines an organization within a KeycloakRealm
+          NOTE: Organizations require Keycloak 26.0.0 or later
         properties:
           apiVersion:
             description: |-
@@ -59,12 +56,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakRealmSpec defines the desired state of KeycloakRealm
+            description: KeycloakOrganizationSpec defines the desired state of KeycloakOrganization
             properties:
-              clusterInstanceRef:
+              clusterRealmRef:
                 description: |-
-                  ClusterInstanceRef is a reference to a ClusterKeycloakInstance
-                  One of instanceRef or clusterInstanceRef must be specified
+                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
+                  One of realmRef or clusterRealmRef must be specified
                 properties:
                   name:
                     description: Name of the cluster-scoped resource
@@ -73,13 +70,13 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak RealmRepresentation
+                description: Definition contains the Keycloak OrganizationRepresentation
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
-              instanceRef:
+              realmRef:
                 description: |-
-                  InstanceRef is a reference to a KeycloakInstance
-                  One of instanceRef or clusterInstanceRef must be specified
+                  RealmRef is a reference to a KeycloakRealm
+                  One of realmRef or clusterRealmRef must be specified
                 properties:
                   name:
                     description: Name of the resource
@@ -91,15 +88,12 @@ spec:
                 required:
                 - name
                 type: object
-              realmName:
-                description: RealmName is the name of the realm in Keycloak (defaults
-                  to metadata.name)
-                type: string
             required:
             - definition
             type: object
           status:
-            description: KeycloakRealmStatus defines the observed state of KeycloakRealm
+            description: KeycloakOrganizationStatus defines the observed state of
+              KeycloakOrganization
             properties:
               conditions:
                 description: Conditions represent the latest available observations
@@ -171,11 +165,30 @@ spec:
               message:
                 description: Message contains additional information
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the generation of the spec that
+                  was last processed
+                format: int64
+                type: integer
+              organizationID:
+                description: OrganizationID is the Keycloak internal organization
+                  ID
+                type: string
               ready:
-                description: Ready indicates if the realm is ready
+                description: Ready indicates if the organization is ready
                 type: boolean
+              realm:
+                description: Realm contains the resolved realm reference
+                properties:
+                  clusterRealmRef:
+                    description: ClusterRealmRef is the name of the cluster realm
+                    type: string
+                  realmRef:
+                    description: RealmRef is the name of the namespaced realm
+                    type: string
+                type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for this realm
+                description: ResourcePath is the Keycloak API path for this organization
                 type: string
               status:
                 description: Status is a human-readable status message
@@ -188,4 +201,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}

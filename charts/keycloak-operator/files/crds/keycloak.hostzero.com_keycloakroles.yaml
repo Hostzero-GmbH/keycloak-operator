@@ -4,29 +4,33 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: keycloakclients.keycloak.hostzero.com
+  name: keycloakroles.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakClient
-    listKind: KeycloakClientList
-    plural: keycloakclients
+    kind: KeycloakRole
+    listKind: KeycloakRoleList
+    plural: keycloakroles
     shortNames:
-    - kcc
-    singular: keycloakclient
+    - kcr
+    singular: keycloakrole
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the client is ready
+    - description: Whether the role is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
-    - description: Status message
-      jsonPath: .status.status
-      name: Status
+    - description: Role name
+      jsonPath: .status.roleName
+      name: Role
+      type: string
+    - description: Client ID (for client roles)
+      jsonPath: .status.clientID
+      name: Client
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -34,7 +38,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KeycloakClient defines a client within a KeycloakRealm
+        description: KeycloakRole defines a role within a KeycloakRealm or KeycloakClient
         properties:
           apiVersion:
             description: |-
@@ -54,36 +58,19 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakClientSpec defines the desired state of KeycloakClient
+            description: KeycloakRoleSpec defines the desired state of KeycloakRole
             properties:
-              clientId:
-                description: ClientId is the client ID in Keycloak (defaults to metadata.name)
-                type: string
-              clientSecretRef:
+              clientRef:
                 description: |-
-                  ClientSecretRef configures the Kubernetes Secret for client credentials.
-                  If the secret exists, its value is used. If it doesn't exist and Create is true,
-                  the operator auto-generates a secret and creates it.
+                  ClientRef is a reference to a KeycloakClient for client-level roles
+                  If not specified, the role is a realm-level role
                 properties:
-                  clientIdKey:
-                    description: |-
-                      ClientIdKey is the key for the client ID in the secret.
-                      Defaults to "client-id".
-                    type: string
-                  clientSecretKey:
-                    description: |-
-                      ClientSecretKey is the key for the client secret value in the secret.
-                      Defaults to "client-secret".
-                    type: string
-                  create:
-                    default: true
-                    description: |-
-                      Create determines behavior when the secret doesn't exist.
-                      If true (default): auto-generate a secret and create the Secret.
-                      If false: error if the secret doesn't exist (strict mode for GitOps).
-                    type: boolean
                   name:
-                    description: Name of the Kubernetes Secret
+                    description: Name of the resource
+                    type: string
+                  namespace:
+                    description: Namespace of the resource (optional, defaults to
+                      the same namespace)
                     type: string
                 required:
                 - name
@@ -100,7 +87,7 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak ClientRepresentation
+                description: Definition contains the Keycloak RoleRepresentation
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:
@@ -118,12 +105,14 @@ spec:
                 required:
                 - name
                 type: object
+            required:
+            - definition
             type: object
           status:
-            description: KeycloakClientStatus defines the observed state of KeycloakClient
+            description: KeycloakRoleStatus defines the observed state of KeycloakRole
             properties:
-              clientUUID:
-                description: ClientUUID is the Keycloak internal ID
+              clientID:
+                description: ClientID is the client ID if this is a client role
                 type: string
               conditions:
                 description: Conditions represent the latest available observations
@@ -192,6 +181,9 @@ spec:
                     description: InstanceRef is the name of the namespaced instance
                     type: string
                 type: object
+              isClientRole:
+                description: IsClientRole indicates if this is a client role
+                type: boolean
               message:
                 description: Message contains additional information
                 type: string
@@ -201,7 +193,7 @@ spec:
                 format: int64
                 type: integer
               ready:
-                description: Ready indicates if the client is ready
+                description: Ready indicates if the role is ready
                 type: boolean
               realm:
                 description: Realm contains the resolved realm reference
@@ -214,7 +206,13 @@ spec:
                     type: string
                 type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for this client
+                description: ResourcePath is the Keycloak API path for this role
+                type: string
+              roleID:
+                description: RoleID is the Keycloak internal role ID
+                type: string
+              roleName:
+                description: RoleName is the role name in Keycloak
                 type: string
               status:
                 description: Status is a human-readable status message

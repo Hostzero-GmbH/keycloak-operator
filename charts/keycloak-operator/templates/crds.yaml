@@ -1,0 +1,21 @@
+{{- if .Values.crds.install }}
+{{- range $path, $_ := .Files.Glob "files/crds/*.yaml" }}
+{{- $crd := $.Files.Get $path | fromYaml }}
+---
+apiVersion: {{ $crd.apiVersion }}
+kind: {{ $crd.kind }}
+metadata:
+  name: {{ $crd.metadata.name }}
+  annotations:
+    {{- range $key, $value := $crd.metadata.annotations }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+    {{- if $.Values.crds.keep }}
+    helm.sh/resource-policy: keep
+    {{- end }}
+  labels:
+    {{- include "keycloak-operator.labels" $ | nindent 4 }}
+spec:
+{{ $crd.spec | toYaml | indent 2 }}
+{{- end }}
+{{- end }}

@@ -4,23 +4,23 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: keycloakclients.keycloak.hostzero.com
+  name: keycloakidentityproviders.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakClient
-    listKind: KeycloakClientList
-    plural: keycloakclients
+    kind: KeycloakIdentityProvider
+    listKind: KeycloakIdentityProviderList
+    plural: keycloakidentityproviders
     shortNames:
-    - kcc
-    singular: keycloakclient
+    - kcidp
+    singular: keycloakidentityprovider
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the client is ready
+    - description: Whether the identity provider is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
@@ -34,7 +34,8 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KeycloakClient defines a client within a KeycloakRealm
+        description: KeycloakIdentityProvider defines an identity provider within
+          a KeycloakRealm
         properties:
           apiVersion:
             description: |-
@@ -54,40 +55,9 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakClientSpec defines the desired state of KeycloakClient
+            description: KeycloakIdentityProviderSpec defines the desired state of
+              KeycloakIdentityProvider
             properties:
-              clientId:
-                description: ClientId is the client ID in Keycloak (defaults to metadata.name)
-                type: string
-              clientSecretRef:
-                description: |-
-                  ClientSecretRef configures the Kubernetes Secret for client credentials.
-                  If the secret exists, its value is used. If it doesn't exist and Create is true,
-                  the operator auto-generates a secret and creates it.
-                properties:
-                  clientIdKey:
-                    description: |-
-                      ClientIdKey is the key for the client ID in the secret.
-                      Defaults to "client-id".
-                    type: string
-                  clientSecretKey:
-                    description: |-
-                      ClientSecretKey is the key for the client secret value in the secret.
-                      Defaults to "client-secret".
-                    type: string
-                  create:
-                    default: true
-                    description: |-
-                      Create determines behavior when the secret doesn't exist.
-                      If true (default): auto-generate a secret and create the Secret.
-                      If false: error if the secret doesn't exist (strict mode for GitOps).
-                    type: boolean
-                  name:
-                    description: Name of the Kubernetes Secret
-                    type: string
-                required:
-                - name
-                type: object
               clusterRealmRef:
                 description: |-
                   ClusterRealmRef is a reference to a ClusterKeycloakRealm
@@ -100,7 +70,7 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak ClientRepresentation
+                description: Definition contains the Keycloak IdentityProviderRepresentation
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:
@@ -118,13 +88,13 @@ spec:
                 required:
                 - name
                 type: object
+            required:
+            - definition
             type: object
           status:
-            description: KeycloakClientStatus defines the observed state of KeycloakClient
+            description: KeycloakIdentityProviderStatus defines the observed state
+              of KeycloakIdentityProvider
             properties:
-              clientUUID:
-                description: ClientUUID is the Keycloak internal ID
-                type: string
               conditions:
                 description: Conditions represent the latest available observations
                 items:
@@ -195,13 +165,8 @@ spec:
               message:
                 description: Message contains additional information
                 type: string
-              observedGeneration:
-                description: ObservedGeneration is the generation of the spec that
-                  was last processed
-                format: int64
-                type: integer
               ready:
-                description: Ready indicates if the client is ready
+                description: Ready indicates if the identity provider is ready
                 type: boolean
               realm:
                 description: Realm contains the resolved realm reference
@@ -214,7 +179,8 @@ spec:
                     type: string
                 type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for this client
+                description: ResourcePath is the Keycloak API path for this identity
+                  provider
                 type: string
               status:
                 description: Status is a human-readable status message

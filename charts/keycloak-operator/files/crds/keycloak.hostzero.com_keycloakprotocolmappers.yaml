@@ -1,33 +1,36 @@
-{{- if .Values.crds.install }}
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: keycloakorganizations.keycloak.hostzero.com
+  name: keycloakprotocolmappers.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakOrganization
-    listKind: KeycloakOrganizationList
-    plural: keycloakorganizations
+    kind: KeycloakProtocolMapper
+    listKind: KeycloakProtocolMapperList
+    plural: keycloakprotocolmappers
     shortNames:
-    - kcorg
-    singular: keycloakorganization
+    - kcpm
+    singular: keycloakprotocolmapper
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the organization is ready
+    - description: Whether the protocol mapper is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
-    - description: Status message
-      jsonPath: .status.status
-      name: Status
+    - description: Mapper name
+      jsonPath: .status.mapperName
+      name: Mapper
+      type: string
+    - description: Parent type (client/clientScope)
+      jsonPath: .status.parentType
+      name: Parent
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -35,9 +38,8 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: |-
-          KeycloakOrganization defines an organization within a KeycloakRealm
-          NOTE: Organizations require Keycloak 26.0.0 or later
+        description: KeycloakProtocolMapper defines a protocol mapper within a KeycloakClient
+          or KeycloakClientScope
         properties:
           apiVersion:
             description: |-
@@ -57,27 +59,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakOrganizationSpec defines the desired state of KeycloakOrganization
+            description: KeycloakProtocolMapperSpec defines the desired state of KeycloakProtocolMapper
             properties:
-              clusterRealmRef:
+              clientRef:
                 description: |-
-                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
-                properties:
-                  name:
-                    description: Name of the cluster-scoped resource
-                    type: string
-                required:
-                - name
-                type: object
-              definition:
-                description: Definition contains the Keycloak OrganizationRepresentation
-                type: object
-                x-kubernetes-preserve-unknown-fields: true
-              realmRef:
-                description: |-
-                  RealmRef is a reference to a KeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  ClientRef is a reference to a KeycloakClient
+                  One of clientRef or clientScopeRef must be specified
                 properties:
                   name:
                     description: Name of the resource
@@ -89,11 +76,31 @@ spec:
                 required:
                 - name
                 type: object
+              clientScopeRef:
+                description: |-
+                  ClientScopeRef is a reference to a KeycloakClientScope
+                  One of clientRef or clientScopeRef must be specified
+                properties:
+                  name:
+                    description: Name of the resource
+                    type: string
+                  namespace:
+                    description: Namespace of the resource (optional, defaults to
+                      the same namespace)
+                    type: string
+                required:
+                - name
+                type: object
+              definition:
+                description: Definition contains the Keycloak ProtocolMapperRepresentation
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
             required:
             - definition
             type: object
           status:
-            description: KeycloakOrganizationStatus defines the observed state of KeycloakOrganization
+            description: KeycloakProtocolMapperStatus defines the observed state of
+              KeycloakProtocolMapper
             properties:
               conditions:
                 description: Conditions represent the latest available observations
@@ -162,18 +169,28 @@ spec:
                     description: InstanceRef is the name of the namespaced instance
                     type: string
                 type: object
+              mapperID:
+                description: MapperID is the Keycloak internal mapper ID
+                type: string
+              mapperName:
+                description: MapperName is the mapper name in Keycloak
+                type: string
               message:
                 description: Message contains additional information
                 type: string
               observedGeneration:
-                description: ObservedGeneration is the generation of the spec that was last processed
+                description: ObservedGeneration is the generation of the spec that
+                  was last processed
                 format: int64
                 type: integer
-              organizationID:
-                description: OrganizationID is the Keycloak internal organization ID
+              parentID:
+                description: ParentID is the parent client or clientScope ID
+                type: string
+              parentType:
+                description: ParentType indicates if parent is "client" or "clientScope"
                 type: string
               ready:
-                description: Ready indicates if the organization is ready
+                description: Ready indicates if the protocol mapper is ready
                 type: boolean
               realm:
                 description: Realm contains the resolved realm reference
@@ -186,7 +203,8 @@ spec:
                     type: string
                 type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for this organization
+                description: ResourcePath is the Keycloak API path for this protocol
+                  mapper
                 type: string
               status:
                 description: Status is a human-readable status message
@@ -199,4 +217,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}

@@ -1,37 +1,36 @@
-{{- if .Values.crds.install }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: keycloakusercredentials.keycloak.hostzero.com
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-    {{- if .Values.crds.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
-  labels:
-    {{- include "keycloak-operator.labels" . | nindent 4 }}
+  name: clusterkeycloakinstances.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakUserCredential
-    listKind: KeycloakUserCredentialList
-    plural: keycloakusercredentials
+    kind: ClusterKeycloakInstance
+    listKind: ClusterKeycloakInstanceList
+    plural: clusterkeycloakinstances
     shortNames:
-    - kcuc
-    singular: keycloakusercredential
-  scope: Namespaced
+    - ckci
+    singular: clusterkeycloakinstance
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - description: Whether the credentials are synchronized
+    - description: Whether the instance is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
-    - description: Status message
-      jsonPath: .status.status
-      name: Status
+    - description: The base URL of the Keycloak instance
+      jsonPath: .spec.baseUrl
+      name: URL
+      type: string
+    - description: Keycloak server version
+      jsonPath: .status.version
+      name: Version
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -39,7 +38,8 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KeycloakUserCredential manages credentials for a KeycloakUser
+        description: ClusterKeycloakInstance makes a Keycloak server known to the
+          operator at the cluster level
         properties:
           apiVersion:
             description: |-
@@ -59,68 +59,83 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakUserCredentialSpec defines the desired state of KeycloakUserCredential
+            description: |-
+              ClusterKeycloakInstanceSpec defines the desired state of ClusterKeycloakInstance
+              It mirrors KeycloakInstanceSpec but is cluster-scoped
             properties:
-              userRef:
-                description: UserRef is a reference to a KeycloakUser
+              baseUrl:
+                description: BaseUrl is the URL of the Keycloak server (e.g., http://keycloak:8080)
+                type: string
+              client:
+                description: Client contains optional service account client configuration
                 properties:
-                  name:
-                    description: Name of the resource
+                  id:
+                    description: ID is the client ID for service account authentication
                     type: string
-                  namespace:
-                    description: Namespace of the resource (optional, defaults to
-                      the same namespace)
+                  secret:
+                    description: Secret is the client secret (optional for public
+                      clients)
                     type: string
                 required:
-                - name
+                - id
                 type: object
-              userSecret:
-                description: UserSecret defines the secret containing the credentials
+              credentials:
+                description: Credentials contains the reference to the admin credentials
+                  secret
                 properties:
-                  create:
-                    description: Create indicates whether to create the secret if
-                      it doesn't exist
-                    type: boolean
-                  emailKey:
-                    description: EmailKey is the key for the email in the secret
-                    type: string
-                  passwordKey:
-                    default: password
-                    description: PasswordKey is the key for the password in the secret
-                    type: string
-                  passwordPolicy:
-                    description: PasswordPolicy configures password generation
+                  secretRef:
+                    description: SecretRef contains the reference to the secret with
+                      credentials
                     properties:
-                      includeNumbers:
-                        default: true
-                        description: IncludeNumbers includes numbers in the password
-                        type: boolean
-                      includeSymbols:
-                        default: true
-                        description: IncludeSymbols includes symbols in the password
-                        type: boolean
-                      length:
-                        default: 24
-                        description: Length is the password length (default 24)
-                        type: integer
+                      name:
+                        description: Name is the name of the secret
+                        type: string
+                      namespace:
+                        description: Namespace is the namespace of the secret (required
+                          for cluster-scoped resources)
+                        type: string
+                      passwordKey:
+                        default: password
+                        description: PasswordKey is the key in the secret for the
+                          password (defaults to "password")
+                        type: string
+                      usernameKey:
+                        default: username
+                        description: UsernameKey is the key in the secret for the
+                          username (defaults to "username")
+                        type: string
+                    required:
+                    - name
+                    - namespace
                     type: object
-                  secretName:
-                    description: SecretName is the name of the Kubernetes secret
-                    type: string
-                  usernameKey:
-                    default: username
-                    description: UsernameKey is the key for the username in the secret
-                    type: string
                 required:
-                - secretName
+                - secretRef
+                type: object
+              realm:
+                description: Realm is the admin realm (defaults to "master")
+                type: string
+              token:
+                description: Token contains optional token caching configuration
+                properties:
+                  expiresKey:
+                    description: ExpiresKey is the key in the secret for the token
+                      expiration
+                    type: string
+                  secretName:
+                    description: SecretName is the name of the secret to cache the
+                      token
+                    type: string
+                  tokenKey:
+                    description: TokenKey is the key in the secret for the token
+                    type: string
                 type: object
             required:
-            - userRef
-            - userSecret
+            - baseUrl
+            - credentials
             type: object
           status:
-            description: KeycloakUserCredentialStatus defines the observed state of
-              KeycloakUserCredential
+            description: ClusterKeycloakInstanceStatus defines the observed state
+              of ClusterKeycloakInstance
             properties:
               conditions:
                 description: Conditions represent the latest available observations
@@ -179,41 +194,20 @@ spec:
                   - type
                   type: object
                 type: array
-              instance:
-                description: Instance contains the resolved instance reference
-                properties:
-                  clusterInstanceRef:
-                    description: ClusterInstanceRef is the name of the cluster instance
-                    type: string
-                  instanceRef:
-                    description: InstanceRef is the name of the namespaced instance
-                    type: string
-                type: object
               message:
-                description: Message contains additional information
+                description: Message contains additional information about the status
                 type: string
               ready:
-                description: Ready indicates if the credentials are synchronized
+                description: Ready indicates if the Keycloak instance is accessible
                 type: boolean
-              realm:
-                description: Realm contains the resolved realm reference
-                properties:
-                  clusterRealmRef:
-                    description: ClusterRealmRef is the name of the cluster realm
-                    type: string
-                  realmRef:
-                    description: RealmRef is the name of the namespaced realm
-                    type: string
-                type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for the user
+                description: ResourcePath is the API path for this resource
                 type: string
-              secretCreated:
-                description: SecretCreated indicates if the secret was created by
-                  the operator
-                type: boolean
               status:
                 description: Status is a human-readable status message
+                type: string
+              version:
+                description: Version is the Keycloak server version
                 type: string
             required:
             - ready
@@ -223,4 +217,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}
