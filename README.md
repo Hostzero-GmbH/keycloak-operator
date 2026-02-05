@@ -212,14 +212,15 @@ kind: KeycloakClient
 metadata:
   name: my-client
 spec:
-  realmRef: my-realm
+  realmRef:
+    name: my-realm
   definition:
     clientId: my-client
     name: My Application
     publicClient: false
     standardFlowEnabled: true
-  clientSecret:
-    secretName: my-client-secret
+  clientSecretRef:
+    name: my-client-secret
 ```
 
 ## Enterprise Support

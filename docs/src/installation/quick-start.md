@@ -132,9 +132,8 @@ spec:
       - "https://my-app.example.com/callback"
     webOrigins:
       - "https://my-app.example.com"
-  clientSecret:
-    secretName: my-app-credentials
-    key: clientSecret
+  clientSecretRef:
+    name: my-app-credentials
 ```
 
 Apply it:

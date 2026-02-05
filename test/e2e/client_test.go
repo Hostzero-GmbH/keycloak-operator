@@ -42,8 +42,8 @@ func TestKeycloakClientE2E(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				Definition: &clientDef,
-				ClientSecret: &keycloakv1beta1.ClientSecretSpec{
-					SecretName: clientName + "-secret",
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name: clientName + "-secret",
 				},
 			},
 		}
@@ -104,7 +104,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				Definition: &clientDef,
-				// No ClientSecret specified - public clients don't have secrets
+				// No ClientSecretRef specified - public clients don't have secrets
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, kcClient))
@@ -197,8 +197,8 @@ func TestKeycloakClientE2E(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				Definition: &clientDef,
-				ClientSecret: &keycloakv1beta1.ClientSecretSpec{
-					SecretName:      clientName + "-secret",
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name:            clientName + "-secret",
 					ClientIdKey:     &customIdKey,
 					ClientSecretKey: &customSecretKey,
 				},
@@ -303,6 +303,318 @@ func TestKeycloakClientE2E(t *testing.T) {
 		})
 		require.NoError(t, err, "Client with no definition should default to resource name as clientId")
 		t.Logf("Client correctly created using resource name as clientId")
+	})
+
+	t.Run("ClientWithPreExistingSecret", func(t *testing.T) {
+		// Create a pre-existing secret with known values
+		clientName := fmt.Sprintf("preexisting-secret-client-%d", time.Now().UnixNano())
+		secretName := clientName + "-secret"
+		knownSecret := "my-predefined-secret-value"
+
+		// Create the secret first
+		preExistingSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				"client-id":     []byte(clientName),
+				"client-secret": []byte(knownSecret),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, preExistingSecret))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, preExistingSecret)
+		})
+
+		// Create KeycloakClient with create=false (strict mode)
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Pre-existing Secret Client",
+			"enabled": true,
+			"publicClient": false,
+			"serviceAccountsEnabled": true
+		}`, clientName))
+		createFalse := false
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name:   secretName,
+					Create: &createFalse,
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait for client to be ready
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcClient.Name,
+				Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "Client with pre-existing secret did not become ready")
+		t.Logf("Client with pre-existing secret %s is ready", clientName)
+
+		// Verify the secret still has the original value (not overwritten)
+		secret := &corev1.Secret{}
+		err = k8sClient.Get(ctx, types.NamespacedName{
+			Name:      secretName,
+			Namespace: testNamespace,
+		}, secret)
+		require.NoError(t, err)
+		require.Equal(t, knownSecret, string(secret.Data["client-secret"]), "Pre-existing secret should not be overwritten")
+		t.Log("Verified: Pre-existing secret value was preserved")
+	})
+
+	t.Run("ClientWithPreExistingSecretCustomKeys", func(t *testing.T) {
+		// Create a pre-existing secret with custom key names
+		clientName := fmt.Sprintf("preexisting-customkeys-client-%d", time.Now().UnixNano())
+		secretName := clientName + "-secret"
+		knownSecret := "my-custom-key-secret-value"
+		customIdKey := "MY_CLIENT_ID"
+		customSecretKey := "MY_CLIENT_SECRET"
+
+		// Create the secret first with custom keys
+		preExistingSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				customIdKey:     []byte(clientName),
+				customSecretKey: []byte(knownSecret),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, preExistingSecret))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, preExistingSecret)
+		})
+
+		// Create KeycloakClient with create=false and custom keys
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Pre-existing Secret Custom Keys Client",
+			"enabled": true,
+			"publicClient": false,
+			"serviceAccountsEnabled": true
+		}`, clientName))
+		createFalse := false
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name:            secretName,
+					ClientIdKey:     &customIdKey,
+					ClientSecretKey: &customSecretKey,
+					Create:          &createFalse,
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait for client to be ready
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcClient.Name,
+				Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "Client with pre-existing secret (custom keys) did not become ready")
+		t.Logf("Client with pre-existing secret (custom keys) %s is ready", clientName)
+	})
+
+	t.Run("ClientWithMissingSecretStrictMode", func(t *testing.T) {
+		// Create KeycloakClient with create=false but no pre-existing secret
+		clientName := fmt.Sprintf("missing-secret-strict-client-%d", time.Now().UnixNano())
+		secretName := clientName + "-nonexistent-secret"
+
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Missing Secret Strict Mode Client",
+			"enabled": true,
+			"publicClient": false
+		}`, clientName))
+		createFalse := false
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name:   secretName,
+					Create: &createFalse,
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait and verify the client is NOT ready with SecretError
+		time.Sleep(5 * time.Second)
+		updated := &keycloakv1beta1.KeycloakClient{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      clientName,
+			Namespace: testNamespace,
+		}, updated)
+		require.NoError(t, err)
+		require.False(t, updated.Status.Ready, "Client with missing secret (strict mode) should not be ready")
+		require.Equal(t, "SecretError", updated.Status.Status, "Status should be SecretError")
+		t.Logf("Client correctly failed with missing secret in strict mode, message: %s", updated.Status.Message)
+	})
+
+	t.Run("ClientSecretAutoCreate", func(t *testing.T) {
+		// Create KeycloakClient with create=true (default) - secret should be auto-created
+		clientName := fmt.Sprintf("autocreate-secret-client-%d", time.Now().UnixNano())
+		secretName := clientName + "-secret"
+
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Auto Create Secret Client",
+			"enabled": true,
+			"publicClient": false,
+			"serviceAccountsEnabled": true
+		}`, clientName))
+		// create is true by default, so we don't need to set it
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name: secretName,
+					// Create defaults to true
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait for client to be ready
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcClient.Name,
+				Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "Client with auto-create secret did not become ready")
+
+		// Verify secret was automatically created
+		secret := &corev1.Secret{}
+		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      secretName,
+				Namespace: testNamespace,
+			}, secret); err != nil {
+				return false, nil
+			}
+			return true, nil
+		})
+		require.NoError(t, err, "Auto-created secret was not found")
+		require.Contains(t, secret.Data, "client-id", "Secret should contain client-id")
+		require.Contains(t, secret.Data, "client-secret", "Secret should contain client-secret")
+		require.NotEmpty(t, secret.Data["client-secret"], "client-secret should not be empty")
+		t.Logf("Auto-created secret %s with keys: %v", secretName, getSecretKeys(secret))
+	})
+
+	t.Run("ClientSecretMissingKey", func(t *testing.T) {
+		// Create a secret without the expected key
+		clientName := fmt.Sprintf("missing-key-client-%d", time.Now().UnixNano())
+		secretName := clientName + "-secret"
+
+		// Create secret with wrong key name
+		preExistingSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: testNamespace,
+			},
+			Data: map[string][]byte{
+				"wrong-key": []byte("some-value"),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, preExistingSecret))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, preExistingSecret)
+		})
+
+		// Create KeycloakClient expecting default key "client-secret"
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Missing Key Client",
+			"enabled": true,
+			"publicClient": false
+		}`, clientName))
+		createFalse := false
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name:   secretName,
+					Create: &createFalse,
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait and verify the client is NOT ready
+		time.Sleep(5 * time.Second)
+		updated := &keycloakv1beta1.KeycloakClient{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      clientName,
+			Namespace: testNamespace,
+		}, updated)
+		require.NoError(t, err)
+		require.False(t, updated.Status.Ready, "Client with missing key should not be ready")
+		require.Equal(t, "SecretError", updated.Status.Status, "Status should be SecretError")
+		require.Contains(t, updated.Status.Message, "not found in secret", "Message should mention missing key")
+		t.Logf("Client correctly failed with missing key, message: %s", updated.Status.Message)
 	})
 
 	t.Run("ReconcileAfterManualDeletion", func(t *testing.T) {

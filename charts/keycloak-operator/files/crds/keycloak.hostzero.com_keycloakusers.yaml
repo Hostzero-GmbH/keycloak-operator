@@ -4,23 +4,23 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: keycloakclients.keycloak.hostzero.com
+  name: keycloakusers.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: KeycloakClient
-    listKind: KeycloakClientList
-    plural: keycloakclients
+    kind: KeycloakUser
+    listKind: KeycloakUserList
+    plural: keycloakusers
     shortNames:
-    - kcc
-    singular: keycloakclient
+    - kcu
+    singular: keycloakuser
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the client is ready
+    - description: Whether the user is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
@@ -34,7 +34,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: KeycloakClient defines a client within a KeycloakRealm
+        description: KeycloakUser defines a user within a KeycloakRealm
         properties:
           apiVersion:
             description: |-
@@ -54,59 +54,13 @@ spec:
           metadata:
             type: object
           spec:
-            description: KeycloakClientSpec defines the desired state of KeycloakClient
+            description: KeycloakUserSpec defines the desired state of KeycloakUser
             properties:
-              clientId:
-                description: ClientId is the client ID in Keycloak (defaults to metadata.name)
-                type: string
-              clientSecretRef:
+              clientRef:
                 description: |-
-                  ClientSecretRef configures the Kubernetes Secret for client credentials.
-                  If the secret exists, its value is used. If it doesn't exist and Create is true,
-                  the operator auto-generates a secret and creates it.
-                properties:
-                  clientIdKey:
-                    description: |-
-                      ClientIdKey is the key for the client ID in the secret.
-                      Defaults to "client-id".
-                    type: string
-                  clientSecretKey:
-                    description: |-
-                      ClientSecretKey is the key for the client secret value in the secret.
-                      Defaults to "client-secret".
-                    type: string
-                  create:
-                    default: true
-                    description: |-
-                      Create determines behavior when the secret doesn't exist.
-                      If true (default): auto-generate a secret and create the Secret.
-                      If false: error if the secret doesn't exist (strict mode for GitOps).
-                    type: boolean
-                  name:
-                    description: Name of the Kubernetes Secret
-                    type: string
-                required:
-                - name
-                type: object
-              clusterRealmRef:
-                description: |-
-                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
-                properties:
-                  name:
-                    description: Name of the cluster-scoped resource
-                    type: string
-                required:
-                - name
-                type: object
-              definition:
-                description: Definition contains the Keycloak ClientRepresentation
-                type: object
-                x-kubernetes-preserve-unknown-fields: true
-              realmRef:
-                description: |-
-                  RealmRef is a reference to a KeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  ClientRef is a reference to a KeycloakClient for service account users
+                  One of realmRef, clusterRealmRef, or clientRef must be specified
+                  Use this to manage the service account user associated with a client
                 properties:
                   name:
                     description: Name of the resource
@@ -118,12 +72,81 @@ spec:
                 required:
                 - name
                 type: object
+              clusterRealmRef:
+                description: |-
+                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
+                  One of realmRef, clusterRealmRef, or clientRef must be specified
+                  Use this for regular realm users with cluster-scoped realms
+                properties:
+                  name:
+                    description: Name of the cluster-scoped resource
+                    type: string
+                required:
+                - name
+                type: object
+              definition:
+                description: Definition contains the Keycloak UserRepresentation
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              initialPassword:
+                description: InitialPassword sets the initial password for the user
+                  (only on creation)
+                properties:
+                  temporary:
+                    description: Temporary indicates if the user must change password
+                      on first login
+                    type: boolean
+                  value:
+                    description: Value is the password value
+                    type: string
+                required:
+                - value
+                type: object
+              realmRef:
+                description: |-
+                  RealmRef is a reference to a KeycloakRealm
+                  One of realmRef, clusterRealmRef, or clientRef must be specified
+                  Use this for regular realm users
+                properties:
+                  name:
+                    description: Name of the resource
+                    type: string
+                  namespace:
+                    description: Namespace of the resource (optional, defaults to
+                      the same namespace)
+                    type: string
+                required:
+                - name
+                type: object
+              userSecret:
+                description: UserSecret configures where to store user credentials
+                properties:
+                  generatePassword:
+                    description: GeneratePassword indicates whether to generate a
+                      password
+                    type: boolean
+                  passwordKey:
+                    description: PasswordKey is the key for the password (defaults
+                      to "password")
+                    type: string
+                  secretName:
+                    description: SecretName is the name of the Kubernetes secret to
+                      create
+                    type: string
+                  usernameKey:
+                    description: UsernameKey is the key for the username in the secret
+                      (defaults to "username")
+                    type: string
+                required:
+                - secretName
+                type: object
             type: object
           status:
-            description: KeycloakClientStatus defines the observed state of KeycloakClient
+            description: KeycloakUserStatus defines the observed state of KeycloakUser
             properties:
-              clientUUID:
-                description: ClientUUID is the Keycloak internal ID
+              clientID:
+                description: ClientID is the client UUID if this is a service account
+                  user
                 type: string
               conditions:
                 description: Conditions represent the latest available observations
@@ -192,6 +215,10 @@ spec:
                     description: InstanceRef is the name of the namespaced instance
                     type: string
                 type: object
+              isServiceAccount:
+                description: IsServiceAccount indicates if this user is a service
+                  account for a client
+                type: boolean
               message:
                 description: Message contains additional information
                 type: string
@@ -201,7 +228,7 @@ spec:
                 format: int64
                 type: integer
               ready:
-                description: Ready indicates if the client is ready
+                description: Ready indicates if the user is ready
                 type: boolean
               realm:
                 description: Realm contains the resolved realm reference
@@ -214,10 +241,13 @@ spec:
                     type: string
                 type: object
               resourcePath:
-                description: ResourcePath is the Keycloak API path for this client
+                description: ResourcePath is the Keycloak API path for this user
                 type: string
               status:
                 description: Status is a human-readable status message
+                type: string
+              userID:
+                description: UserID is the Keycloak internal user ID
                 type: string
             required:
             - ready

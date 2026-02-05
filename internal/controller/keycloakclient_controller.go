@@ -125,6 +125,24 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 	definition = setFieldInDefinition(definition, "clientId", clientDef.ClientID)
 
+	// Handle client secret - check if we should use a pre-existing secret
+	var preExistingSecret string
+	var secretNeedsCreation bool
+	if kcClient.Spec.ClientSecretRef != nil {
+		secret, needsCreation, err := r.ensureClientSecret(ctx, kcClient)
+		if err != nil {
+			RecordError(controllerName, "secret_error")
+			return r.updateStatus(ctx, kcClient, false, "SecretError", err.Error(), "", instanceRef, realmRef)
+		}
+		preExistingSecret = secret
+		secretNeedsCreation = needsCreation
+
+		// If we have a pre-existing secret value, inject it into the definition
+		if preExistingSecret != "" {
+			definition = setFieldInDefinition(definition, "secret", preExistingSecret)
+		}
+	}
+
 	// Check if client exists
 	existingClient, err := kc.GetClientByClientID(ctx, realmName, clientDef.ClientID)
 
@@ -151,8 +169,8 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		log.Info("client updated successfully", "clientId", clientDef.ClientID)
 	}
 
-	// Handle client secret
-	if kcClient.Spec.ClientSecret != nil {
+	// Handle client secret sync - only if secretNeedsCreation (no pre-existing secret)
+	if kcClient.Spec.ClientSecretRef != nil && secretNeedsCreation {
 		if err := r.syncClientSecret(ctx, kcClient, kc, realmName, clientUUID); err != nil {
 			log.Error(err, "failed to sync client secret")
 			RecordError(controllerName, "secret_sync_error")
@@ -333,6 +351,50 @@ func (r *KeycloakClientReconciler) getKeycloakClientFromClusterRealm(ctx context
 	return kc, realmName, instanceRef, nil
 }
 
+// ensureClientSecret reads or creates the client secret.
+// Returns: (secretValue, needsCreation, error)
+// - If secret exists with the key: returns (value, false, nil)
+// - If secret doesn't exist and create=true: returns ("", true, nil) - will be created after Keycloak generates
+// - If secret doesn't exist and create=false: returns ("", false, error)
+// - If secret exists but key is missing: returns ("", false, error)
+func (r *KeycloakClientReconciler) ensureClientSecret(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient) (string, bool, error) {
+	ref := kcClient.Spec.ClientSecretRef
+	secretName := ref.Name
+	secretKey := "client-secret"
+	if ref.ClientSecretKey != nil && *ref.ClientSecretKey != "" {
+		secretKey = *ref.ClientSecretKey
+	}
+
+	// Try to read existing secret
+	secret := &corev1.Secret{}
+	err := r.Get(ctx, types.NamespacedName{
+		Name:      secretName,
+		Namespace: kcClient.Namespace,
+	}, secret)
+
+	if err == nil {
+		// Secret exists - read the value
+		value, ok := secret.Data[secretKey]
+		if !ok {
+			return "", false, fmt.Errorf("key %q not found in secret %q", secretKey, secretName)
+		}
+		return string(value), false, nil
+	}
+
+	if !errors.IsNotFound(err) {
+		return "", false, fmt.Errorf("failed to get secret %q: %w", secretName, err)
+	}
+
+	// Secret doesn't exist
+	create := ref.Create == nil || *ref.Create // default true
+	if !create {
+		return "", false, fmt.Errorf("secret %q not found and create=false", secretName)
+	}
+
+	// Will be created after Keycloak generates the secret
+	return "", true, nil
+}
+
 func (r *KeycloakClientReconciler) syncClientSecret(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient, kc *keycloak.Client, realmName, clientUUID string) error {
 	// Get client secret from Keycloak
 	secretValue, err := kc.GetClientSecret(ctx, realmName, clientUUID)
@@ -364,17 +426,17 @@ func (r *KeycloakClientReconciler) syncClientSecret(ctx context.Context, kcClien
 	// Determine secret keys
 	clientIdKey := "client-id"
 	clientSecretKey := "client-secret"
-	if kcClient.Spec.ClientSecret.ClientIdKey != nil {
-		clientIdKey = *kcClient.Spec.ClientSecret.ClientIdKey
+	if kcClient.Spec.ClientSecretRef.ClientIdKey != nil {
+		clientIdKey = *kcClient.Spec.ClientSecretRef.ClientIdKey
 	}
-	if kcClient.Spec.ClientSecret.ClientSecretKey != nil {
-		clientSecretKey = *kcClient.Spec.ClientSecret.ClientSecretKey
+	if kcClient.Spec.ClientSecretRef.ClientSecretKey != nil {
+		clientSecretKey = *kcClient.Spec.ClientSecretRef.ClientSecretKey
 	}
 
 	// Create or update the secret
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      kcClient.Spec.ClientSecret.SecretName,
+			Name:      kcClient.Spec.ClientSecretRef.Name,
 			Namespace: kcClient.Namespace,
 		},
 	}

@@ -26,24 +26,37 @@ type KeycloakClientSpec struct {
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`
 
-	// ClientSecret configures where to store the client secret
+	// ClientSecretRef configures the Kubernetes Secret for client credentials.
+	// If the secret exists, its value is used. If it doesn't exist and Create is true,
+	// the operator auto-generates a secret and creates it.
 	// +optional
-	ClientSecret *ClientSecretSpec `json:"clientSecret,omitempty"`
+	ClientSecretRef *ClientSecretRefSpec `json:"clientSecretRef,omitempty"`
 }
 
-// ClientSecretSpec defines where to store the client secret
-type ClientSecretSpec struct {
-	// SecretName is the name of the Kubernetes secret to create
+// ClientSecretRefSpec references a Kubernetes Secret for the client credentials.
+// If the secret exists, its value is used. If it doesn't exist and Create is true,
+// the operator auto-generates a secret and creates it.
+type ClientSecretRefSpec struct {
+	// Name of the Kubernetes Secret
 	// +kubebuilder:validation:Required
-	SecretName string `json:"secretName"`
+	Name string `json:"name"`
 
-	// ClientIdKey is the key for the client ID in the secret (defaults to "client-id")
+	// ClientIdKey is the key for the client ID in the secret.
+	// Defaults to "client-id".
 	// +optional
 	ClientIdKey *string `json:"clientIdKey,omitempty"`
 
-	// ClientSecretKey is the key for the client secret (defaults to "client-secret")
+	// ClientSecretKey is the key for the client secret value in the secret.
+	// Defaults to "client-secret".
 	// +optional
 	ClientSecretKey *string `json:"clientSecretKey,omitempty"`
+
+	// Create determines behavior when the secret doesn't exist.
+	// If true (default): auto-generate a secret and create the Secret.
+	// If false: error if the secret doesn't exist (strict mode for GitOps).
+	// +optional
+	// +kubebuilder:default=true
+	Create *bool `json:"create,omitempty"`
 }
 
 // ClientDefinition represents the Keycloak ClientRepresentation

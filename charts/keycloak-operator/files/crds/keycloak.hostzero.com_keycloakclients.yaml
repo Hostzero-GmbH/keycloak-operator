@@ -1,41 +1,32 @@
-{{- if .Values.crds.install }}
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: clusterkeycloakinstances.keycloak.hostzero.com
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-    {{- if .Values.crds.keep }}
-    "helm.sh/resource-policy": keep
-    {{- end }}
-  labels:
-    {{- include "keycloak-operator.labels" . | nindent 4 }}
+  name: keycloakclients.keycloak.hostzero.com
 spec:
   group: keycloak.hostzero.com
   names:
     categories:
     - keycloak
     - all
-    kind: ClusterKeycloakInstance
-    listKind: ClusterKeycloakInstanceList
-    plural: clusterkeycloakinstances
+    kind: KeycloakClient
+    listKind: KeycloakClientList
+    plural: keycloakclients
     shortNames:
-    - ckci
-    singular: clusterkeycloakinstance
-  scope: Cluster
+    - kcc
+    singular: keycloakclient
+  scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Whether the instance is ready
+    - description: Whether the client is ready
       jsonPath: .status.ready
       name: Ready
       type: boolean
-    - description: The base URL of the Keycloak instance
-      jsonPath: .spec.baseUrl
-      name: URL
-      type: string
-    - description: Keycloak server version
-      jsonPath: .status.version
-      name: Version
+    - description: Status message
+      jsonPath: .status.status
+      name: Status
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -43,8 +34,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: ClusterKeycloakInstance makes a Keycloak server known to the
-          operator at the cluster level
+        description: KeycloakClient defines a client within a KeycloakRealm
         properties:
           apiVersion:
             description: |-
@@ -64,84 +54,77 @@ spec:
           metadata:
             type: object
           spec:
-            description: |-
-              ClusterKeycloakInstanceSpec defines the desired state of ClusterKeycloakInstance
-              It mirrors KeycloakInstanceSpec but is cluster-scoped
+            description: KeycloakClientSpec defines the desired state of KeycloakClient
             properties:
-              baseUrl:
-                description: BaseUrl is the URL of the Keycloak server (e.g., http://keycloak:8080)
+              clientId:
+                description: ClientId is the client ID in Keycloak (defaults to metadata.name)
                 type: string
-              client:
-                description: Client contains optional service account client configuration
+              clientSecretRef:
+                description: |-
+                  ClientSecretRef configures the Kubernetes Secret for client credentials.
+                  If the secret exists, its value is used. If it doesn't exist and Create is true,
+                  the operator auto-generates a secret and creates it.
                 properties:
-                  id:
-                    description: ID is the client ID for service account authentication
+                  clientIdKey:
+                    description: |-
+                      ClientIdKey is the key for the client ID in the secret.
+                      Defaults to "client-id".
                     type: string
-                  secret:
-                    description: Secret is the client secret (optional for public
-                      clients)
+                  clientSecretKey:
+                    description: |-
+                      ClientSecretKey is the key for the client secret value in the secret.
+                      Defaults to "client-secret".
+                    type: string
+                  create:
+                    default: true
+                    description: |-
+                      Create determines behavior when the secret doesn't exist.
+                      If true (default): auto-generate a secret and create the Secret.
+                      If false: error if the secret doesn't exist (strict mode for GitOps).
+                    type: boolean
+                  name:
+                    description: Name of the Kubernetes Secret
                     type: string
                 required:
-                - id
+                - name
                 type: object
-              credentials:
-                description: Credentials contains the reference to the admin credentials
-                  secret
+              clusterRealmRef:
+                description: |-
+                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
+                  One of realmRef or clusterRealmRef must be specified
                 properties:
-                  secretRef:
-                    description: SecretRef contains the reference to the secret with
-                      credentials
-                    properties:
-                      name:
-                        description: Name is the name of the secret
-                        type: string
-                      namespace:
-                        description: Namespace is the namespace of the secret (required
-                          for cluster-scoped resources)
-                        type: string
-                      passwordKey:
-                        default: password
-                        description: PasswordKey is the key in the secret for the
-                          password (defaults to "password")
-                        type: string
-                      usernameKey:
-                        default: username
-                        description: UsernameKey is the key in the secret for the
-                          username (defaults to "username")
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
+                  name:
+                    description: Name of the cluster-scoped resource
+                    type: string
                 required:
-                - secretRef
+                - name
                 type: object
-              realm:
-                description: Realm is the admin realm (defaults to "master")
-                type: string
-              token:
-                description: Token contains optional token caching configuration
+              definition:
+                description: Definition contains the Keycloak ClientRepresentation
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              realmRef:
+                description: |-
+                  RealmRef is a reference to a KeycloakRealm
+                  One of realmRef or clusterRealmRef must be specified
                 properties:
-                  expiresKey:
-                    description: ExpiresKey is the key in the secret for the token
-                      expiration
+                  name:
+                    description: Name of the resource
                     type: string
-                  secretName:
-                    description: SecretName is the name of the secret to cache the
-                      token
+                  namespace:
+                    description: Namespace of the resource (optional, defaults to
+                      the same namespace)
                     type: string
-                  tokenKey:
-                    description: TokenKey is the key in the secret for the token
-                    type: string
+                required:
+                - name
                 type: object
-            required:
-            - baseUrl
-            - credentials
             type: object
           status:
-            description: ClusterKeycloakInstanceStatus defines the observed state
-              of ClusterKeycloakInstance
+            description: KeycloakClientStatus defines the observed state of KeycloakClient
             properties:
+              clientUUID:
+                description: ClientUUID is the Keycloak internal ID
+                type: string
               conditions:
                 description: Conditions represent the latest available observations
                 items:
@@ -199,20 +182,42 @@ spec:
                   - type
                   type: object
                 type: array
+              instance:
+                description: Instance contains the resolved instance reference
+                properties:
+                  clusterInstanceRef:
+                    description: ClusterInstanceRef is the name of the cluster instance
+                    type: string
+                  instanceRef:
+                    description: InstanceRef is the name of the namespaced instance
+                    type: string
+                type: object
               message:
-                description: Message contains additional information about the status
+                description: Message contains additional information
                 type: string
+              observedGeneration:
+                description: ObservedGeneration is the generation of the spec that
+                  was last processed
+                format: int64
+                type: integer
               ready:
-                description: Ready indicates if the Keycloak instance is accessible
+                description: Ready indicates if the client is ready
                 type: boolean
+              realm:
+                description: Realm contains the resolved realm reference
+                properties:
+                  clusterRealmRef:
+                    description: ClusterRealmRef is the name of the cluster realm
+                    type: string
+                  realmRef:
+                    description: RealmRef is the name of the namespaced realm
+                    type: string
+                type: object
               resourcePath:
-                description: ResourcePath is the API path for this resource
+                description: ResourcePath is the Keycloak API path for this client
                 type: string
               status:
                 description: Status is a human-readable status message
-                type: string
-              version:
-                description: Version is the Keycloak server version
                 type: string
             required:
             - ready
@@ -222,4 +227,3 @@ spec:
     storage: true
     subresources:
       status: {}
-{{- end }}

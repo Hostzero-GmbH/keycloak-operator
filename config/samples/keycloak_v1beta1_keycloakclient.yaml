@@ -21,7 +21,9 @@ spec:
       - "+"
     attributes:
       post.logout.redirect.uris: "+"
-  clientSecret:
-    secretName: example-client-secret
+  clientSecretRef:
+    name: example-client-secret
     clientIdKey: client-id
     clientSecretKey: client-secret
+    # create: true (default) - auto-creates secret if it doesn't exist
+    # Set to false for GitOps workflows with pre-existing secrets
