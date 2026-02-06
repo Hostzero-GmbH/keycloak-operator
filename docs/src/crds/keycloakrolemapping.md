@@ -15,7 +15,7 @@ This CRD provides a declarative way to:
 ### Realm Role to User
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: admin-role-mapping
@@ -27,10 +27,10 @@ spec:
     name: admin-role
 ```
 
-### Client Role to User
+### Client Role to User (using roleRef)
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: client-admin-mapping
@@ -40,8 +40,23 @@ spec:
       name: service-user
   roleRef:
     name: manage-clients
-  clientRef:
-    name: my-client
+```
+
+### Inline Client Role to User
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRoleMapping
+metadata:
+  name: inline-client-role-mapping
+spec:
+  subject:
+    userRef:
+      name: service-user
+  role:
+    name: manage-clients
+    clientRef:
+      name: my-client
 ```
 
 ### Inline Role Reference
@@ -49,7 +64,7 @@ spec:
 Instead of referencing a `KeycloakRole` resource, you can specify the role name directly:
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: builtin-role-mapping
@@ -64,7 +79,7 @@ spec:
 ### Role to Group
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: group-role-mapping
@@ -84,7 +99,8 @@ spec:
 | `subject.groupRef` | ResourceRef | Reference to KeycloakGroup | Either userRef or groupRef |
 | `roleRef` | ResourceRef | Reference to KeycloakRole resource | Either roleRef or role |
 | `role.name` | string | Keycloak role name (inline) | Either roleRef or role |
-| `clientRef` | ResourceRef | Reference to KeycloakClient for client roles | No (realm role if omitted) |
+| `role.clientRef` | ResourceRef | Reference to KeycloakClient for client roles (within inline role) | No (realm role if omitted) |
+| `role.clientId` | string | Client ID for client roles (alternative to clientRef) | No |
 
 ## Status
 
@@ -93,9 +109,15 @@ spec:
 | `ready` | boolean | Whether the mapping is synced |
 | `status` | string | Current status (Synced, Error, SubjectError, RoleError) |
 | `message` | string | Additional status information |
-| `subjectId` | string | Keycloak ID of the user/group |
-| `roleId` | string | Keycloak ID of the role |
-| `mappingType` | string | Type: UserRealmRole, UserClientRole, GroupRealmRole, GroupClientRole |
+| `resourcePath` | string | Keycloak API path for this role mapping |
+| `subjectType` | string | Subject type ("user" or "group") |
+| `subjectID` | string | Keycloak ID of the user/group |
+| `roleName` | string | Resolved role name |
+| `roleType` | string | Role type ("realm" or "client") |
+| `instance` | object | Resolved instance reference |
+| `realm` | object | Resolved realm reference |
+| `observedGeneration` | integer | Last observed generation |
+| `conditions` | []Condition | Kubernetes conditions |
 
 ## Behavior
 
@@ -112,12 +134,12 @@ spec:
 
 ### Mapping Types
 
-| Subject | ClientRef | Result |
+| Subject | Role Type | Result |
 |---------|-----------|--------|
-| userRef | - | User realm role mapping |
-| userRef | set | User client role mapping |
-| groupRef | - | Group realm role mapping |
-| groupRef | set | Group client role mapping |
+| userRef | realm role (no clientRef) | User realm role mapping |
+| userRef | client role (role.clientRef set) | User client role mapping |
+| groupRef | realm role (no clientRef) | Group realm role mapping |
+| groupRef | client role (role.clientRef set) | Group client role mapping |
 
 ### Cleanup
 
@@ -133,17 +155,18 @@ Set up role-based access control with groups:
 
 ```yaml
 # Create a group
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakGroup
 metadata:
   name: admins
 spec:
-  realmRef: my-realm
+  realmRef:
+    name: my-realm
   definition:
     name: admins
 ---
 # Create a role
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRole
 metadata:
   name: admin-role
@@ -155,7 +178,7 @@ spec:
     description: Full admin access
 ---
 # Map role to group
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: admins-admin-role
@@ -172,7 +195,7 @@ spec:
 Assign specific client roles to service accounts:
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: service-manage-users
@@ -182,8 +205,8 @@ spec:
       name: service-account
   role:
     name: manage-users
-  clientRef:
-    name: realm-management
+    clientRef:
+      name: realm-management
 ```
 
 ### Multiple Role Assignments
@@ -191,7 +214,7 @@ spec:
 Assign multiple roles to the same user:
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: user-role-1
@@ -202,7 +225,7 @@ spec:
   roleRef:
     name: role-1
 ---
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
   name: user-role-2
@@ -218,5 +241,5 @@ spec:
 
 - Only one of `userRef` or `groupRef` can be specified
 - Only one of `roleRef` or `role` can be specified
-- When using `clientRef`, the role must be a client role, not a realm role
+- When using `role.clientRef`, the role must be a client role, not a realm role
 - Built-in Keycloak roles (like `offline_access`, `uma_authorization`) should use inline `role.name`

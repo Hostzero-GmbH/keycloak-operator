@@ -36,8 +36,18 @@ spec:
 ```yaml
 status:
   ready: true
+  status: "Ready"
   organizationID: "12345678-1234-1234-1234-123456789abc"
   message: "Organization synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/organizations/12345678-..."
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Examples

@@ -36,10 +36,17 @@ spec:
     enabled: true
     # ... any other Keycloak user properties
   
-  # Optional: Password configuration
+  # Optional: Initial password (only set on creation)
+  initialPassword:
+    value: "temporary-password"
+    temporary: true  # User must change on first login
+  
+  # Optional: Password configuration via Kubernetes Secret
   userSecret:
     secretName: john-doe-password
-    passwordKey: password  # Default: password
+    usernameKey: username   # Default: username
+    passwordKey: password   # Default: password
+    generatePassword: true  # Auto-generate a password
 ```
 
 ## Status
@@ -47,8 +54,19 @@ spec:
 ```yaml
 status:
   ready: true
-  userId: "12345678-1234-1234-1234-123456789abc"
+  status: "Ready"
+  userID: "12345678-1234-1234-1234-123456789abc"
   message: "User synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/users/12345678-..."
+  isServiceAccount: false
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Example
@@ -187,21 +205,31 @@ spec:
   clientRef:
     name: my-service-client
 ---
-# Then, map roles to the service account
+# Assign a realm role to the service account
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRoleMapping
 metadata:
-  name: my-service-sa-roles
+  name: my-service-sa-admin
 spec:
-  userRef:
-    name: my-service-sa
-  roles:
-    realm:
-      - admin
-    client:
-      realm-management:
-        - manage-users
-        - view-users
+  subject:
+    userRef:
+      name: my-service-sa
+  role:
+    name: admin
+---
+# Assign a client role to the service account
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRoleMapping
+metadata:
+  name: my-service-sa-manage-users
+spec:
+  subject:
+    userRef:
+      name: my-service-sa
+  role:
+    name: manage-users
+    clientRef:
+      name: realm-management
 ```
 
 ## Definition Properties

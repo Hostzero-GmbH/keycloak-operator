@@ -14,7 +14,7 @@ This is the cluster-scoped equivalent of `KeycloakRealm`. Use it when:
 ### Basic Cluster Realm
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakRealm
 metadata:
   name: shared-realm
@@ -30,7 +30,7 @@ spec:
 ### With Namespaced Instance
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakRealm
 metadata:
   name: company-realm
@@ -48,7 +48,7 @@ spec:
 ### Full Configuration
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakRealm
 metadata:
   name: production-realm
@@ -149,7 +149,7 @@ When a `ClusterKeycloakRealm` is deleted:
 
 ```yaml
 # Central Keycloak instance
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakInstance
 metadata:
   name: platform-keycloak
@@ -161,7 +161,7 @@ spec:
       namespace: auth-system
 ---
 # Realm for each tenant (cluster-scoped)
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakRealm
 metadata:
   name: tenant-acme
@@ -174,7 +174,7 @@ spec:
     displayName: ACME Corporation
 ---
 # Clients can be in any namespace
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakClient
 metadata:
   name: acme-web-app
@@ -194,7 +194,7 @@ spec:
 
 ```yaml
 # Development realm
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakRealm
 metadata:
   name: app-dev
@@ -208,7 +208,7 @@ spec:
     sslRequired: none  # Relaxed for dev
 ---
 # Production realm
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakRealm
 metadata:
   name: app-prod
@@ -230,7 +230,7 @@ Resources in any namespace can reference a `ClusterKeycloakRealm`:
 
 ```yaml
 # KeycloakClient in namespace-a
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakClient
 metadata:
   name: my-client
@@ -243,7 +243,7 @@ spec:
     # ...
 ---
 # KeycloakUser in namespace-b
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakUser
 metadata:
   name: my-user

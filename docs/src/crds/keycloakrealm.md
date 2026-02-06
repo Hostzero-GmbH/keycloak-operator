@@ -10,10 +10,16 @@ kind: KeycloakRealm
 metadata:
   name: my-realm
 spec:
-  # Required: Reference to the KeycloakInstance
+  # One of instanceRef or clusterInstanceRef must be specified
+  
+  # Option 1: Reference to a namespaced KeycloakInstance
   instanceRef:
     name: my-keycloak
     namespace: default  # Optional
+  
+  # Option 2: Reference to a ClusterKeycloakInstance
+  # clusterInstanceRef:
+  #   name: my-cluster-instance
   
   # Optional: Realm name in Keycloak (defaults to metadata.name)
   realmName: my-realm
@@ -31,8 +37,11 @@ spec:
 ```yaml
 status:
   ready: true
-  realmId: "my-realm"
+  status: "Ready"
   message: "Realm synchronized successfully"
+  resourcePath: "/admin/realms/my-realm"
+  instance:
+    instanceRef: my-keycloak
   conditions:
     - type: Ready
       status: "True"
@@ -51,6 +60,22 @@ metadata:
 spec:
   instanceRef:
     name: production-keycloak
+  definition:
+    realm: my-app
+    displayName: My Application
+    enabled: true
+```
+
+### With ClusterKeycloakInstance
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: my-app-realm
+spec:
+  clusterInstanceRef:
+    name: central-keycloak
   definition:
     realm: my-app
     displayName: My Application
@@ -154,8 +179,8 @@ See [Common Patterns](../crds.md#preserving-resources-on-deletion) for more deta
 
 | Alias | Full Name |
 |-------|-----------|
-| `kcr` | `keycloakrealms` |
+| `kcrm` | `keycloakrealms` |
 
 ```bash
-kubectl get kcr
+kubectl get kcrm
 ```

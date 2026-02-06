@@ -33,8 +33,21 @@ spec:
 ```yaml
 status:
   ready: true
+  status: "Ready"
   mapperID: "12345678-1234-1234-1234-123456789abc"
+  mapperName: "department"
+  parentType: "client"
+  parentID: "87654321-..."
   message: "Protocol mapper synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/clients/87654321-.../protocol-mappers/models/12345678-..."
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Examples
@@ -106,6 +119,7 @@ The `definition` field accepts any valid Keycloak [ProtocolMapperRepresentation]
 | `name` | string | Mapper name (required) |
 | `protocol` | string | Protocol (usually "openid-connect" or "saml") |
 | `protocolMapper` | string | Mapper type (see common types below) |
+| `consentRequired` | boolean | Whether user consent is required |
 | `config` | object | Mapper-specific configuration |
 
 ## Common Protocol Mapper Types

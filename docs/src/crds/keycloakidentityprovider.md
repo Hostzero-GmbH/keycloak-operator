@@ -34,8 +34,17 @@ spec:
 ```yaml
 status:
   ready: true
-  alias: "my-idp"
+  status: "Ready"
   message: "Identity provider synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/identity-provider/instances/my-idp"
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Example

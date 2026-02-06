@@ -10,15 +10,21 @@ kind: KeycloakClient
 metadata:
   name: my-app
 spec:
-  # Required: Reference to the KeycloakRealm
+  # One of realmRef or clusterRealmRef must be specified
+  
+  # Option 1: Reference to a namespaced KeycloakRealm
   realmRef:
     name: my-realm
     namespace: default  # Optional
   
+  # Option 2: Reference to a ClusterKeycloakRealm
+  # clusterRealmRef:
+  #   name: my-cluster-realm
+  
   # Optional: Client ID in Keycloak (defaults to metadata.name)
   clientId: my-app
   
-  # Required: Client definition (Keycloak ClientRepresentation)
+  # Optional: Client definition (Keycloak ClientRepresentation)
   definition:
     clientId: my-app
     name: My Application
@@ -39,9 +45,18 @@ spec:
 ```yaml
 status:
   ready: true
-  clientId: "my-app"
+  status: "Ready"
   clientUUID: "12345678-1234-1234-1234-123456789abc"
+  resourcePath: "/admin/realms/my-realm/clients/12345678-..."
   message: "Client synchronized successfully"
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Client Secret Handling

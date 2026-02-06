@@ -30,6 +30,19 @@ spec:
       
       # Optional: Key for password (default: password)
       passwordKey: password
+  
+  # Optional: Client authentication for service accounts
+  client:
+    # Required (within client): Client ID
+    id: admin-cli
+    # Optional: Client secret (for confidential clients)
+    secret: my-client-secret
+  
+  # Optional: Token caching configuration
+  token:
+    secretName: keycloak-token-cache
+    tokenKey: token
+    expiresKey: expires
 ```
 
 ## Status
@@ -42,11 +55,14 @@ status:
   # Keycloak server version
   version: "26.0.0"
   
-  # Status message
+  # Human-readable status message
+  status: "Ready"
+  
+  # Additional information
   message: "Connected successfully"
   
-  # Last successful connection time
-  lastConnected: "2024-01-01T12:00:00Z"
+  # API path for this resource
+  resourcePath: "/admin/realms/master"
   
   # Conditions
   conditions:

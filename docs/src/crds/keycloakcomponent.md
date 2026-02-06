@@ -11,8 +11,14 @@ metadata:
   name: my-component
 spec:
   # One of realmRef or clusterRealmRef must be specified
+  
+  # Option 1: Reference to a namespaced KeycloakRealm
   realmRef:
     name: my-realm
+  
+  # Option 2: Reference to a ClusterKeycloakRealm
+  # clusterRealmRef:
+  #   name: my-cluster-realm
   
   # Required: Component definition
   definition:
@@ -31,8 +37,20 @@ spec:
 ```yaml
 status:
   ready: true
+  status: "Ready"
   componentID: "12345678-1234-1234-1234-123456789abc"
+  componentName: "corporate-ldap"
+  providerType: "org.keycloak.storage.UserStorageProvider"
   message: "Component synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/components/12345678-..."
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Examples
@@ -103,6 +121,7 @@ The `definition` field accepts any valid Keycloak [ComponentRepresentation](http
 | `providerId` | string | Provider ID (e.g., "ldap", "rsa-generated") |
 | `providerType` | string | Provider type (e.g., "org.keycloak.storage.UserStorageProvider") |
 | `parentId` | string | Parent component ID (defaults to realm ID) |
+| `subType` | string | Optional component subtype |
 | `config` | object | Provider-specific configuration (array of strings per key) |
 
 ## Common Provider Types

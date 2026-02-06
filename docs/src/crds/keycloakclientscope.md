@@ -33,8 +33,17 @@ spec:
 ```yaml
 status:
   ready: true
-  scopeId: "12345678-1234-1234-1234-123456789abc"
+  status: "Ready"
   message: "Client scope synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/client-scopes/12345678-..."
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Example

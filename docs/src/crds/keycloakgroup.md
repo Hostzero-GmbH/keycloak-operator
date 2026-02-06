@@ -37,8 +37,18 @@ spec:
 ```yaml
 status:
   ready: true
-  groupId: "12345678-1234-1234-1234-123456789abc"
+  status: "Ready"
+  groupID: "12345678-1234-1234-1234-123456789abc"
   message: "Group synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/groups/12345678-..."
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Example

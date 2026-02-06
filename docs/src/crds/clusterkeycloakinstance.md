@@ -12,7 +12,7 @@ This is the cluster-scoped equivalent of `KeycloakInstance`. Use it when:
 ## Example
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakInstance
 metadata:
   name: central-keycloak
@@ -27,7 +27,7 @@ spec:
 ### With Client Authentication
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakInstance
 metadata:
   name: central-keycloak
@@ -57,6 +57,8 @@ spec:
 | `client.id` | string | Client ID for authentication | No |
 | `client.secret` | string | Client secret (if confidential) | No |
 | `token.secretName` | string | Secret to cache access tokens | No |
+| `token.tokenKey` | string | Key in the secret for the token | No |
+| `token.expiresKey` | string | Key in the secret for the token expiration | No |
 
 ## Status
 
@@ -66,6 +68,7 @@ spec:
 | `version` | string | Detected Keycloak server version |
 | `status` | string | Current status (Ready, ConnectionFailed, Error) |
 | `message` | string | Additional status information |
+| `resourcePath` | string | API path for this resource |
 | `conditions` | []Condition | Kubernetes conditions |
 
 ## Behavior
@@ -91,7 +94,7 @@ The operator maintains a pool of authenticated Keycloak clients. When a `Cluster
 
 ```yaml
 # Define the central instance once
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakInstance
 metadata:
   name: platform-keycloak
@@ -103,7 +106,7 @@ spec:
       namespace: auth-system
 ---
 # Create cluster-scoped realms for each tenant
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakRealm
 metadata:
   name: tenant-a-realm
@@ -130,7 +133,7 @@ stringData:
   password: ${KEYCLOAK_ADMIN_PASSWORD}
 ---
 # Cluster instance referencing the secret
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: ClusterKeycloakInstance
 metadata:
   name: shared-keycloak

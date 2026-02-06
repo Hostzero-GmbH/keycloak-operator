@@ -31,8 +31,20 @@ spec:
 ```yaml
 status:
   ready: true
+  status: "Ready"
   roleName: "admin-role"
+  roleID: "12345678-1234-1234-1234-123456789abc"
+  isClientRole: false
   message: "Role synchronized successfully"
+  resourcePath: "/admin/realms/my-realm/roles/admin-role"
+  instance:
+    instanceRef: my-keycloak
+  realm:
+    realmRef: my-realm
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: Synchronized
 ```
 
 ## Examples
@@ -91,7 +103,8 @@ The `definition` field accepts any valid Keycloak [RoleRepresentation](https://w
 | `name` | string | Role name (required) |
 | `description` | string | Role description |
 | `composite` | boolean | Whether this is a composite role |
-| `composites` | object | Composite role definitions (realm/client roles) |
+| `clientRole` | boolean | Whether this is a client role |
+| `containerId` | string | Container ID (realm or client ID) |
 | `attributes` | object | Custom attributes |
 
 ## Status Fields
@@ -101,17 +114,24 @@ The `definition` field accepts any valid Keycloak [RoleRepresentation](https://w
 | `ready` | boolean | Whether the role is synchronized |
 | `status` | string | Current status (e.g., "Ready", "Error") |
 | `message` | string | Human-readable status message |
+| `resourcePath` | string | Keycloak API path for this role |
+| `roleID` | string | Keycloak internal role ID |
 | `roleName` | string | The role name in Keycloak |
+| `isClientRole` | boolean | Whether this is a client role |
+| `clientID` | string | Client ID (for client roles) |
+| `instance` | object | Resolved instance reference |
+| `realm` | object | Resolved realm reference |
 | `observedGeneration` | integer | Last observed generation |
+| `conditions` | []Condition | Kubernetes conditions |
 
 ## Short Names
 
 | Alias | Full Name |
 |-------|-----------|
-| `kcrl` | `keycloakroles` |
+| `kcr` | `keycloakroles` |
 
 ```bash
-kubectl get kcrl
+kubectl get kcr
 ```
 
 ## Notes

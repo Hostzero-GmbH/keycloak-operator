@@ -15,7 +15,7 @@ This CRD provides a way to:
 ### Using an existing Secret
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakUserCredential
 metadata:
   name: user-credential
@@ -31,7 +31,7 @@ spec:
 ### Auto-creating a Secret
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakUserCredential
 metadata:
   name: user-credential
@@ -45,7 +45,8 @@ spec:
     passwordKey: password
     passwordPolicy:
       length: 24
-      symbols: true
+      includeSymbols: true
+      includeNumbers: true
 ```
 
 ## Spec
@@ -57,8 +58,10 @@ spec:
 | `userSecret.create` | boolean | Create secret if it doesn't exist | No (default: false) |
 | `userSecret.usernameKey` | string | Key in secret for username | No (default: "username") |
 | `userSecret.passwordKey` | string | Key in secret for password | No (default: "password") |
-| `userSecret.passwordPolicy.length` | int | Length of generated password | No (default: 16) |
-| `userSecret.passwordPolicy.symbols` | boolean | Include symbols in password | No (default: true) |
+| `userSecret.emailKey` | string | Key in secret for email | No |
+| `userSecret.passwordPolicy.length` | int | Length of generated password | No (default: 24) |
+| `userSecret.passwordPolicy.includeNumbers` | boolean | Include numbers in password | No (default: true) |
+| `userSecret.passwordPolicy.includeSymbols` | boolean | Include symbols in password | No (default: true) |
 
 ## Status
 
@@ -66,9 +69,15 @@ spec:
 |-------|------|-------------|
 | `ready` | boolean | Whether the credential is synced |
 | `status` | string | Current status (Synced, Error, SecretError) |
-| `secretCreated` | boolean | Whether the secret was created by the operator |
 | `message` | string | Additional status information |
-| `lastPasswordSync` | string | Timestamp of last password sync |
+| `resourcePath` | string | Keycloak API path for the user |
+| `secretCreated` | boolean | Whether the secret was created by the operator |
+| `passwordHash` | string | Hash of the last synchronized password |
+| `secretResourceVersion` | string | Resource version of the secret when last synced |
+| `instance` | object | Resolved instance reference |
+| `realm` | object | Resolved realm reference |
+| `observedGeneration` | integer | Last observed generation |
+| `conditions` | []Condition | Kubernetes conditions |
 
 ## Behavior
 
@@ -84,7 +93,7 @@ When `create: true` is set:
 When the Secret exists (created or pre-existing):
 1. The operator reads the password from the Secret
 2. The password is set in Keycloak for the referenced user
-3. The `lastPasswordSync` timestamp is updated
+3. The `passwordHash` is updated for change detection
 
 ### Cleanup
 
@@ -99,7 +108,7 @@ When the `KeycloakUserCredential` is deleted:
 Create users with auto-generated passwords:
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakUser
 metadata:
   name: new-user
@@ -111,7 +120,7 @@ spec:
     email: user@example.com
     enabled: true
 ---
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakUserCredential
 metadata:
   name: new-user-creds
@@ -128,7 +137,7 @@ spec:
 Manage service account credentials that can be mounted into pods:
 
 ```yaml
-apiVersion: keycloak.hostzero.io/v1beta1
+apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakUserCredential
 metadata:
   name: service-account-creds
@@ -140,5 +149,5 @@ spec:
     create: true
     passwordPolicy:
       length: 32
-      symbols: false
+      includeSymbols: false
 ```
