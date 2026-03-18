@@ -39,10 +39,56 @@ type KeycloakRealmSpec struct {
 	// +optional
 	RealmName *string `json:"realmName,omitempty"`
 
+	// SmtpSecretRef is a reference to a Kubernetes Secret containing SMTP credentials.
+	// When set, the secret values are injected into definition.smtpServer.user and
+	// definition.smtpServer.password before syncing to Keycloak, so credentials
+	// do not need to appear in plaintext in the CR.
+	// +optional
+	SmtpSecretRef *SmtpSecretRefSpec `json:"smtpSecretRef,omitempty"`
+
 	// Definition contains the Keycloak RealmRepresentation
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
+}
+
+// SmtpSecretRefSpec references a Kubernetes Secret containing SMTP credentials.
+type SmtpSecretRefSpec struct {
+	// Name of the Kubernetes Secret
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// UserKey is the key in the secret for the SMTP username (defaults to "user")
+	// +kubebuilder:default="user"
+	// +optional
+	UserKey string `json:"userKey,omitempty"`
+
+	// PasswordKey is the key in the secret for the SMTP password (defaults to "password")
+	// +kubebuilder:default="password"
+	// +optional
+	PasswordKey string `json:"passwordKey,omitempty"`
+}
+
+// ClusterSmtpSecretRefSpec references a Kubernetes Secret containing SMTP credentials
+// for cluster-scoped resources where the namespace must be explicit.
+type ClusterSmtpSecretRefSpec struct {
+	// Name of the Kubernetes Secret
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace of the Kubernetes Secret (required for cluster-scoped resources)
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
+
+	// UserKey is the key in the secret for the SMTP username (defaults to "user")
+	// +kubebuilder:default="user"
+	// +optional
+	UserKey string `json:"userKey,omitempty"`
+
+	// PasswordKey is the key in the secret for the SMTP password (defaults to "password")
+	// +kubebuilder:default="password"
+	// +optional
+	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
 // RealmDefinition represents the Keycloak RealmRepresentation

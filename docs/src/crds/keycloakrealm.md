@@ -126,7 +126,7 @@ spec:
     adminTheme: keycloak
     emailTheme: keycloak
     
-    # SMTP settings
+    # SMTP settings (non-sensitive parts in definition)
     smtpServer:
       host: smtp.example.com
       port: "587"
@@ -134,9 +134,74 @@ spec:
       from: noreply@example.com
       starttls: "true"
       auth: "true"
-      user: smtp-user
-      password: smtp-password
+  
+  # SMTP credentials from a Kubernetes Secret (recommended over plaintext in definition)
+  smtpSecretRef:
+    name: my-smtp-credentials
+    userKey: user         # optional, defaults to "user"
+    passwordKey: password # optional, defaults to "password"
 ```
+
+### SMTP Credentials from Secret
+
+To avoid storing SMTP credentials in plaintext in the CR, use `smtpSecretRef` to reference a Kubernetes Secret:
+
+```bash
+kubectl create secret generic smtp-credentials \
+  --from-literal=user=smtp-user@example.com \
+  --from-literal=password=my-smtp-password
+```
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: my-realm
+spec:
+  instanceRef:
+    name: my-keycloak
+  smtpSecretRef:
+    name: smtp-credentials
+    # userKey: user         # default
+    # passwordKey: password # default
+  definition:
+    realm: my-realm
+    enabled: true
+    smtpServer:
+      host: smtp.example.com
+      port: "587"
+      from: noreply@example.com
+      starttls: "true"
+      auth: "true"
+```
+
+The operator reads the `user` and `password` values from the referenced secret and injects them into `smtpServer` before sending the realm configuration to Keycloak. The secret must exist in the same namespace as the `KeycloakRealm`.
+
+For `ClusterKeycloakRealm`, the secret namespace must be specified explicitly:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: ClusterKeycloakRealm
+metadata:
+  name: my-realm
+spec:
+  clusterInstanceRef:
+    name: central-keycloak
+  smtpSecretRef:
+    name: smtp-credentials
+    namespace: keycloak-system
+  definition:
+    realm: my-realm
+    enabled: true
+    smtpServer:
+      host: smtp.example.com
+      port: "587"
+      from: noreply@example.com
+      starttls: "true"
+      auth: "true"
+```
+
+When the referenced secret changes, the operator automatically re-reconciles the realm to pick up the new credentials.
 
 ## Definition Properties
 

@@ -183,6 +183,29 @@ func ptrString(s string) *string {
 	return &s
 }
 
+// mergeSmtpCredentials injects SMTP user/password into the definition's smtpServer map.
+// If smtpServer doesn't exist yet, it is created.
+func mergeSmtpCredentials(definition json.RawMessage, user, password string) json.RawMessage {
+	var defMap map[string]interface{}
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return definition
+	}
+
+	smtp, ok := defMap["smtpServer"].(map[string]interface{})
+	if !ok {
+		smtp = make(map[string]interface{})
+	}
+	smtp["user"] = user
+	smtp["password"] = password
+	defMap["smtpServer"] = smtp
+
+	result, err := json.Marshal(defMap)
+	if err != nil {
+		return definition
+	}
+	return result
+}
+
 // setFieldInDefinition sets a field value in a JSON definition
 func setFieldInDefinition(definition json.RawMessage, field string, value interface{}) json.RawMessage {
 	// Parse the definition as a map

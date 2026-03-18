@@ -84,6 +84,96 @@ func TestMergeIDIntoDefinition(t *testing.T) {
 	}
 }
 
+func TestMergeSmtpCredentials(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition json.RawMessage
+		user       string
+		password   string
+		wantUser   string
+		wantPass   string
+		wantHost   string // verify existing smtpServer fields are preserved
+		wantSame   bool
+	}{
+		{
+			name:       "injects into existing smtpServer",
+			definition: json.RawMessage(`{"realm":"test","smtpServer":{"host":"smtp.example.com","port":"587"}}`),
+			user:       "myuser",
+			password:   "mypass",
+			wantUser:   "myuser",
+			wantPass:   "mypass",
+			wantHost:   "smtp.example.com",
+		},
+		{
+			name:       "creates smtpServer when missing",
+			definition: json.RawMessage(`{"realm":"test"}`),
+			user:       "user",
+			password:   "pass",
+			wantUser:   "user",
+			wantPass:   "pass",
+		},
+		{
+			name:       "overwrites existing user and password",
+			definition: json.RawMessage(`{"smtpServer":{"host":"smtp.example.com","user":"old","password":"old"}}`),
+			user:       "new-user",
+			password:   "new-pass",
+			wantUser:   "new-user",
+			wantPass:   "new-pass",
+			wantHost:   "smtp.example.com",
+		},
+		{
+			name:       "injects into empty object",
+			definition: json.RawMessage(`{}`),
+			user:       "u",
+			password:   "p",
+			wantUser:   "u",
+			wantPass:   "p",
+		},
+		{
+			name:       "invalid JSON returns original",
+			definition: json.RawMessage(`{invalid`),
+			user:       "u",
+			password:   "p",
+			wantSame:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeSmtpCredentials(tt.definition, tt.user, tt.password)
+
+			if tt.wantSame {
+				if string(got) != string(tt.definition) {
+					t.Errorf("expected original to be returned, got %s", string(got))
+				}
+				return
+			}
+
+			var defMap map[string]interface{}
+			if err := json.Unmarshal(got, &defMap); err != nil {
+				t.Fatalf("failed to parse result: %v", err)
+			}
+
+			smtp, ok := defMap["smtpServer"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("smtpServer not found or not a map in result: %s", string(got))
+			}
+
+			if smtp["user"] != tt.wantUser {
+				t.Errorf("user: got %v, want %v", smtp["user"], tt.wantUser)
+			}
+			if smtp["password"] != tt.wantPass {
+				t.Errorf("password: got %v, want %v", smtp["password"], tt.wantPass)
+			}
+			if tt.wantHost != "" {
+				if smtp["host"] != tt.wantHost {
+					t.Errorf("host: got %v, want %v (existing fields should be preserved)", smtp["host"], tt.wantHost)
+				}
+			}
+		})
+	}
+}
+
 func TestSetFieldInDefinition(t *testing.T) {
 	tests := []struct {
 		name       string

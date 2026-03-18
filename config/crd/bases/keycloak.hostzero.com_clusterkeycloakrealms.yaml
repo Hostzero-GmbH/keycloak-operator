@@ -95,6 +95,33 @@ spec:
                 description: RealmName is the name of the realm in Keycloak (defaults
                   to metadata.name)
                 type: string
+              smtpSecretRef:
+                description: |-
+                  SmtpSecretRef is a reference to a Kubernetes Secret containing SMTP credentials.
+                  When set, the secret values are injected into definition.smtpServer.user and
+                  definition.smtpServer.password before syncing to Keycloak.
+                properties:
+                  name:
+                    description: Name of the Kubernetes Secret
+                    type: string
+                  namespace:
+                    description: Namespace of the Kubernetes Secret (required for
+                      cluster-scoped resources)
+                    type: string
+                  passwordKey:
+                    default: password
+                    description: PasswordKey is the key in the secret for the SMTP
+                      password (defaults to "password")
+                    type: string
+                  userKey:
+                    default: user
+                    description: UserKey is the key in the secret for the SMTP username
+                      (defaults to "user")
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
             required:
             - definition
             type: object

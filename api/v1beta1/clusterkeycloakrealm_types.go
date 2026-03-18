@@ -21,6 +21,12 @@ type ClusterKeycloakRealmSpec struct {
 	// +optional
 	RealmName *string `json:"realmName,omitempty"`
 
+	// SmtpSecretRef is a reference to a Kubernetes Secret containing SMTP credentials.
+	// When set, the secret values are injected into definition.smtpServer.user and
+	// definition.smtpServer.password before syncing to Keycloak.
+	// +optional
+	SmtpSecretRef *ClusterSmtpSecretRefSpec `json:"smtpSecretRef,omitempty"`
+
 	// Definition contains the Keycloak RealmRepresentation
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields

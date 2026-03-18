@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -13,7 +14,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
@@ -30,6 +33,7 @@ type ClusterKeycloakRealmReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=clusterkeycloakrealms/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=clusterkeycloakrealms/finalizers,verbs=update
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=clusterkeycloakinstances,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile handles ClusterKeycloakRealm reconciliation
 func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -105,12 +109,23 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 		return r.updateStatus(ctx, realm, false, "InvalidDefinition", "Realm name is required in definition", instanceRef)
 	}
 
+	// Build the effective definition, injecting SMTP credentials from secret if configured
+	definition := realm.Spec.Definition.Raw
+	if realm.Spec.SmtpSecretRef != nil {
+		smtpUser, smtpPassword, err := r.resolveSmtpSecret(ctx, realm)
+		if err != nil {
+			RecordError(controllerName, "secret_error")
+			return r.updateStatus(ctx, realm, false, "SmtpSecretError", err.Error(), instanceRef)
+		}
+		definition = mergeSmtpCredentials(definition, smtpUser, smtpPassword)
+	}
+
 	// Check if realm exists
 	existingRealm, err := kc.GetRealm(ctx, realmDef.Realm)
 	if err != nil {
 		// Realm doesn't exist, create it
 		log.Info("creating realm", "realm", realmDef.Realm)
-		if err := kc.CreateRealmFromDefinition(ctx, realm.Spec.Definition.Raw); err != nil {
+		if err := kc.CreateRealmFromDefinition(ctx, definition); err != nil {
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, realm, false, "CreateFailed", fmt.Sprintf("Failed to create realm: %v", err), instanceRef)
 		}
@@ -118,7 +133,7 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 	} else {
 		// Realm exists, update it - merge ID into definition
 		log.Info("updating realm", "realm", realmDef.Realm)
-		definition := mergeIDIntoDefinition(realm.Spec.Definition.Raw, existingRealm.ID)
+		definition = mergeIDIntoDefinition(definition, existingRealm.ID)
 		if err := kc.UpdateRealm(ctx, realmDef.Realm, definition); err != nil {
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)
@@ -260,9 +275,65 @@ func (r *ClusterKeycloakRealmReconciler) updateStatus(ctx context.Context, realm
 	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
 }
 
+func (r *ClusterKeycloakRealmReconciler) resolveSmtpSecret(ctx context.Context, realm *keycloakv1beta1.ClusterKeycloakRealm) (string, string, error) {
+	ref := realm.Spec.SmtpSecretRef
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: ref.Namespace}, secret); err != nil {
+		return "", "", fmt.Errorf("failed to get SMTP secret %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+
+	userKey := ref.UserKey
+	if userKey == "" {
+		userKey = "user"
+	}
+	passwordKey := ref.PasswordKey
+	if passwordKey == "" {
+		passwordKey = "password"
+	}
+
+	user, ok := secret.Data[userKey]
+	if !ok {
+		return "", "", fmt.Errorf("key %q not found in SMTP secret %s/%s", userKey, ref.Namespace, ref.Name)
+	}
+	password, ok := secret.Data[passwordKey]
+	if !ok {
+		return "", "", fmt.Errorf("key %q not found in SMTP secret %s/%s", passwordKey, ref.Namespace, ref.Name)
+	}
+
+	return string(user), string(password), nil
+}
+
 // SetupWithManager sets up the controller with the Manager
 func (r *ClusterKeycloakRealmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.ClusterKeycloakRealm{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findClusterRealmsForSecret),
+		).
 		Complete(r)
+}
+
+// findClusterRealmsForSecret maps a Secret to ClusterKeycloakRealms that reference it via smtpSecretRef
+func (r *ClusterKeycloakRealmReconciler) findClusterRealmsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	secret := obj.(*corev1.Secret)
+
+	var realmList keycloakv1beta1.ClusterKeycloakRealmList
+	if err := r.List(ctx, &realmList); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, realm := range realmList.Items {
+		if realm.Spec.SmtpSecretRef != nil &&
+			realm.Spec.SmtpSecretRef.Name == secret.Name &&
+			realm.Spec.SmtpSecretRef.Namespace == secret.Namespace {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name: realm.Name,
+				},
+			})
+		}
+	}
+	return requests
 }
