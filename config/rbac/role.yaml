@@ -30,6 +30,7 @@ rules:
   - keycloakorganizations
   - keycloakprotocolmappers
   - keycloakrealms
+  - keycloakrequiredactions
   - keycloakrolemappings
   - keycloakroles
   - keycloakusercredentials
@@ -56,6 +57,7 @@ rules:
   - keycloakorganizations/finalizers
   - keycloakprotocolmappers/finalizers
   - keycloakrealms/finalizers
+  - keycloakrequiredactions/finalizers
   - keycloakrolemappings/finalizers
   - keycloakroles/finalizers
   - keycloakusercredentials/finalizers
@@ -76,6 +78,7 @@ rules:
   - keycloakorganizations/status
   - keycloakprotocolmappers/status
   - keycloakrealms/status
+  - keycloakrequiredactions/status
   - keycloakrolemappings/status
   - keycloakroles/status
   - keycloakusercredentials/status
