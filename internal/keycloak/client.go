@@ -1170,7 +1170,6 @@ func (c *Client) DeleteRequiredAction(ctx context.Context, realmName, alias stri
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/required-actions/"+url.PathEscape(alias))
 }
 
-
 // ============================================================================
 // Raw JSON Operations (for export)
 // ============================================================================
