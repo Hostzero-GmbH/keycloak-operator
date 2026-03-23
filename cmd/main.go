@@ -235,6 +235,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.KeycloakRequiredActionReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		ClientManager: clientManager,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "KeycloakRequiredAction")
+		os.Exit(1)
+	}
+
 	// Add health checks
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")

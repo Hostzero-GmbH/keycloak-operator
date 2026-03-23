@@ -1117,6 +1117,60 @@ func (c *Client) DeleteOrganization(ctx context.Context, realmName, orgID string
 }
 
 // ============================================================================
+// Required Action Operations
+// ============================================================================
+
+// RequiredActionProviderRepresentation represents a Keycloak required action provider
+type RequiredActionProviderRepresentation struct {
+	Alias         *string           `json:"alias,omitempty"`
+	Name          *string           `json:"name,omitempty"`
+	ProviderID    *string           `json:"providerId,omitempty"`
+	Enabled       *bool             `json:"enabled,omitempty"`
+	DefaultAction *bool             `json:"defaultAction,omitempty"`
+	Priority      *int32            `json:"priority,omitempty"`
+	Config        map[string]string `json:"config,omitempty"`
+}
+
+// GetRequiredActions lists all required action providers in a realm
+func (c *Client) GetRequiredActions(ctx context.Context, realmName string) ([]RequiredActionProviderRepresentation, error) {
+	var actions []RequiredActionProviderRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/required-actions", nil, &actions); err != nil {
+		return nil, err
+	}
+	return actions, nil
+}
+
+// GetRequiredAction gets a required action by alias
+func (c *Client) GetRequiredAction(ctx context.Context, realmName, alias string) (*RequiredActionProviderRepresentation, error) {
+	var action RequiredActionProviderRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/required-actions/"+url.PathEscape(alias), &action); err != nil {
+		return nil, err
+	}
+	return &action, nil
+}
+
+// UpdateRequiredAction updates a required action
+func (c *Client) UpdateRequiredAction(ctx context.Context, realmName, alias string, action json.RawMessage) error {
+	cfg := DefaultRetryConfig()
+	return WithRetryVoid(ctx, cfg, "UpdateRequiredAction", func() error {
+		return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/required-actions/"+url.PathEscape(alias), action)
+	})
+}
+
+// RegisterRequiredAction registers a new required action provider
+func (c *Client) RegisterRequiredAction(ctx context.Context, realmName string, action json.RawMessage) error {
+	cfg := DefaultRetryConfig()
+	return WithRetryVoid(ctx, cfg, "RegisterRequiredAction", func() error {
+		return c.Post(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/register-required-action", action, nil)
+	})
+}
+
+// DeleteRequiredAction deletes (unregisters) a required action
+func (c *Client) DeleteRequiredAction(ctx context.Context, realmName, alias string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/required-actions/"+url.PathEscape(alias))
+}
+
+// ============================================================================
 // Raw JSON Operations (for export)
 // ============================================================================
 
