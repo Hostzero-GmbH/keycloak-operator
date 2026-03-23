@@ -12,6 +12,7 @@ rules:
     resources:
       - clusterkeycloakinstances
       - clusterkeycloakrealms
+      - keycloakauthenticationflows
       - keycloakclients
       - keycloakclientscopes
       - keycloakcomponents
@@ -40,6 +41,7 @@ rules:
     resources:
       - clusterkeycloakinstances/status
       - clusterkeycloakrealms/status
+      - keycloakauthenticationflows/status
       - keycloakclients/status
       - keycloakclientscopes/status
       - keycloakcomponents/status
@@ -64,6 +66,7 @@ rules:
     resources:
       - clusterkeycloakinstances/finalizers
       - clusterkeycloakrealms/finalizers
+      - keycloakauthenticationflows/finalizers
       - keycloakclients/finalizers
       - keycloakclientscopes/finalizers
       - keycloakcomponents/finalizers

@@ -18,3 +18,4 @@ resources:
   - bases/keycloak.hostzero.com_keycloakcomponents.yaml
   - bases/keycloak.hostzero.com_keycloakorganizations.yaml
   - bases/keycloak.hostzero.com_keycloakrequiredactions.yaml
+  - bases/keycloak.hostzero.com_keycloakauthenticationflows.yaml
