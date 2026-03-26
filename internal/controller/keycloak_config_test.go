@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -239,6 +241,225 @@ func TestSetFieldInDefinition(t *testing.T) {
 				if gotMap[k] != v {
 					t.Errorf("field %q: got %v, want %v", k, gotMap[k], v)
 				}
+			}
+		})
+	}
+}
+
+func TestResolveFlowBindingAliases(t *testing.T) {
+	ctx := context.Background()
+	realmName := "test-realm"
+
+	fakeLookup := func(_ context.Context, _ string, alias string) (string, error) {
+		switch alias {
+		case "custom-browser-flow":
+			return "uuid-browser-1234", nil
+		case "custom-direct-grant":
+			return "uuid-direct-5678", nil
+		default:
+			return "", fmt.Errorf("authentication flow not found: %s", alias)
+		}
+	}
+
+	tests := []struct {
+		name       string
+		definition string
+		wantErr    bool
+		errContain string
+		check      func(t *testing.T, result json.RawMessage)
+	}{
+		{
+			name:       "no authenticationFlowBindingOverrides passes through",
+			definition: `{"clientId":"my-client","enabled":true}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := m["authenticationFlowBindingOverrides"]; ok {
+					t.Error("expected no authenticationFlowBindingOverrides")
+				}
+			},
+		},
+		{
+			name:       "empty overrides passes through",
+			definition: `{"clientId":"my-client","authenticationFlowBindingOverrides":{}}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				overrides := m["authenticationFlowBindingOverrides"].(map[string]interface{})
+				if len(overrides) != 0 {
+					t.Errorf("expected empty overrides, got %v", overrides)
+				}
+			},
+		},
+		{
+			name:       "UUID-based keys pass through unchanged",
+			definition: `{"authenticationFlowBindingOverrides":{"browser":"existing-uuid","direct_grant":"another-uuid"}}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				overrides := m["authenticationFlowBindingOverrides"].(map[string]interface{})
+				if overrides["browser"] != "existing-uuid" {
+					t.Errorf("browser: got %v, want existing-uuid", overrides["browser"])
+				}
+				if overrides["direct_grant"] != "another-uuid" {
+					t.Errorf("direct_grant: got %v, want another-uuid", overrides["direct_grant"])
+				}
+			},
+		},
+		{
+			name:       "browserFlowAlias resolves to browser UUID",
+			definition: `{"authenticationFlowBindingOverrides":{"browserFlowAlias":"custom-browser-flow"}}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				overrides := m["authenticationFlowBindingOverrides"].(map[string]interface{})
+				if overrides["browser"] != "uuid-browser-1234" {
+					t.Errorf("browser: got %v, want uuid-browser-1234", overrides["browser"])
+				}
+				if _, ok := overrides["browserFlowAlias"]; ok {
+					t.Error("browserFlowAlias should have been removed")
+				}
+			},
+		},
+		{
+			name:       "directGrantFlowAlias resolves to direct_grant UUID",
+			definition: `{"authenticationFlowBindingOverrides":{"directGrantFlowAlias":"custom-direct-grant"}}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				overrides := m["authenticationFlowBindingOverrides"].(map[string]interface{})
+				if overrides["direct_grant"] != "uuid-direct-5678" {
+					t.Errorf("direct_grant: got %v, want uuid-direct-5678", overrides["direct_grant"])
+				}
+				if _, ok := overrides["directGrantFlowAlias"]; ok {
+					t.Error("directGrantFlowAlias should have been removed")
+				}
+			},
+		},
+		{
+			name:       "both aliases resolve together",
+			definition: `{"authenticationFlowBindingOverrides":{"browserFlowAlias":"custom-browser-flow","directGrantFlowAlias":"custom-direct-grant"}}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				overrides := m["authenticationFlowBindingOverrides"].(map[string]interface{})
+				if overrides["browser"] != "uuid-browser-1234" {
+					t.Errorf("browser: got %v, want uuid-browser-1234", overrides["browser"])
+				}
+				if overrides["direct_grant"] != "uuid-direct-5678" {
+					t.Errorf("direct_grant: got %v, want uuid-direct-5678", overrides["direct_grant"])
+				}
+			},
+		},
+		{
+			name:       "alias takes precedence over UUID key",
+			definition: `{"authenticationFlowBindingOverrides":{"browser":"old-uuid","browserFlowAlias":"custom-browser-flow"}}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				overrides := m["authenticationFlowBindingOverrides"].(map[string]interface{})
+				if overrides["browser"] != "uuid-browser-1234" {
+					t.Errorf("browser: got %v, want uuid-browser-1234 (alias should win)", overrides["browser"])
+				}
+			},
+		},
+		{
+			name:       "unknown alias returns error",
+			definition: `{"authenticationFlowBindingOverrides":{"browserFlowAlias":"nonexistent-flow"}}`,
+			wantErr:    true,
+			errContain: "nonexistent-flow",
+		},
+		{
+			name:       "empty alias value returns error",
+			definition: `{"authenticationFlowBindingOverrides":{"browserFlowAlias":""}}`,
+			wantErr:    true,
+			errContain: "non-empty string",
+		},
+		{
+			name:       "invalid JSON passes through unchanged",
+			definition: `{invalid`,
+			check: func(t *testing.T, result json.RawMessage) {
+				if string(result) != `{invalid` {
+					t.Errorf("expected original to be returned, got %s", string(result))
+				}
+			},
+		},
+		{
+			name:       "non-map overrides passes through unchanged",
+			definition: `{"authenticationFlowBindingOverrides":"not-a-map"}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				if m["authenticationFlowBindingOverrides"] != "not-a-map" {
+					t.Errorf("expected unchanged, got %v", m["authenticationFlowBindingOverrides"])
+				}
+			},
+		},
+		{
+			name:       "other definition fields are preserved",
+			definition: `{"clientId":"test","enabled":true,"authenticationFlowBindingOverrides":{"browserFlowAlias":"custom-browser-flow"}}`,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				if m["clientId"] != "test" {
+					t.Errorf("clientId should be preserved, got %v", m["clientId"])
+				}
+				if m["enabled"] != true {
+					t.Errorf("enabled should be preserved, got %v", m["enabled"])
+				}
+				overrides := m["authenticationFlowBindingOverrides"].(map[string]interface{})
+				if overrides["browser"] != "uuid-browser-1234" {
+					t.Errorf("browser: got %v, want uuid-browser-1234", overrides["browser"])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := resolveFlowBindingAliasesWithLookup(ctx, realmName, json.RawMessage(tt.definition), fakeLookup)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if tt.errContain != "" {
+					errStr := err.Error()
+					found := false
+					for i := 0; i <= len(errStr)-len(tt.errContain); i++ {
+						if errStr[i:i+len(tt.errContain)] == tt.errContain {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("error %q should contain %q", errStr, tt.errContain)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.check != nil {
+				tt.check(t, result)
 			}
 		})
 	}
