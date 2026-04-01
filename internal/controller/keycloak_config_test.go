@@ -176,6 +176,112 @@ func TestMergeSmtpCredentials(t *testing.T) {
 	}
 }
 
+func TestMergeIDPConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition json.RawMessage
+		secretData map[string]string
+		wantSame   bool
+		check      func(t *testing.T, result json.RawMessage)
+	}{
+		{
+			name:       "merges into existing config",
+			definition: json.RawMessage(`{"alias":"my-idp","config":{"authorizationUrl":"https://idp.example.com/auth"}}`),
+			secretData: map[string]string{"clientId": "my-client", "clientSecret": "my-secret"},
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				cfg := m["config"].(map[string]interface{})
+				if cfg["clientId"] != "my-client" {
+					t.Errorf("clientId: got %v, want my-client", cfg["clientId"])
+				}
+				if cfg["clientSecret"] != "my-secret" {
+					t.Errorf("clientSecret: got %v, want my-secret", cfg["clientSecret"])
+				}
+				if cfg["authorizationUrl"] != "https://idp.example.com/auth" {
+					t.Errorf("authorizationUrl should be preserved, got %v", cfg["authorizationUrl"])
+				}
+				if m["alias"] != "my-idp" {
+					t.Errorf("alias should be preserved, got %v", m["alias"])
+				}
+			},
+		},
+		{
+			name:       "creates config when missing",
+			definition: json.RawMessage(`{"alias":"my-idp","providerId":"oidc"}`),
+			secretData: map[string]string{"clientId": "new-client"},
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				cfg := m["config"].(map[string]interface{})
+				if cfg["clientId"] != "new-client" {
+					t.Errorf("clientId: got %v, want new-client", cfg["clientId"])
+				}
+			},
+		},
+		{
+			name:       "secret values override inline config",
+			definition: json.RawMessage(`{"config":{"clientId":"inline-id","clientSecret":"inline-secret","scope":"openid"}}`),
+			secretData: map[string]string{"clientId": "secret-id", "clientSecret": "secret-secret"},
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				cfg := m["config"].(map[string]interface{})
+				if cfg["clientId"] != "secret-id" {
+					t.Errorf("clientId: got %v, want secret-id", cfg["clientId"])
+				}
+				if cfg["clientSecret"] != "secret-secret" {
+					t.Errorf("clientSecret: got %v, want secret-secret", cfg["clientSecret"])
+				}
+				if cfg["scope"] != "openid" {
+					t.Errorf("scope should be preserved, got %v", cfg["scope"])
+				}
+			},
+		},
+		{
+			name:       "empty secretData returns original",
+			definition: json.RawMessage(`{"alias":"test"}`),
+			secretData: map[string]string{},
+			wantSame:   true,
+		},
+		{
+			name:       "nil secretData returns original",
+			definition: json.RawMessage(`{"alias":"test"}`),
+			secretData: nil,
+			wantSame:   true,
+		},
+		{
+			name:       "invalid JSON returns original",
+			definition: json.RawMessage(`{invalid`),
+			secretData: map[string]string{"clientId": "test"},
+			wantSame:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeIDPConfig(tt.definition, tt.secretData)
+
+			if tt.wantSame {
+				if string(got) != string(tt.definition) {
+					t.Errorf("expected original to be returned, got %s", string(got))
+				}
+				return
+			}
+
+			if tt.check != nil {
+				tt.check(t, got)
+			}
+		})
+	}
+}
+
 func TestSetFieldInDefinition(t *testing.T) {
 	tests := []struct {
 		name       string

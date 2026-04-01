@@ -21,6 +21,10 @@ spec:
   clusterRealmRef:
     name: my-cluster-realm
   
+  # Optional: Reference to a Secret with config values (e.g. clientId, clientSecret)
+  configSecretRef:
+    name: my-idp-credentials
+  
   # Required: Identity provider definition
   definition:
     alias: my-idp
@@ -59,6 +63,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  configSecretRef:
+    name: corporate-sso-credentials
   definition:
     alias: corporate-sso
     displayName: Corporate SSO
@@ -70,8 +76,6 @@ spec:
       authorizationUrl: https://sso.corp.example.com/auth
       tokenUrl: https://sso.corp.example.com/token
       userInfoUrl: https://sso.corp.example.com/userinfo
-      clientId: keycloak-client
-      clientSecret: client-secret-here
       defaultScope: openid profile email
       syncMode: IMPORT
 ```
@@ -86,6 +90,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  configSecretRef:
+    name: google-idp-credentials
   definition:
     alias: google
     displayName: Sign in with Google
@@ -93,8 +99,6 @@ spec:
     enabled: true
     trustEmail: true
     config:
-      clientId: your-google-client-id
-      clientSecret: your-google-client-secret
       defaultScope: openid profile email
 ```
 
@@ -108,14 +112,13 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  configSecretRef:
+    name: github-idp-credentials
   definition:
     alias: github
     displayName: Sign in with GitHub
     providerId: github
     enabled: true
-    config:
-      clientId: your-github-client-id
-      clientSecret: your-github-client-secret
 ```
 
 ### SAML Provider
@@ -141,6 +144,40 @@ spec:
       wantAssertionsSigned: "true"
       wantAuthnRequestsSigned: "true"
 ```
+
+## Config from Secret
+
+To avoid storing sensitive configuration values (such as `clientId` and `clientSecret`) in plaintext in the CR, use `configSecretRef` to reference a Kubernetes Secret:
+
+```bash
+kubectl create secret generic corporate-sso-credentials \
+  --from-literal=clientId=my-oidc-client-id \
+  --from-literal=clientSecret=my-oidc-client-secret
+```
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakIdentityProvider
+metadata:
+  name: corporate-sso
+spec:
+  realmRef:
+    name: my-realm
+  configSecretRef:
+    name: corporate-sso-credentials
+  definition:
+    alias: corporate-sso
+    providerId: oidc
+    enabled: true
+    config:
+      authorizationUrl: https://sso.corp.example.com/auth
+      tokenUrl: https://sso.corp.example.com/token
+      defaultScope: openid profile email
+```
+
+Every key-value pair in the referenced Secret is merged into `definition.config` before the identity provider is synced to Keycloak. Secret values take precedence over values defined inline in `definition.config`.
+
+The Secret must exist in the same namespace as the `KeycloakIdentityProvider`. When the Secret changes, the operator automatically re-reconciles the identity provider to pick up the new values.
 
 ## Definition Properties
 
@@ -168,6 +205,6 @@ kubectl get kcidp
 
 ## Notes
 
-- Store sensitive values like client secrets in Kubernetes Secrets and reference them
+- Use `configSecretRef` to store sensitive values like `clientId` and `clientSecret` in a Kubernetes Secret (see [Config from Secret](#config-from-secret))
 - Consider using `syncMode: IMPORT` to import users on first login
 - Configure mappers to transform claims from the external provider
