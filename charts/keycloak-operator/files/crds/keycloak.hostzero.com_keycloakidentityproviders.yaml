@@ -69,6 +69,20 @@ spec:
                 required:
                 - name
                 type: object
+              configSecretRef:
+                description: |-
+                  ConfigSecretRef is a reference to a Kubernetes Secret whose data entries
+                  are merged into definition.config before syncing to Keycloak. This allows
+                  sensitive configuration values (e.g. clientId, clientSecret) to be stored
+                  in a Secret rather than in plaintext in the CR. Secret values take
+                  precedence over values specified inline in definition.config.
+                properties:
+                  name:
+                    description: Name of the Kubernetes Secret
+                    type: string
+                required:
+                - name
+                type: object
               definition:
                 description: Definition contains the Keycloak IdentityProviderRepresentation
                 type: object

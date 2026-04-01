@@ -206,6 +206,35 @@ func mergeSmtpCredentials(definition json.RawMessage, user, password string) jso
 	return result
 }
 
+// mergeIDPConfig merges the given key-value pairs into definition.config.
+// If the config map doesn't exist yet, it is created. Values in secretData
+// take precedence over existing entries in definition.config.
+func mergeIDPConfig(definition json.RawMessage, secretData map[string]string) json.RawMessage {
+	if len(secretData) == 0 {
+		return definition
+	}
+
+	var defMap map[string]interface{}
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return definition
+	}
+
+	cfg, ok := defMap["config"].(map[string]interface{})
+	if !ok {
+		cfg = make(map[string]interface{})
+	}
+	for k, v := range secretData {
+		cfg[k] = v
+	}
+	defMap["config"] = cfg
+
+	result, err := json.Marshal(defMap)
+	if err != nil {
+		return definition
+	}
+	return result
+}
+
 // setFieldInDefinition sets a field value in a JSON definition
 func setFieldInDefinition(definition json.RawMessage, field string, value interface{}) json.RawMessage {
 	// Parse the definition as a map

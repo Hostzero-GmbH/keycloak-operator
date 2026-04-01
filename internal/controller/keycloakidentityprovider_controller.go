@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -13,7 +14,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
@@ -105,6 +108,16 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 
 	// Prepare definition with alias set
 	definition := setFieldInDefinition(idp.Spec.Definition.Raw, "alias", alias)
+
+	// Merge config values from secret if configured
+	if idp.Spec.ConfigSecretRef != nil {
+		secretData, err := r.resolveConfigSecret(ctx, idp)
+		if err != nil {
+			RecordError(controllerName, "secret_error")
+			return r.updateStatus(ctx, idp, false, "ConfigSecretError", err.Error(), "")
+		}
+		definition = mergeIDPConfig(definition, secretData)
+	}
 
 	// Check if identity provider exists by alias
 	existingIdp, err := kc.GetIdentityProvider(ctx, realmName, alias)
@@ -346,9 +359,50 @@ func (r *KeycloakIdentityProviderReconciler) updateStatus(ctx context.Context, i
 	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
 }
 
+func (r *KeycloakIdentityProviderReconciler) resolveConfigSecret(ctx context.Context, idp *keycloakv1beta1.KeycloakIdentityProvider) (map[string]string, error) {
+	ref := idp.Spec.ConfigSecretRef
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: idp.Namespace}, secret); err != nil {
+		return nil, fmt.Errorf("failed to get config secret %q: %w", ref.Name, err)
+	}
+
+	data := make(map[string]string, len(secret.Data))
+	for k, v := range secret.Data {
+		data[k] = string(v)
+	}
+	return data, nil
+}
+
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakIdentityProvider{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findIDPsForSecret),
+		).
 		Complete(r)
+}
+
+// findIDPsForSecret maps a Secret to the KeycloakIdentityProviders that reference it via configSecretRef
+func (r *KeycloakIdentityProviderReconciler) findIDPsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	secret := obj.(*corev1.Secret)
+
+	var idpList keycloakv1beta1.KeycloakIdentityProviderList
+	if err := r.List(ctx, &idpList, client.InNamespace(secret.Namespace)); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, idp := range idpList.Items {
+		if idp.Spec.ConfigSecretRef != nil && idp.Spec.ConfigSecretRef.Name == secret.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      idp.Name,
+					Namespace: idp.Namespace,
+				},
+			})
+		}
+	}
+	return requests
 }

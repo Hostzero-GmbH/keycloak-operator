@@ -17,10 +17,26 @@ type KeycloakIdentityProviderSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
+	// ConfigSecretRef is a reference to a Kubernetes Secret whose data entries
+	// are merged into definition.config before syncing to Keycloak. This allows
+	// sensitive configuration values (e.g. clientId, clientSecret) to be stored
+	// in a Secret rather than in plaintext in the CR. Secret values take
+	// precedence over values specified inline in definition.config.
+	// +optional
+	ConfigSecretRef *IDPConfigSecretRef `json:"configSecretRef,omitempty"`
+
 	// Definition contains the Keycloak IdentityProviderRepresentation
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
+}
+
+// IDPConfigSecretRef references a Kubernetes Secret containing identity provider
+// configuration values to be merged into definition.config.
+type IDPConfigSecretRef struct {
+	// Name of the Kubernetes Secret
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
 }
 
 // KeycloakIdentityProviderStatus defines the observed state of KeycloakIdentityProvider
