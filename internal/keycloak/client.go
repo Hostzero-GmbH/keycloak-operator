@@ -1171,6 +1171,39 @@ func (c *Client) DeleteRequiredAction(ctx context.Context, realmName, alias stri
 }
 
 // ============================================================================
+// Authentication Flow Operations
+// ============================================================================
+
+// AuthenticationFlowRepresentation represents a Keycloak authentication flow
+type AuthenticationFlowRepresentation struct {
+	ID    string `json:"id"`
+	Alias string `json:"alias"`
+}
+
+// GetAuthenticationFlows lists all authentication flows in a realm
+func (c *Client) GetAuthenticationFlows(ctx context.Context, realmName string) ([]AuthenticationFlowRepresentation, error) {
+	var flows []AuthenticationFlowRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/flows", nil, &flows); err != nil {
+		return nil, err
+	}
+	return flows, nil
+}
+
+// GetAuthenticationFlowByAlias finds an authentication flow by its alias
+func (c *Client) GetAuthenticationFlowByAlias(ctx context.Context, realmName, alias string) (*AuthenticationFlowRepresentation, error) {
+	flows, err := c.GetAuthenticationFlows(ctx, realmName)
+	if err != nil {
+		return nil, err
+	}
+	for i := range flows {
+		if flows[i].Alias == alias {
+			return &flows[i], nil
+		}
+	}
+	return nil, fmt.Errorf("authentication flow not found: %s", alias)
+}
+
+// ============================================================================
 // Raw JSON Operations (for export)
 // ============================================================================
 

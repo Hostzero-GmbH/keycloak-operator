@@ -702,4 +702,48 @@ func TestKeycloakClientE2E(t *testing.T) {
 		require.NoError(t, err, "Client was not recreated in Keycloak after deletion")
 		t.Log("Client was successfully reconciled (recreated) after manual deletion")
 	})
+
+	t.Run("ClientWithFlowBindingAlias", func(t *testing.T) {
+		// Create a client using browserFlowAlias instead of a UUID.
+		// "browser" is the default authentication flow alias in every Keycloak realm.
+		clientName := fmt.Sprintf("flow-alias-client-%d", time.Now().UnixNano())
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Flow Alias Client",
+			"enabled": true,
+			"publicClient": true,
+			"standardFlowEnabled": true,
+			"authenticationFlowBindingOverrides": {
+				"browserFlowAlias": "browser"
+			}
+		}`, clientName))
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait for client to be ready — this proves the alias was resolved
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcClient.Name,
+				Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "Client with browserFlowAlias did not become ready")
+		t.Logf("Client %s with browserFlowAlias is ready", clientName)
+	})
 }

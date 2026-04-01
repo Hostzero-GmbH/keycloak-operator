@@ -225,3 +225,80 @@ func setFieldInDefinition(definition json.RawMessage, field string, value interf
 
 	return result
 }
+
+// flowAliasToKey maps alias-based keys in authenticationFlowBindingOverrides
+// to their corresponding Keycloak API keys.
+var flowAliasToKey = map[string]string{
+	"browserFlowAlias":     "browser",
+	"directGrantFlowAlias": "direct_grant",
+}
+
+// flowLookupFunc resolves a flow alias to its UUID.
+type flowLookupFunc func(ctx context.Context, realmName, alias string) (string, error)
+
+// resolveFlowBindingAliases inspects the definition JSON for
+// authenticationFlowBindingOverrides entries that use alias-based keys
+// (e.g. browserFlowAlias, directGrantFlowAlias) and resolves them to
+// the corresponding Keycloak flow UUIDs via the Admin API.
+// UUID-based keys are left untouched. If both an alias key and the
+// corresponding UUID key are present, the alias takes precedence.
+func resolveFlowBindingAliases(ctx context.Context, kc *keycloak.Client, realmName string, definition json.RawMessage) (json.RawMessage, error) {
+	return resolveFlowBindingAliasesWithLookup(ctx, realmName, definition, func(ctx context.Context, realm, alias string) (string, error) {
+		flow, err := kc.GetAuthenticationFlowByAlias(ctx, realm, alias)
+		if err != nil {
+			return "", err
+		}
+		return flow.ID, nil
+	})
+}
+
+// resolveFlowBindingAliasesWithLookup is the testable core of alias resolution.
+func resolveFlowBindingAliasesWithLookup(ctx context.Context, realmName string, definition json.RawMessage, lookup flowLookupFunc) (json.RawMessage, error) {
+	var defMap map[string]interface{}
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return definition, nil
+	}
+
+	overridesRaw, ok := defMap["authenticationFlowBindingOverrides"]
+	if !ok {
+		return definition, nil
+	}
+
+	overrides, ok := overridesRaw.(map[string]interface{})
+	if !ok {
+		return definition, nil
+	}
+
+	changed := false
+	for aliasKey, targetKey := range flowAliasToKey {
+		aliasVal, exists := overrides[aliasKey]
+		if !exists {
+			continue
+		}
+
+		alias, ok := aliasVal.(string)
+		if !ok || alias == "" {
+			return nil, fmt.Errorf("authenticationFlowBindingOverrides.%s must be a non-empty string", aliasKey)
+		}
+
+		flowID, err := lookup(ctx, realmName, alias)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve %s %q: %w", aliasKey, alias, err)
+		}
+
+		overrides[targetKey] = flowID
+		delete(overrides, aliasKey)
+		changed = true
+	}
+
+	if !changed {
+		return definition, nil
+	}
+
+	defMap["authenticationFlowBindingOverrides"] = overrides
+	result, err := json.Marshal(defMap)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal definition after flow alias resolution: %w", err)
+	}
+	return result, nil
+}

@@ -143,6 +143,13 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// Resolve authentication flow binding aliases to UUIDs
+	definition, err = resolveFlowBindingAliases(ctx, kc, realmName, definition)
+	if err != nil {
+		RecordError(controllerName, "flow_alias_error")
+		return r.updateStatus(ctx, kcClient, false, "FlowAliasResolutionFailed", fmt.Sprintf("Failed to resolve flow alias: %v", err), "", instanceRef, realmRef)
+	}
+
 	// Check if client exists
 	existingClient, err := kc.GetClientByClientID(ctx, realmName, clientDef.ClientID)
 

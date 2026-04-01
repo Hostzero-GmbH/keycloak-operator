@@ -220,6 +220,49 @@ data:
   client-secret: c2VjcmV0...   # base64 encoded
 ```
 
+## Authentication Flow Binding Overrides
+
+Keycloak allows overriding the default authentication flows (browser, direct grant) per client via `authenticationFlowBindingOverrides`. Normally this requires the internal UUID of the flow, which is generated dynamically and differs across environments -- making it incompatible with GitOps.
+
+The operator supports **alias-based references** so you can use the human-readable flow alias instead:
+
+| Alias Key | Resolves To | Description |
+|-----------|-------------|-------------|
+| `browserFlowAlias` | `browser` | Browser authentication flow |
+| `directGrantFlowAlias` | `direct_grant` | Direct grant (Resource Owner Password) flow |
+
+The operator resolves aliases to UUIDs at reconciliation time. If both an alias key and the corresponding UUID key are present, the alias takes precedence.
+
+### Example: Using flow aliases
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClient
+metadata:
+  name: my-app
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    clientId: my-app
+    enabled: true
+    publicClient: true
+    standardFlowEnabled: true
+    authenticationFlowBindingOverrides:
+      browserFlowAlias: "my-custom-browser-flow"
+      directGrantFlowAlias: "my-custom-direct-grant"
+```
+
+### Example: Using UUIDs (unchanged, still supported)
+
+```yaml
+    authenticationFlowBindingOverrides:
+      browser: "a3f5c2d1-1234-5678-90ab-abcdef123456"
+      direct_grant: "b4e6d3a2-2345-6789-01bc-bcdef2345678"
+```
+
+If the specified alias does not match any authentication flow in the realm, the operator reports a `FlowAliasResolutionFailed` status with a descriptive error message.
+
 ## Definition Properties
 
 Common properties from [Keycloak ClientRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#ClientRepresentation):
