@@ -239,37 +239,10 @@ func (r *KeycloakClientReconciler) getKeycloakClientAndRealm(ctx context.Context
 		return nil, "", instanceRef, realmRef, fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
-	// Get instance reference from realm
-	instanceNamespace := realm.Namespace
-	if realm.Spec.InstanceRef.Namespace != nil {
-		instanceNamespace = *realm.Spec.InstanceRef.Namespace
-	}
-	instanceName := types.NamespacedName{
-		Name:      realm.Spec.InstanceRef.Name,
-		Namespace: instanceNamespace,
-	}
-	instanceRef.InstanceRef = fmt.Sprintf("%s/%s", instanceNamespace, realm.Spec.InstanceRef.Name)
-
-	// Get the KeycloakInstance
-	instance := &keycloakv1beta1.KeycloakInstance{}
-	if err := r.Get(ctx, instanceName, instance); err != nil {
-		return nil, "", instanceRef, realmRef, fmt.Errorf("failed to get KeycloakInstance %s: %w", instanceName, err)
-	}
-
-	// Check if instance is ready
-	if !instance.Status.Ready {
-		return nil, "", instanceRef, realmRef, fmt.Errorf("KeycloakInstance %s is not ready", instanceName)
-	}
-
-	// Get the Keycloak client from manager
-	cfg, err := GetKeycloakConfigFromInstance(ctx, r.Client, instance)
+	// Get Keycloak client from realm's instance
+	kc, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
-		return nil, "", instanceRef, realmRef, fmt.Errorf("failed to get Keycloak config from KeycloakInstance %s: %w", instanceName, err)
-	}
-
-	kc := r.ClientManager.GetOrCreateClient(instanceName.String(), cfg)
-	if kc == nil {
-		return nil, "", instanceRef, realmRef, fmt.Errorf("keycloak client not available for instance %s", instanceName)
+		return nil, "", instanceRef, realmRef, err
 	}
 
 	return kc, realmDef.Realm, instanceRef, realmRef, nil
