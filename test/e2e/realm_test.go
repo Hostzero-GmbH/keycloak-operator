@@ -370,6 +370,124 @@ func TestKeycloakRealmE2E(t *testing.T) {
 		t.Logf("Realm correctly failed with missing key, message: %s", updated.Status.Message)
 	})
 
+	t.Run("RealmWithClusterInstanceRef", func(t *testing.T) {
+		clusterInstanceName := getOrCreateClusterInstance(t)
+		realmName := fmt.Sprintf("realm-cluster-ref-%d", time.Now().UnixNano())
+
+		realm := &keycloakv1beta1.KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      realmName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakRealmSpec{
+				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{
+					Name: clusterInstanceName,
+				},
+				Definition: rawJSON(fmt.Sprintf(`{
+					"realm": "%s",
+					"displayName": "Cluster Instance Realm",
+					"enabled": true
+				}`, realmName)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, realm))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, realm)
+		})
+
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakRealm{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      realm.Name,
+				Namespace: realm.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "KeycloakRealm with clusterInstanceRef did not become ready")
+
+		updated := &keycloakv1beta1.KeycloakRealm{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
+			Name:      realm.Name,
+			Namespace: realm.Namespace,
+		}, updated))
+		require.NotEmpty(t, updated.Status.ResourcePath)
+		require.NotNil(t, updated.Status.Instance)
+		require.Equal(t, clusterInstanceName, updated.Status.Instance.ClusterInstanceRef,
+			"Status should reference the cluster instance")
+		t.Logf("KeycloakRealm %s with clusterInstanceRef is ready", realmName)
+	})
+
+	t.Run("RealmWithInvalidClusterInstanceRef", func(t *testing.T) {
+		realmName := fmt.Sprintf("realm-bad-cluster-ref-%d", time.Now().UnixNano())
+
+		realm := &keycloakv1beta1.KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      realmName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakRealmSpec{
+				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{
+					Name: "nonexistent-cluster-instance",
+				},
+				Definition: rawJSON(fmt.Sprintf(`{
+					"realm": "%s",
+					"enabled": true
+				}`, realmName)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, realm))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, realm)
+		})
+
+		time.Sleep(5 * time.Second)
+		updated := &keycloakv1beta1.KeycloakRealm{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      realmName,
+			Namespace: testNamespace,
+		}, updated)
+		require.NoError(t, err)
+		require.False(t, updated.Status.Ready,
+			"Realm with nonexistent clusterInstanceRef should not be ready")
+		require.Contains(t, updated.Status.Message, "ClusterKeycloakInstance")
+		t.Logf("Realm correctly failed with invalid clusterInstanceRef, message: %s", updated.Status.Message)
+	})
+
+	t.Run("RealmWithNoInstanceRef", func(t *testing.T) {
+		realmName := fmt.Sprintf("realm-no-ref-%d", time.Now().UnixNano())
+
+		realm := &keycloakv1beta1.KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      realmName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakRealmSpec{
+				Definition: rawJSON(fmt.Sprintf(`{
+					"realm": "%s",
+					"enabled": true
+				}`, realmName)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, realm))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, realm)
+		})
+
+		time.Sleep(5 * time.Second)
+		updated := &keycloakv1beta1.KeycloakRealm{}
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      realmName,
+			Namespace: testNamespace,
+		}, updated)
+		require.NoError(t, err)
+		require.False(t, updated.Status.Ready,
+			"Realm with neither instanceRef nor clusterInstanceRef should not be ready")
+		require.Contains(t, updated.Status.Message, "either instanceRef or clusterInstanceRef must be specified")
+		t.Logf("Realm correctly failed with no instance ref, message: %s", updated.Status.Message)
+	})
+
 	t.Run("ReconcileAfterManualDeletion", func(t *testing.T) {
 		// Skip if not running in-cluster or without port-forward
 		if !canConnectToKeycloak() {

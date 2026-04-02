@@ -147,8 +147,11 @@ make kind-redeploy
 # Run unit tests (fast, no cluster required)
 make test
 
-# Run full E2E tests (requires Kind cluster)
-make kind-test
+# Run full E2E tests (requires Kind cluster with operator deployed)
+make kind-test-run
+
+# Run a specific E2E test
+make kind-test-run TEST_RUN=TestKeycloakRealmE2E
 ```
 
 ## Monitoring

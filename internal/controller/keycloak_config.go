@@ -206,6 +206,60 @@ func mergeSmtpCredentials(definition json.RawMessage, user, password string) jso
 	return result
 }
 
+// GetKeycloakClientFromRealmInstance resolves the Keycloak API client for a
+// KeycloakRealm by following its instanceRef or clusterInstanceRef. This is the
+// single source of truth for realm→instance resolution in all child-resource
+// controllers (client, user, group, role, etc.).
+func GetKeycloakClientFromRealmInstance(ctx context.Context, c client.Client, clientManager *keycloak.ClientManager, realm *keycloakv1beta1.KeycloakRealm) (*keycloak.Client, error) {
+	if realm.Spec.ClusterInstanceRef != nil {
+		instance := &keycloakv1beta1.ClusterKeycloakInstance{}
+		if err := c.Get(ctx, types.NamespacedName{Name: realm.Spec.ClusterInstanceRef.Name}, instance); err != nil {
+			return nil, fmt.Errorf("failed to get ClusterKeycloakInstance %s: %w", realm.Spec.ClusterInstanceRef.Name, err)
+		}
+		if !instance.Status.Ready {
+			return nil, fmt.Errorf("ClusterKeycloakInstance %s is not ready", realm.Spec.ClusterInstanceRef.Name)
+		}
+		cfg, err := GetKeycloakConfigFromClusterInstance(ctx, c, instance)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Keycloak config from ClusterKeycloakInstance %s: %w", realm.Spec.ClusterInstanceRef.Name, err)
+		}
+		kc := clientManager.GetOrCreateClient(clusterInstanceKey(realm.Spec.ClusterInstanceRef.Name), cfg)
+		if kc == nil {
+			return nil, fmt.Errorf("Keycloak client not available for cluster instance %s", realm.Spec.ClusterInstanceRef.Name)
+		}
+		return kc, nil
+	}
+
+	if realm.Spec.InstanceRef != nil {
+		instanceNamespace := realm.Namespace
+		if realm.Spec.InstanceRef.Namespace != nil {
+			instanceNamespace = *realm.Spec.InstanceRef.Namespace
+		}
+		instanceName := types.NamespacedName{
+			Name:      realm.Spec.InstanceRef.Name,
+			Namespace: instanceNamespace,
+		}
+		instance := &keycloakv1beta1.KeycloakInstance{}
+		if err := c.Get(ctx, instanceName, instance); err != nil {
+			return nil, fmt.Errorf("failed to get KeycloakInstance %s: %w", instanceName, err)
+		}
+		if !instance.Status.Ready {
+			return nil, fmt.Errorf("KeycloakInstance %s is not ready", instanceName)
+		}
+		cfg, err := GetKeycloakConfigFromInstance(ctx, c, instance)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Keycloak config from KeycloakInstance %s: %w", instanceName, err)
+		}
+		kc := clientManager.GetOrCreateClient(instanceName.String(), cfg)
+		if kc == nil {
+			return nil, fmt.Errorf("Keycloak client not available for instance %s", instanceName)
+		}
+		return kc, nil
+	}
+
+	return nil, fmt.Errorf("realm %s/%s has neither instanceRef nor clusterInstanceRef", realm.Namespace, realm.Name)
+}
+
 // mergeIDPConfig merges the given key-value pairs into definition.config.
 // If the config map doesn't exist yet, it is created. Values in secretData
 // take precedence over existing entries in definition.config.
