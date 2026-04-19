@@ -215,6 +215,7 @@ func (r *KeycloakRoleMappingReconciler) resolveRole(ctx context.Context, mapping
 				// Use clientID directly - need to look up the UUID
 				clients, err := kc.GetClients(ctx, realmName, map[string]string{
 					"clientId": *mapping.Spec.Role.ClientID,
+					"exact":    "true",
 				})
 				if err != nil || len(clients) == 0 {
 					return roleName, "client", "", fmt.Errorf("client %s not found", *mapping.Spec.Role.ClientID)

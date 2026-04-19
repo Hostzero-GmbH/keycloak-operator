@@ -419,11 +419,14 @@ func (c *Client) GetClients(ctx context.Context, realmName string, params map[st
 
 // GetClientByClientID finds a client by its clientId field
 func (c *Client) GetClientByClientID(ctx context.Context, realmName, clientID string) (*ClientRepresentation, error) {
-	clients, err := c.GetClients(ctx, realmName, map[string]string{"clientId": clientID})
+	clients, err := c.GetClients(ctx, realmName, map[string]string{"clientId": clientID, "exact": "true"})
 	if err != nil {
 		return nil, err
 	}
 	if len(clients) == 0 {
+		return nil, fmt.Errorf("client not found: %s", clientID)
+	}
+	if clients[0].ClientID == nil || *clients[0].ClientID != clientID {
 		return nil, fmt.Errorf("client not found: %s", clientID)
 	}
 	return &clients[0], nil
