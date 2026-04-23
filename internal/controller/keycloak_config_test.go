@@ -352,6 +352,80 @@ func TestSetFieldInDefinition(t *testing.T) {
 	}
 }
 
+func TestRemoveFieldFromDefinition(t *testing.T) {
+	tests := []struct {
+		name       string
+		definition json.RawMessage
+		field      string
+		want       string
+		wantSame   bool
+	}{
+		{
+			name:       "removes existing field",
+			definition: json.RawMessage(`{"clientId":"test","defaultClientScopes":["openid"]}`),
+			field:      "defaultClientScopes",
+			want:       `{"clientId":"test"}`,
+		},
+		{
+			name:       "no-op when field does not exist",
+			definition: json.RawMessage(`{"clientId":"test"}`),
+			field:      "defaultClientScopes",
+			wantSame:   true,
+		},
+		{
+			name:       "removes field leaving other fields intact",
+			definition: json.RawMessage(`{"a":"1","b":"2","c":"3"}`),
+			field:      "b",
+			want:       `{"a":"1","c":"3"}`,
+		},
+		{
+			name:       "invalid JSON returns original",
+			definition: json.RawMessage(`{invalid`),
+			field:      "foo",
+			wantSame:   true,
+		},
+		{
+			name:       "removes field from object with single field",
+			definition: json.RawMessage(`{"defaultClientScopes":["openid"]}`),
+			field:      "defaultClientScopes",
+			want:       `{}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := removeFieldFromDefinition(tt.definition, tt.field)
+
+			if tt.wantSame {
+				if string(got) != string(tt.definition) {
+					t.Errorf("expected original to be returned, got %s", string(got))
+				}
+				return
+			}
+
+			var gotMap, wantMap map[string]interface{}
+			if err := json.Unmarshal(got, &gotMap); err != nil {
+				t.Fatalf("failed to parse result: %v", err)
+			}
+			if err := json.Unmarshal([]byte(tt.want), &wantMap); err != nil {
+				t.Fatalf("failed to parse expected: %v", err)
+			}
+
+			if len(gotMap) != len(wantMap) {
+				t.Errorf("map length mismatch: got %d, want %d\ngot: %s\nwant: %s", len(gotMap), len(wantMap), string(got), tt.want)
+			}
+			for k, v := range wantMap {
+				if gotMap[k] != v {
+					t.Errorf("field %q: got %v, want %v", k, gotMap[k], v)
+				}
+			}
+			if _, exists := gotMap[tt.field]; exists {
+				t.Errorf("field %q should have been removed", tt.field)
+			}
+		})
+	}
+}
+
 func TestResolveFlowBindingAliases(t *testing.T) {
 	ctx := context.Background()
 	realmName := "test-realm"

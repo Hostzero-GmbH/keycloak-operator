@@ -704,6 +704,48 @@ func (c *Client) DeleteClientScope(ctx context.Context, realmName, scopeID strin
 }
 
 // ============================================================================
+// Client Scope Assignment Operations (per-client)
+// ============================================================================
+
+// GetClientDefaultScopes gets the default client scopes assigned to a client
+func (c *Client) GetClientDefaultScopes(ctx context.Context, realmName, clientUUID string) ([]ClientScopeRepresentation, error) {
+	var scopes []ClientScopeRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/default-client-scopes", nil, &scopes); err != nil {
+		return nil, err
+	}
+	return scopes, nil
+}
+
+// AddClientDefaultScope adds a default client scope to a client
+func (c *Client) AddClientDefaultScope(ctx context.Context, realmName, clientUUID, scopeID string) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/default-client-scopes/"+url.PathEscape(scopeID), nil)
+}
+
+// RemoveClientDefaultScope removes a default client scope from a client
+func (c *Client) RemoveClientDefaultScope(ctx context.Context, realmName, clientUUID, scopeID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/default-client-scopes/"+url.PathEscape(scopeID))
+}
+
+// GetClientOptionalScopes gets the optional client scopes assigned to a client
+func (c *Client) GetClientOptionalScopes(ctx context.Context, realmName, clientUUID string) ([]ClientScopeRepresentation, error) {
+	var scopes []ClientScopeRepresentation
+	if err := c.List(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/optional-client-scopes", nil, &scopes); err != nil {
+		return nil, err
+	}
+	return scopes, nil
+}
+
+// AddClientOptionalScope adds an optional client scope to a client
+func (c *Client) AddClientOptionalScope(ctx context.Context, realmName, clientUUID, scopeID string) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/optional-client-scopes/"+url.PathEscape(scopeID), nil)
+}
+
+// RemoveClientOptionalScope removes an optional client scope from a client
+func (c *Client) RemoveClientOptionalScope(ctx context.Context, realmName, clientUUID, scopeID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/optional-client-scopes/"+url.PathEscape(scopeID))
+}
+
+// ============================================================================
 // Identity Provider Operations
 // ============================================================================
 

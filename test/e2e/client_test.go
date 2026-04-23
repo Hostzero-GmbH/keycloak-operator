@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 func TestKeycloakClientE2E(t *testing.T) {
@@ -703,6 +705,129 @@ func TestKeycloakClientE2E(t *testing.T) {
 		t.Log("Client was successfully reconciled (recreated) after manual deletion")
 	})
 
+	t.Run("ClientWithCustomScopes", func(t *testing.T) {
+		skipIfNoKeycloakAccess(t)
+
+		clientName := fmt.Sprintf("custom-scopes-client-%d", time.Now().UnixNano())
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Custom Scopes Client",
+			"enabled": true,
+			"publicClient": true,
+			"standardFlowEnabled": true,
+			"defaultClientScopes": ["profile"],
+			"optionalClientScopes": ["phone"]
+		}`, clientName))
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait for client to be ready
+		var clientUUID string
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcClient.Name,
+				Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			if updated.Status.Ready {
+				clientUUID = updated.Status.ClientUUID
+				return true, nil
+			}
+			return false, nil
+		})
+		require.NoError(t, err, "Client with custom scopes did not become ready")
+
+		// Verify scopes via the Keycloak API
+		kc := getInternalKeycloakClient(t)
+
+		defaultScopes, err := kc.GetClientDefaultScopes(ctx, realmName, clientUUID)
+		require.NoError(t, err)
+		defaultNames := scopeNames(defaultScopes)
+		require.Equal(t, []string{"profile"}, defaultNames,
+			"default scopes should be exactly [profile]")
+
+		optionalScopes, err := kc.GetClientOptionalScopes(ctx, realmName, clientUUID)
+		require.NoError(t, err)
+		optionalNames := scopeNames(optionalScopes)
+		require.Equal(t, []string{"phone"}, optionalNames,
+			"optional scopes should be exactly [phone]")
+
+		t.Logf("Client %s has correct scopes: default=%v, optional=%v", clientName, defaultNames, optionalNames)
+	})
+
+	t.Run("ClientWithEmptyScopes", func(t *testing.T) {
+		skipIfNoKeycloakAccess(t)
+
+		clientName := fmt.Sprintf("empty-scopes-client-%d", time.Now().UnixNano())
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Empty Scopes Client",
+			"enabled": true,
+			"publicClient": true,
+			"defaultClientScopes": [],
+			"optionalClientScopes": []
+		}`, clientName))
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait for client to be ready
+		var clientUUID string
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcClient.Name,
+				Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			if updated.Status.Ready {
+				clientUUID = updated.Status.ClientUUID
+				return true, nil
+			}
+			return false, nil
+		})
+		require.NoError(t, err, "Client with empty scopes did not become ready")
+
+		// Verify all scopes were removed
+		kc := getInternalKeycloakClient(t)
+
+		defaultScopes, err := kc.GetClientDefaultScopes(ctx, realmName, clientUUID)
+		require.NoError(t, err)
+		require.Empty(t, defaultScopes, "default scopes should be empty")
+
+		optionalScopes, err := kc.GetClientOptionalScopes(ctx, realmName, clientUUID)
+		require.NoError(t, err)
+		require.Empty(t, optionalScopes, "optional scopes should be empty")
+
+		t.Logf("Client %s correctly has no scopes assigned", clientName)
+	})
+
 	t.Run("ClientWithFlowBindingAlias", func(t *testing.T) {
 		// Create a client using browserFlowAlias instead of a UUID.
 		// "browser" is the default authentication flow alias in every Keycloak realm.
@@ -746,4 +871,15 @@ func TestKeycloakClientE2E(t *testing.T) {
 		require.NoError(t, err, "Client with browserFlowAlias did not become ready")
 		t.Logf("Client %s with browserFlowAlias is ready", clientName)
 	})
+}
+
+func scopeNames(scopes []keycloak.ClientScopeRepresentation) []string {
+	names := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		if s.Name != nil {
+			names = append(names, *s.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }

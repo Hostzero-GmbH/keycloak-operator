@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -143,6 +144,14 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// Extract client scope assignments before sending to Keycloak.
+	// Keycloak's client REST API ignores these fields — they require dedicated
+	// scope-assignment endpoints, which we call after create/update.
+	desiredDefaultScopes, hasDefaultScopes := extractStringSliceFromDefinition(definition, "defaultClientScopes")
+	desiredOptionalScopes, hasOptionalScopes := extractStringSliceFromDefinition(definition, "optionalClientScopes")
+	definition = removeFieldFromDefinition(definition, "defaultClientScopes")
+	definition = removeFieldFromDefinition(definition, "optionalClientScopes")
+
 	// Resolve authentication flow binding aliases to UUIDs
 	definition, err = resolveFlowBindingAliases(ctx, kc, realmName, definition)
 	if err != nil {
@@ -174,6 +183,14 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 			return r.updateStatus(ctx, kcClient, false, "UpdateFailed", fmt.Sprintf("Failed to update client: %v", err), clientUUID, instanceRef, realmRef)
 		}
 		log.Info("client updated successfully", "clientId", clientDef.ClientID)
+	}
+
+	// Sync default/optional client scope assignments
+	if err := r.syncClientScopes(ctx, kc, realmName, clientUUID,
+		desiredDefaultScopes, hasDefaultScopes,
+		desiredOptionalScopes, hasOptionalScopes); err != nil {
+		RecordError(controllerName, "scope_sync_error")
+		return r.updateStatus(ctx, kcClient, false, "ScopeSyncFailed", fmt.Sprintf("Failed to sync client scopes: %v", err), clientUUID, instanceRef, realmRef)
 	}
 
 	// Handle client secret sync - only if secretNeedsCreation (no pre-existing secret)
@@ -431,6 +448,131 @@ func (r *KeycloakClientReconciler) syncClientSecret(ctx context.Context, kcClien
 	})
 
 	return err
+}
+
+// syncClientScopes reconciles the default and optional client scope assignments
+// for a Keycloak client. It only acts when the corresponding field was explicitly
+// present in the definition JSON (even an empty array means "remove all").
+// If the field was absent, the operator leaves Keycloak's assignments untouched.
+func (r *KeycloakClientReconciler) syncClientScopes(
+	ctx context.Context, kc *keycloak.Client, realmName, clientUUID string,
+	desiredDefault []string, hasDefault bool,
+	desiredOptional []string, hasOptional bool,
+) error {
+	log := log.FromContext(ctx)
+
+	if !hasDefault && !hasOptional {
+		return nil
+	}
+
+	allScopes, err := kc.GetClientScopes(ctx, realmName)
+	if err != nil {
+		return fmt.Errorf("failed to list realm client scopes: %w", err)
+	}
+	scopeNameToID := make(map[string]string, len(allScopes))
+	for _, s := range allScopes {
+		if s.Name != nil && s.ID != nil {
+			scopeNameToID[*s.Name] = *s.ID
+		}
+	}
+
+	if hasDefault {
+		if err := r.reconcileScopeAssignments(ctx, log, kc, realmName, clientUUID, "default", desiredDefault, scopeNameToID,
+			kc.GetClientDefaultScopes, kc.AddClientDefaultScope, kc.RemoveClientDefaultScope); err != nil {
+			return fmt.Errorf("failed to sync default client scopes: %w", err)
+		}
+	}
+
+	if hasOptional {
+		if err := r.reconcileScopeAssignments(ctx, log, kc, realmName, clientUUID, "optional", desiredOptional, scopeNameToID,
+			kc.GetClientOptionalScopes, kc.AddClientOptionalScope, kc.RemoveClientOptionalScope); err != nil {
+			return fmt.Errorf("failed to sync optional client scopes: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (r *KeycloakClientReconciler) reconcileScopeAssignments(
+	ctx context.Context,
+	log logr.Logger,
+	kc *keycloak.Client,
+	realmName, clientUUID, scopeType string,
+	desiredNames []string,
+	scopeNameToID map[string]string,
+	getCurrent func(ctx context.Context, realm, clientUUID string) ([]keycloak.ClientScopeRepresentation, error),
+	addScope func(ctx context.Context, realm, clientUUID, scopeID string) error,
+	removeScope func(ctx context.Context, realm, clientUUID, scopeID string) error,
+) error {
+	current, err := getCurrent(ctx, realmName, clientUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get current %s scopes: %w", scopeType, err)
+	}
+
+	currentByName := make(map[string]string, len(current))
+	for _, s := range current {
+		if s.Name != nil && s.ID != nil {
+			currentByName[*s.Name] = *s.ID
+		}
+	}
+
+	desiredSet := make(map[string]struct{}, len(desiredNames))
+	for _, name := range desiredNames {
+		desiredSet[name] = struct{}{}
+	}
+
+	// Remove scopes not in the desired list
+	for name, id := range currentByName {
+		if _, wanted := desiredSet[name]; !wanted {
+			log.Info("removing "+scopeType+" client scope", "scope", name, "clientUUID", clientUUID)
+			if err := removeScope(ctx, realmName, clientUUID, id); err != nil {
+				return fmt.Errorf("failed to remove %s scope %q: %w", scopeType, name, err)
+			}
+		}
+	}
+
+	// Add scopes that are desired but not yet assigned
+	for _, name := range desiredNames {
+		if _, exists := currentByName[name]; exists {
+			continue
+		}
+		id, ok := scopeNameToID[name]
+		if !ok {
+			return fmt.Errorf("%s scope %q does not exist in realm %q", scopeType, name, realmName)
+		}
+		log.Info("adding "+scopeType+" client scope", "scope", name, "clientUUID", clientUUID)
+		if err := addScope(ctx, realmName, clientUUID, id); err != nil {
+			return fmt.Errorf("failed to add %s scope %q: %w", scopeType, name, err)
+		}
+	}
+
+	return nil
+}
+
+// extractStringSliceFromDefinition extracts a string slice field from the
+// definition JSON. It returns the slice and a boolean indicating whether the
+// field was present in the JSON (an explicit null or missing key → false).
+func extractStringSliceFromDefinition(definition []byte, field string) ([]string, bool) {
+	var defMap map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return nil, false
+	}
+
+	raw, exists := defMap[field]
+	if !exists {
+		return nil, false
+	}
+
+	// Explicit null in JSON
+	if string(raw) == "null" {
+		return nil, false
+	}
+
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, false
+	}
+	return values, true
 }
 
 func (r *KeycloakClientReconciler) deleteClient(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient) error {

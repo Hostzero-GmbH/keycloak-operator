@@ -21,6 +21,17 @@ spec:
       - "+"
     attributes:
       post.logout.redirect.uris: "+"
+    # Control which client scopes are assigned to this client.
+    # Omit these fields entirely to keep Keycloak's defaults.
+    # Set to an explicit list to enforce exactly those scopes.
+    # Set to [] to remove all scopes of that type.
+    defaultClientScopes:
+      - openid
+      - profile
+      - email
+    optionalClientScopes:
+      - phone
+      - address
   clientSecretRef:
     name: example-client-secret
     clientIdKey: client-id

@@ -289,6 +289,27 @@ func mergeIDPConfig(definition json.RawMessage, secretData map[string]string) js
 	return result
 }
 
+// removeFieldFromDefinition removes a field from a JSON definition.
+// If the field doesn't exist or the JSON is invalid, the original is returned unchanged.
+func removeFieldFromDefinition(definition json.RawMessage, field string) json.RawMessage {
+	var defMap map[string]interface{}
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return definition
+	}
+
+	if _, ok := defMap[field]; !ok {
+		return definition
+	}
+
+	delete(defMap, field)
+
+	result, err := json.Marshal(defMap)
+	if err != nil {
+		return definition
+	}
+	return result
+}
+
 // setFieldInDefinition sets a field value in a JSON definition
 func setFieldInDefinition(definition json.RawMessage, field string, value interface{}) json.RawMessage {
 	// Parse the definition as a map
