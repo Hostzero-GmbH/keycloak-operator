@@ -307,7 +307,7 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromUser(ctx context.Co
 		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
-	kc, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", err
 	}
@@ -348,7 +348,7 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromGroup(ctx context.C
 		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
-	kc, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", err
 	}

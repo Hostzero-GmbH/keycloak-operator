@@ -225,12 +225,12 @@ func (r *KeycloakOrganizationReconciler) getKeycloakClientRealmAndVersion(ctx co
 		return nil, "", "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
-	kc, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	kc, keycloakVersion, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", "", err
 	}
 
-	return kc, realmDef.Realm, "", nil
+	return kc, realmDef.Realm, keycloakVersion, nil
 }
 
 func (r *KeycloakOrganizationReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, string, error) {

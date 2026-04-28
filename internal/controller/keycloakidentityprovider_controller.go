@@ -184,7 +184,7 @@ func (r *KeycloakIdentityProviderReconciler) getKeycloakClientAndRealm(ctx conte
 		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
-	kc, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", err
 	}

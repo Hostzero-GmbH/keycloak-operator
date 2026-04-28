@@ -257,7 +257,7 @@ func (r *KeycloakClientReconciler) getKeycloakClientAndRealm(ctx context.Context
 	}
 
 	// Get Keycloak client from realm's instance
-	kc, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", instanceRef, realmRef, err
 	}
