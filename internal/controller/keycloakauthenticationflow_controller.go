@@ -200,7 +200,6 @@ func (r *KeycloakAuthenticationFlowReconciler) Reconcile(ctx context.Context, re
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, flow, false, "DeleteFailed", fmt.Sprintf("Failed to delete flow for recreation: %v", err), existingFlowID, realmName)
 			}
-			existingFlowID = ""
 		} else {
 			log.Info("flow already exists", "alias", flow.Spec.Alias, "id", existingFlowID)
 			return r.updateStatus(ctx, flow, true, "Ready", "Authentication flow synchronized", existingFlowID, realmName)
