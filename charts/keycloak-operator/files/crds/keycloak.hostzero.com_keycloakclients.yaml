@@ -64,6 +64,9 @@ spec:
                   ClientSecretRef configures the Kubernetes Secret for client credentials.
                   If the secret exists, its value is used. If it doesn't exist and Create is true,
                   the operator auto-generates a secret and creates it.
+                  For public clients (publicClient: true) the Secret is still materialised
+                  when ClientSecretRef is set, but only contains the client-id key — there
+                  is no client_secret to store.
                 properties:
                   clientIdKey:
                     description: |-

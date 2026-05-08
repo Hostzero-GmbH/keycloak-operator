@@ -29,6 +29,9 @@ type KeycloakClientSpec struct {
 	// ClientSecretRef configures the Kubernetes Secret for client credentials.
 	// If the secret exists, its value is used. If it doesn't exist and Create is true,
 	// the operator auto-generates a secret and creates it.
+	// For public clients (publicClient: true) the Secret is still materialised
+	// when ClientSecretRef is set, but only contains the client-id key — there
+	// is no client_secret to store.
 	// +optional
 	ClientSecretRef *ClientSecretRefSpec `json:"clientSecretRef,omitempty"`
 }
@@ -36,6 +39,7 @@ type KeycloakClientSpec struct {
 // ClientSecretRefSpec references a Kubernetes Secret for the client credentials.
 // If the secret exists, its value is used. If it doesn't exist and Create is true,
 // the operator auto-generates a secret and creates it.
+// For public clients the Secret will only contain the client-id key.
 type ClientSecretRefSpec struct {
 	// Name of the Kubernetes Secret
 	// +kubebuilder:validation:Required

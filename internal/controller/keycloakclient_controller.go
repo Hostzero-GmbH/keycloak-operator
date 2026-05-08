@@ -366,9 +366,10 @@ func (r *KeycloakClientReconciler) getKeycloakClientFromClusterRealm(ctx context
 // ensureClientSecret reads or creates the client secret.
 // Returns: (secretValue, needsCreation, error)
 // - If secret exists with the key: returns (value, false, nil)
+// - If secret exists but key is missing and the client is public: returns ("", false, nil)
+// - If secret exists but key is missing on a non-public client: returns ("", false, error)
 // - If secret doesn't exist and create=true: returns ("", true, nil) - will be created after Keycloak generates
 // - If secret doesn't exist and create=false: returns ("", false, error)
-// - If secret exists but key is missing: returns ("", false, error)
 func (r *KeycloakClientReconciler) ensureClientSecret(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient) (string, bool, error) {
 	ref := kcClient.Spec.ClientSecretRef
 	secretName := ref.Name
@@ -388,6 +389,12 @@ func (r *KeycloakClientReconciler) ensureClientSecret(ctx context.Context, kcCli
 		// Secret exists - read the value
 		value, ok := secret.Data[secretKey]
 		if !ok {
+			// Public clients legitimately have no client-secret key; the Secret
+			// is only used as a holder for the client-id. Treat the missing key
+			// as "no pre-existing secret to inject" rather than an error.
+			if isPublicClient(kcClient) {
+				return "", false, nil
+			}
 			return "", false, fmt.Errorf("key %q not found in secret %q", secretKey, secretName)
 		}
 		return string(value), false, nil
@@ -407,15 +414,30 @@ func (r *KeycloakClientReconciler) ensureClientSecret(ctx context.Context, kcCli
 	return "", true, nil
 }
 
+// isPublicClient reports whether the KeycloakClient spec marks the client as
+// public. A public client has no OAuth client_secret, so the K8s Secret will
+// only carry the client-id key.
+func isPublicClient(kcClient *keycloakv1beta1.KeycloakClient) bool {
+	if kcClient.Spec.Definition == nil || len(kcClient.Spec.Definition.Raw) == 0 {
+		return false
+	}
+	var parsed struct {
+		PublicClient *bool `json:"publicClient"`
+	}
+	if err := json.Unmarshal(kcClient.Spec.Definition.Raw, &parsed); err != nil {
+		return false
+	}
+	return parsed.PublicClient != nil && *parsed.PublicClient
+}
+
 func (r *KeycloakClientReconciler) syncClientSecret(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient, kc *keycloak.Client, realmName, clientUUID string) error {
-	// Get client secret from Keycloak
+	// Get client secret from Keycloak. For public clients this returns an empty
+	// string — we still want to materialise a Secret so consumers can pick up
+	// the client-id via envFrom/secretKeyRef, matching the legacy operator's
+	// behaviour.
 	secretValue, err := kc.GetClientSecret(ctx, realmName, clientUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get client secret: %w", err)
-	}
-
-	if secretValue == "" {
-		return nil // No secret (public client)
 	}
 
 	// Get clientId from spec or definition
@@ -457,7 +479,10 @@ func (r *KeycloakClientReconciler) syncClientSecret(ctx context.Context, kcClien
 		// Reset data to ensure only the specified keys exist
 		secret.Data = make(map[string][]byte)
 		secret.Data[clientIdKey] = []byte(clientId)
-		secret.Data[clientSecretKey] = []byte(secretValue)
+		// Only emit the client-secret key when Keycloak returned one (i.e. confidential client).
+		if secretValue != "" {
+			secret.Data[clientSecretKey] = []byte(secretValue)
+		}
 		secret.Type = corev1.SecretTypeOpaque
 		return controllerutil.SetControllerReference(kcClient, secret, r.Scheme)
 	})
