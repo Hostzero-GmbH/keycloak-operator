@@ -131,14 +131,29 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 		log.Info("realm created successfully", "realm", realmDef.Realm)
 	} else {
-		// Realm exists, update it - merge ID into definition
-		log.Info("updating realm", "realm", realmDef.Realm)
+		// Realm exists — check if update is needed
 		definition = mergeIDIntoDefinition(definition, existingRealm.ID)
-		if err := kc.UpdateRealm(ctx, realmDef.Realm, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)
+
+		// Fetch current state from Keycloak for drift detection
+		currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmDef.Realm)
+
+		needsUpdate := true
+		if fetchErr != nil {
+			log.Error(fetchErr, "failed to fetch current realm state, falling through to update")
+		} else if currentRaw != nil {
+			needsUpdate = !definitionsMatch(definition, currentRaw)
 		}
-		log.Info("realm updated successfully", "realm", realmDef.Realm)
+
+		if needsUpdate {
+			log.Info("updating realm", "realm", realmDef.Realm)
+			if err := kc.UpdateRealm(ctx, realmDef.Realm, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)
+			}
+			log.Info("realm updated successfully", "realm", realmDef.Realm)
+		} else {
+			log.V(1).Info("realm already in sync, skipping update", "realm", realmDef.Realm)
+		}
 	}
 
 	// Update status
@@ -235,27 +250,52 @@ func (r *ClusterKeycloakRealmReconciler) deleteRealm(ctx context.Context, realm 
 }
 
 func (r *ClusterKeycloakRealmReconciler) updateStatus(ctx context.Context, realm *keycloakv1beta1.ClusterKeycloakRealm, ready bool, status, message string, instanceRef *keycloakv1beta1.InstanceRef) (ctrl.Result, error) {
+	desiredConditionStatus := metav1.ConditionFalse
+	if ready {
+		desiredConditionStatus = metav1.ConditionTrue
+	}
+
+	// Detect whether any user-visible status field actually changed
+	statusChanged := realm.Status.Ready != ready ||
+		realm.Status.Status != status ||
+		realm.Status.Message != message
+
+	conditionChanged := true
+	for _, c := range realm.Status.Conditions {
+		if c.Type == "Ready" && c.Status == desiredConditionStatus && c.Reason == status && c.Message == message {
+			conditionChanged = false
+			break
+		}
+	}
+
+	if !statusChanged && !conditionChanged {
+		// Nothing changed — skip the API write to avoid triggering a watch-event reconcile loop
+		if ready {
+			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
+		}
+		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	}
+
 	realm.Status.Ready = ready
 	realm.Status.Status = status
 	realm.Status.Message = message
 	realm.Status.Instance = instanceRef
 
-	// Update conditions
 	condition := metav1.Condition{
 		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
+		Status:             desiredConditionStatus,
 		Reason:             status,
 		Message:            message,
 		LastTransitionTime: metav1.Now(),
 	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
-	}
 
-	// Update or add condition
 	found := false
 	for i, c := range realm.Status.Conditions {
 		if c.Type == "Ready" {
+			// Preserve LastTransitionTime if status did not flip
+			if c.Status == desiredConditionStatus {
+				condition.LastTransitionTime = c.LastTransitionTime
+			}
 			realm.Status.Conditions[i] = condition
 			found = true
 			break

@@ -441,6 +441,52 @@ func mergeIDPConfig(definition json.RawMessage, secretData map[string]string) js
 	return result
 }
 
+// idpDefinitionsMatch compares two IdentityProviderRepresentations for drift-detection,
+// stripping fields that Keycloak masks on GET so they don't cause false-positive drift
+// (which would otherwise produce an endless update-loop with each reconcile).
+//
+// Keycloak's `GET /admin/realms/.../identity-provider/instances/{alias}` returns
+// `config.clientSecret` as the literal string "**********" instead of the stored value
+// — but ONLY when a secret is set. If the IdP has no secret, the field is null/absent.
+//
+// We strip clientSecret from BOTH sides ONLY when current shows the mask: that means
+// Keycloak has *some* secret stored, we can't compare it against our desired value
+// anyway, so treat them as equal on that field. If current is null/missing, the IdP
+// genuinely has no secret yet and our PUT must push it — leave the field intact so
+// the diff fires.
+//
+// Pace patch: paired with the new drift-detection in keycloakidentityprovider_controller.go.
+func idpDefinitionsMatch(desired, current json.RawMessage) bool {
+	var desiredMap, currentMap map[string]interface{}
+	if err := json.Unmarshal(desired, &desiredMap); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(current, &currentMap); err != nil {
+		return false
+	}
+
+	// If Keycloak masked clientSecret in the current state, drop it from both
+	// sides so the unobservable value doesn't cause false drift.
+	if cCfg, ok := currentMap["config"].(map[string]interface{}); ok {
+		if cs, ok := cCfg["clientSecret"].(string); ok && cs == "**********" {
+			delete(cCfg, "clientSecret")
+			if dCfg, ok := desiredMap["config"].(map[string]interface{}); ok {
+				delete(dCfg, "clientSecret")
+			}
+		}
+	}
+
+	desiredJSON, err := json.Marshal(desiredMap)
+	if err != nil {
+		return false
+	}
+	currentJSON, err := json.Marshal(currentMap)
+	if err != nil {
+		return false
+	}
+	return definitionsMatch(desiredJSON, currentJSON)
+}
+
 // removeFieldFromDefinition removes a field from a JSON definition.
 // If the field doesn't exist or the JSON is invalid, the original is returned unchanged.
 func removeFieldFromDefinition(definition json.RawMessage, field string) json.RawMessage {

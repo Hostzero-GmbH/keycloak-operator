@@ -132,13 +132,26 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		}
 		log.Info("identity provider created successfully", "alias", alias)
 	} else {
-		// Identity provider exists, update it
-		log.Info("updating identity provider", "alias", alias, "realm", realmName)
-		if err := kc.UpdateIdentityProvider(ctx, realmName, alias, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, idp, false, "UpdateFailed", fmt.Sprintf("Failed to update identity provider: %v", err), alias)
+		// Identity provider exists — check if update is needed (drift-detection, pace patch)
+		// to avoid reconcile-storms where every 5-min sync triggers an unneeded PUT.
+		currentRaw, fetchErr := kc.GetIdentityProviderRaw(ctx, realmName, alias)
+		needsUpdate := true
+		if fetchErr != nil {
+			log.Error(fetchErr, "failed to fetch current IdP state, falling through to update")
+		} else if currentRaw != nil {
+			needsUpdate = !idpDefinitionsMatch(definition, currentRaw)
 		}
-		log.Info("identity provider updated successfully", "alias", alias)
+
+		if needsUpdate {
+			log.Info("updating identity provider", "alias", alias, "realm", realmName)
+			if err := kc.UpdateIdentityProvider(ctx, realmName, alias, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, idp, false, "UpdateFailed", fmt.Sprintf("Failed to update identity provider: %v", err), alias)
+			}
+			log.Info("identity provider updated successfully", "alias", alias)
+		} else {
+			log.V(1).Info("identity provider already in sync, skipping update", "alias", alias)
+		}
 	}
 
 	// Update status

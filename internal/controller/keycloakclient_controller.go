@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -173,16 +174,30 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		log.Info("client created successfully", "clientId", clientDef.ClientID, "uuid", clientUUID)
 	} else {
-		// Client exists, update it
+		// Client exists — check if update is needed
 		clientUUID = *existingClient.ID
 		definition = mergeIDIntoDefinition(definition, existingClient.ID)
 
-		log.Info("updating client", "clientId", clientDef.ClientID, "realm", realmName)
-		if err := kc.UpdateClient(ctx, realmName, clientUUID, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, kcClient, false, "UpdateFailed", fmt.Sprintf("Failed to update client: %v", err), clientUUID, instanceRef, realmRef)
+		// Fetch current state from Keycloak for drift detection
+		currentRaw, fetchErr := kc.GetClientRaw(ctx, realmName, clientUUID)
+
+		needsUpdate := true
+		if fetchErr != nil {
+			log.Error(fetchErr, "failed to fetch current client state, falling through to update")
+		} else if currentRaw != nil {
+			needsUpdate = !definitionsMatch(definition, currentRaw)
 		}
-		log.Info("client updated successfully", "clientId", clientDef.ClientID)
+
+		if needsUpdate {
+			log.Info("updating client", "clientId", clientDef.ClientID, "realm", realmName)
+			if err := kc.UpdateClient(ctx, realmName, clientUUID, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, kcClient, false, "UpdateFailed", fmt.Sprintf("Failed to update client: %v", err), clientUUID, instanceRef, realmRef)
+			}
+			log.Info("client updated successfully", "clientId", clientDef.ClientID)
+		} else {
+			log.V(1).Info("client already in sync, skipping update", "clientId", clientDef.ClientID)
+		}
 	}
 
 	// Sync default/optional client scope assignments
@@ -608,6 +623,37 @@ func (r *KeycloakClientReconciler) deleteClient(ctx context.Context, kcClient *k
 }
 
 func (r *KeycloakClientReconciler) updateStatus(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient, ready bool, status, message, clientUUID string, instanceRef *keycloakv1beta1.InstanceRef, realmRef *keycloakv1beta1.RealmRef) (ctrl.Result, error) {
+	// Determine desired condition status
+	desiredConditionStatus := metav1.ConditionFalse
+	if ready {
+		desiredConditionStatus = metav1.ConditionTrue
+	}
+
+	// Check if status actually changed
+	statusChanged := kcClient.Status.Ready != ready ||
+		kcClient.Status.Status != status ||
+		kcClient.Status.Message != message ||
+		kcClient.Status.ClientUUID != clientUUID
+
+	conditionChanged := true
+	for _, c := range kcClient.Status.Conditions {
+		if c.Type == "Ready" && c.Status == desiredConditionStatus && c.Reason == status && c.Message == message {
+			conditionChanged = false
+			break
+		}
+	}
+
+	// Check if observed generation changed
+	generationChanged := ready && kcClient.Status.ObservedGeneration != kcClient.Generation
+
+	if !statusChanged && !conditionChanged && !generationChanged {
+		// Nothing changed, just requeue without writing to API
+		if ready {
+			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
+		}
+		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	}
+
 	kcClient.Status.Ready = ready
 	kcClient.Status.Status = status
 	kcClient.Status.Message = message
@@ -623,19 +669,20 @@ func (r *KeycloakClientReconciler) updateStatus(ctx context.Context, kcClient *k
 	// Update conditions
 	condition := metav1.Condition{
 		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
+		Status:             desiredConditionStatus,
 		Reason:             status,
 		Message:            message,
 		LastTransitionTime: metav1.Now(),
-	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
 	}
 
 	// Update or add condition
 	found := false
 	for i, c := range kcClient.Status.Conditions {
 		if c.Type == "Ready" {
+			// Preserve LastTransitionTime if status didn't change
+			if c.Status == desiredConditionStatus {
+				condition.LastTransitionTime = c.LastTransitionTime
+			}
 			kcClient.Status.Conditions[i] = condition
 			found = true
 			break
@@ -654,6 +701,153 @@ func (r *KeycloakClientReconciler) updateStatus(ctx context.Context, kcClient *k
 	}
 	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
 }
+
+// definitionsMatch compares desired definition against the current state in Keycloak.
+// Only fields present in the desired definition are compared — extra fields returned
+// by Keycloak (like access, authenticationFlowBindingOverrides, etc.) are ignored.
+// Array fields (e.g. defaultClientScopes, redirectUris) are compared as unordered sets
+// because Keycloak may return them in arbitrary order.
+func definitionsMatch(desired, current json.RawMessage) bool {
+	var desiredMap, currentMap map[string]interface{}
+	if err := json.Unmarshal(desired, &desiredMap); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(current, &currentMap); err != nil {
+		return false
+	}
+
+	for key, desiredVal := range desiredMap {
+		// defaultClientScopes and optionalClientScopes are reconciled via dedicated
+		// scope-assignment endpoints (see syncClientScopes); the client representation
+		// PUT/GET round-trip doesn't faithfully preserve them, so skip in the diff.
+		if key == "defaultClientScopes" || key == "optionalClientScopes" {
+			continue
+		}
+		currentVal, exists := currentMap[key]
+		if !exists {
+			return false
+		}
+		if !valuesMatch(desiredVal, currentVal) {
+			return false
+		}
+	}
+	return true
+}
+
+// valuesMatch compares two values, treating JSON arrays as unordered sets of strings
+// when all elements are strings. This prevents false diffs caused by Keycloak returning
+// array fields like defaultClientScopes in non-deterministic order.
+func valuesMatch(desired, current interface{}) bool {
+	desiredArr, dIsArr := toStringSlice(desired)
+	currentArr, cIsArr := toStringSlice(current)
+	if dIsArr && cIsArr {
+		if len(desiredArr) != len(currentArr) {
+			return false
+		}
+		sort.Strings(desiredArr)
+		sort.Strings(currentArr)
+		for i := range desiredArr {
+			if desiredArr[i] != currentArr[i] {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Maps: subset comparison (e.g. attributes — CR defines a subset, KC adds defaults)
+	desiredMap, dIsMap := desired.(map[string]interface{})
+	currentMap, cIsMap := current.(map[string]interface{})
+	if dIsMap && cIsMap {
+		for k, dv := range desiredMap {
+			cv, exists := currentMap[k]
+			if !exists {
+				return false
+			}
+			if !valuesMatch(dv, cv) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Arrays of objects (e.g. protocolMappers): match by "name" field, then subset-compare
+	desiredObjArr, dIsObjArr := toObjectSlice(desired)
+	currentObjArr, cIsObjArr := toObjectSlice(current)
+	if dIsObjArr && cIsObjArr {
+		for _, dObj := range desiredObjArr {
+			dName, _ := dObj["name"].(string)
+			found := false
+			for _, cObj := range currentObjArr {
+				cName, _ := cObj["name"].(string)
+				if dName != "" && dName == cName {
+					// Subset compare: all desired fields must match
+					match := true
+					for k, dv := range dObj {
+						cv, exists := cObj[k]
+						if !exists {
+							match = false
+							break
+						}
+						if !valuesMatch(dv, cv) {
+							match = false
+							break
+						}
+					}
+					if match {
+						found = true
+					}
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
+
+	dj, err1 := json.Marshal(desired)
+	cj, err2 := json.Marshal(current)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return string(dj) == string(cj)
+}
+
+// toStringSlice checks if a value is a JSON array of strings and returns it as []string.
+func toStringSlice(v interface{}) ([]string, bool) {
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil, false
+	}
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		s, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		result = append(result, s)
+	}
+	return result, true
+}
+
+// toObjectSlice checks if a value is a JSON array of objects and returns it as []map[string]interface{}.
+func toObjectSlice(v interface{}) ([]map[string]interface{}, bool) {
+	arr, ok := v.([]interface{})
+	if !ok || len(arr) == 0 {
+		return nil, false
+	}
+	result := make([]map[string]interface{}, 0, len(arr))
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+		result = append(result, obj)
+	}
+	return result, true
+}
+
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakClientReconciler) SetupWithManager(mgr ctrl.Manager) error {

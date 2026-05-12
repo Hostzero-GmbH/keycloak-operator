@@ -120,28 +120,55 @@ func (r *KeycloakRoleMappingReconciler) Reconcile(ctx context.Context, req ctrl.
 		return r.updateStatus(ctx, mapping, false, "RoleNotFound", fmt.Sprintf("Failed to get role: %v", err), subjectType, subjectID, roleName, roleType)
 	}
 
-	// Apply the role mapping
-	roles := []keycloak.RoleRepresentation{*role}
-	if subjectType == "user" {
-		if roleType == "client" {
-			err = kc.AddClientRolesToUser(ctx, realmName, clientUUID, subjectID, roles)
-		} else {
-			err = kc.AddRealmRolesToUser(ctx, realmName, subjectID, roles)
+	// Check if role mapping already exists before applying
+	alreadyMapped := false
+	if role.ID != nil {
+		var existingRoles []keycloak.RoleRepresentation
+		var checkErr error
+		if subjectType == "user" {
+			if roleType == "client" {
+				existingRoles, checkErr = kc.GetUserClientRoleMappings(ctx, realmName, subjectID, clientUUID)
+			} else {
+				existingRoles, checkErr = kc.GetUserRealmRoleMappings(ctx, realmName, subjectID)
+			}
 		}
+		// For groups we skip the check and always apply (no GetGroupRoleMappings available)
+		if checkErr == nil && existingRoles != nil {
+			for _, er := range existingRoles {
+				if er.ID != nil && *er.ID == *role.ID {
+					alreadyMapped = true
+					break
+				}
+			}
+		}
+	}
+
+	if !alreadyMapped {
+		// Apply the role mapping
+		roles := []keycloak.RoleRepresentation{*role}
+		if subjectType == "user" {
+			if roleType == "client" {
+				err = kc.AddClientRolesToUser(ctx, realmName, clientUUID, subjectID, roles)
+			} else {
+				err = kc.AddRealmRolesToUser(ctx, realmName, subjectID, roles)
+			}
+		} else {
+			if roleType == "client" {
+				err = kc.AddClientRolesToGroup(ctx, realmName, clientUUID, subjectID, roles)
+			} else {
+				err = kc.AddRealmRolesToGroup(ctx, realmName, subjectID, roles)
+			}
+		}
+
+		if err != nil {
+			RecordError(controllerName, "keycloak_api_error")
+			return r.updateStatus(ctx, mapping, false, "MappingFailed", fmt.Sprintf("Failed to add role mapping: %v", err), subjectType, subjectID, roleName, roleType)
+		}
+
+		log.Info("role mapping applied", "subject", subjectType, "subjectID", subjectID, "role", roleName, "roleType", roleType)
 	} else {
-		if roleType == "client" {
-			err = kc.AddClientRolesToGroup(ctx, realmName, clientUUID, subjectID, roles)
-		} else {
-			err = kc.AddRealmRolesToGroup(ctx, realmName, subjectID, roles)
-		}
+		log.V(1).Info("role mapping already in sync, skipping", "subject", subjectType, "subjectID", subjectID, "role", roleName, "roleType", roleType)
 	}
-
-	if err != nil {
-		RecordError(controllerName, "keycloak_api_error")
-		return r.updateStatus(ctx, mapping, false, "MappingFailed", fmt.Sprintf("Failed to add role mapping: %v", err), subjectType, subjectID, roleName, roleType)
-	}
-
-	log.Info("role mapping applied", "subject", subjectType, "subjectID", subjectID, "role", roleName, "roleType", roleType)
 
 	// Update status with resource path
 	var resourcePath string
@@ -408,6 +435,24 @@ func (r *KeycloakRoleMappingReconciler) removeRoleMapping(ctx context.Context, m
 }
 
 func (r *KeycloakRoleMappingReconciler) updateStatus(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping, ready bool, status, message, subjectType, subjectID, roleName, roleType string) (ctrl.Result, error) {
+	// Check if status actually changed
+	statusChanged := mapping.Status.Ready != ready ||
+		mapping.Status.Status != status ||
+		mapping.Status.Message != message ||
+		mapping.Status.SubjectType != subjectType ||
+		mapping.Status.SubjectID != subjectID ||
+		mapping.Status.RoleName != roleName ||
+		mapping.Status.RoleType != roleType
+
+	generationChanged := ready && mapping.Status.ObservedGeneration != mapping.Generation
+
+	if !statusChanged && !generationChanged {
+		if ready {
+			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
+		}
+		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	}
+
 	mapping.Status.Ready = ready
 	mapping.Status.Status = status
 	mapping.Status.Message = message
@@ -416,7 +461,6 @@ func (r *KeycloakRoleMappingReconciler) updateStatus(ctx context.Context, mappin
 	mapping.Status.RoleName = roleName
 	mapping.Status.RoleType = roleType
 
-	// Track observed generation to detect spec changes
 	if ready {
 		mapping.Status.ObservedGeneration = mapping.Generation
 	}
@@ -431,7 +475,6 @@ func (r *KeycloakRoleMappingReconciler) updateStatus(ctx context.Context, mappin
 		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
 	}
 
-	// Requeue after 5 minutes for periodic check
 	return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
 }
 

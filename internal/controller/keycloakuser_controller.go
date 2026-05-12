@@ -130,17 +130,31 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 		log.Info("user created successfully", "username", username, "id", userID)
 	} else {
-		// User exists, update it
+		// User exists — check if update is needed
 		existingUser := existingUsers[0]
 		userID = *existingUser.ID
 		definition = mergeIDIntoDefinition(definition, existingUser.ID)
 
-		log.Info("updating user", "username", username, "realm", realmName)
-		if err := kc.UpdateUser(ctx, realmName, userID, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, user, false, "UpdateFailed", fmt.Sprintf("Failed to update user: %v", err), userID, false, "")
+		// Fetch current state for drift detection
+		currentRaw, fetchErr := kc.GetUserRaw(ctx, realmName, userID)
+
+		needsUpdate := true
+		if fetchErr != nil {
+			log.Error(fetchErr, "failed to fetch current user state, falling through to update")
+		} else if currentRaw != nil {
+			needsUpdate = !definitionsMatch(definition, currentRaw)
 		}
-		log.Info("user updated successfully", "username", username)
+
+		if needsUpdate {
+			log.Info("updating user", "username", username, "realm", realmName)
+			if err := kc.UpdateUser(ctx, realmName, userID, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, user, false, "UpdateFailed", fmt.Sprintf("Failed to update user: %v", err), userID, false, "")
+			}
+			log.Info("user updated successfully", "username", username)
+		} else {
+			log.V(1).Info("user already in sync, skipping update", "username", username)
+		}
 	}
 
 	// Handle initial password if specified
@@ -427,6 +441,37 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealmFromClient(ctx context
 }
 
 func (r *KeycloakUserReconciler) updateStatus(ctx context.Context, user *keycloakv1beta1.KeycloakUser, ready bool, status, message, userID string, isServiceAccount bool, clientID string) (ctrl.Result, error) {
+	// Determine desired condition status
+	desiredConditionStatus := metav1.ConditionFalse
+	if ready {
+		desiredConditionStatus = metav1.ConditionTrue
+	}
+
+	// Check if status actually changed
+	statusChanged := user.Status.Ready != ready ||
+		user.Status.Status != status ||
+		user.Status.Message != message ||
+		user.Status.IsServiceAccount != isServiceAccount ||
+		user.Status.ClientID != clientID ||
+		(userID != "" && user.Status.UserID != userID)
+
+	conditionChanged := true
+	for _, c := range user.Status.Conditions {
+		if c.Type == "Ready" && c.Status == desiredConditionStatus && c.Reason == status && c.Message == message {
+			conditionChanged = false
+			break
+		}
+	}
+
+	generationChanged := ready && user.Status.ObservedGeneration != user.Generation
+
+	if !statusChanged && !conditionChanged && !generationChanged {
+		if ready {
+			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
+		}
+		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	}
+
 	user.Status.Ready = ready
 	user.Status.Status = status
 	user.Status.Message = message
@@ -436,26 +481,24 @@ func (r *KeycloakUserReconciler) updateStatus(ctx context.Context, user *keycloa
 	user.Status.IsServiceAccount = isServiceAccount
 	user.Status.ClientID = clientID
 
-	// Track observed generation to detect spec changes
 	if ready {
 		user.Status.ObservedGeneration = user.Generation
 	}
 
-	// Update conditions
 	condition := metav1.Condition{
 		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
+		Status:             desiredConditionStatus,
 		Reason:             status,
 		Message:            message,
 		LastTransitionTime: metav1.Now(),
-	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
 	}
 
 	found := false
 	for i, c := range user.Status.Conditions {
 		if c.Type == "Ready" {
+			if c.Status == desiredConditionStatus {
+				condition.LastTransitionTime = c.LastTransitionTime
+			}
 			user.Status.Conditions[i] = condition
 			found = true
 			break
