@@ -75,6 +75,7 @@ The `clientSecretRef` field controls how client secrets are managed:
 - **If the secret exists**: The operator reads the client secret from the specified key and configures Keycloak to use it.
 - **If the secret doesn't exist and `create: true`**: The operator lets Keycloak auto-generate a secret and creates the Kubernetes Secret.
 - **If the secret doesn't exist and `create: false`**: The operator reports an error (strict mode for GitOps workflows).
+- **Public clients (`publicClient: true`)**: When `clientSecretRef` is set, the Secret is still materialized but only contains the `client-id` key — public OAuth clients have no `client_secret` to store. This lets consumer charts pull the client ID via `envFrom` or `secretKeyRef` regardless of whether the client is public or confidential. If `clientSecretRef` is not set, no Secret is created.
 
 ### Use Cases
 
@@ -124,6 +125,11 @@ spec:
       - https://my-app.example.com/*
     webOrigins:
       - https://my-app.example.com
+  # Optional: still materialise a Secret so consumers can mount the
+  # client-id via envFrom. The Secret will only contain the client-id
+  # key — public clients have no client_secret.
+  clientSecretRef:
+    name: my-spa-credentials
 ```
 
 ### Confidential Client (Backend)
@@ -203,7 +209,7 @@ spec:
 
 ## Generated Secret Format
 
-When the operator creates or manages a secret, it has this structure:
+When the operator creates or manages a secret for a **confidential client**, it has this structure:
 
 ```yaml
 apiVersion: v1
@@ -218,6 +224,22 @@ type: Opaque
 data:
   client-id: bXktYXBw          # base64 encoded
   client-secret: c2VjcmV0...   # base64 encoded
+```
+
+For a **public client** (`publicClient: true`) the Secret is materialized with only the `client-id` key, since there is no OAuth `client_secret`:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-spa-credentials
+  ownerReferences:
+    - apiVersion: keycloak.hostzero.com/v1beta1
+      kind: KeycloakClient
+      name: my-spa
+type: Opaque
+data:
+  client-id: bXktc3Bh          # base64 encoded
 ```
 
 ## Authentication Flow Binding Overrides
