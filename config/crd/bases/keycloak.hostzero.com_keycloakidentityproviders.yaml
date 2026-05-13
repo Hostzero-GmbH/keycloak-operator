@@ -102,6 +102,30 @@ spec:
                 required:
                 - name
                 type: object
+              tokenExchange:
+                description: |-
+                  TokenExchange configures fine-grained-authz so that exactly the listed
+                  clients (and no others) may exchange tokens with this IdP as
+                  `subject_issuer`. Omit the field to leave token-exchange permissions
+                  unmanaged (whatever was clicked manually stays). Set to a list (possibly
+                  empty) to have the operator enable IdP permissions and bind a Client-type
+                  policy listing the allowed clients on the `token-exchange` scope
+                  permission in the realm-management authz resource server.
+                properties:
+                  allowedClients:
+                    description: |-
+                      AllowedClients is the list of clientIds (text, not UUIDs) in the same
+                      realm as the IdP that are permitted to perform token-exchange against
+                      this IdP. An empty list creates a policy that matches no clients,
+                      effectively denying all (useful as an explicit lockdown). Omitting the
+                      parent `tokenExchange` field entirely leaves Keycloak permissions
+                      untouched.
+                    items:
+                      type: string
+                    type: array
+                required:
+                - allowedClients
+                type: object
             required:
             - definition
             type: object
@@ -199,6 +223,39 @@ spec:
               status:
                 description: Status is a human-readable status message
                 type: string
+              tokenExchange:
+                description: |-
+                  TokenExchange contains the observed state of the token-exchange
+                  permission wiring, populated only when spec.tokenExchange is set.
+                properties:
+                  enabled:
+                    description: |-
+                      Enabled reflects whether fine-grained authz permissions are enabled on
+                      this IdP in Keycloak.
+                    type: boolean
+                  message:
+                    description: |-
+                      Message carries the last token-exchange reconcile error, if any. Set
+                      only when token-exchange reconcile fails — the parent `status.ready`
+                      still reflects the IdP itself, not the TE side.
+                    type: string
+                  permissionID:
+                    description: |-
+                      PermissionID is the ID of the `token-exchange` scope permission auto-
+                      created in the realm-management authz resource server when permissions
+                      are enabled on this IdP.
+                    type: string
+                  policyID:
+                    description: |-
+                      PolicyID is the ID of the Client-type authz policy managed by the
+                      operator (carries the AllowedClients list).
+                    type: string
+                  policyName:
+                    description: |-
+                      PolicyName is the name of the managed policy, useful for admins
+                      looking the resource up in the Keycloak UI.
+                    type: string
+                type: object
             required:
             - ready
             type: object

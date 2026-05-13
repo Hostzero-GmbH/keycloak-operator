@@ -179,6 +179,67 @@ Every key-value pair in the referenced Secret is merged into `definition.config`
 
 The Secret must exist in the same namespace as the `KeycloakIdentityProvider`. When the Secret changes, the operator automatically re-reconciles the identity provider to pick up the new values.
 
+## Token Exchange Permission
+
+When this identity provider should also act as a [Trusted Token Issuer](https://www.keycloak.org/securing-apps/token-exchange) — i.e. clients in the realm exchange a JWT from the upstream IdP for a Keycloak token using RFC 8693 Token Exchange with `subject_issuer=<alias>` — Keycloak needs a fine-grained-authz policy listing which clients are allowed to do so. Without that policy, any client in the realm could perform the exchange.
+
+`spec.tokenExchange` lets the operator manage that policy declaratively. Omit the field to leave Keycloak permissions untouched (default — fully opt-in). Set `allowedClients` to a list of `clientId`s in the same realm:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakIdentityProvider
+metadata:
+  name: external-issuer
+spec:
+  realmRef:
+    name: my-realm
+  definition:
+    alias: external-issuer
+    providerId: oidc
+    enabled: true
+    config:
+      issuer: https://issuer.example.com
+      jwksUrl: https://issuer.example.com/.well-known/jwks.json
+      useJwksUrl: "true"
+      validateSignature: "true"
+      hideOnLoginPage: "true"
+  tokenExchange:
+    allowedClients:
+      - my-backend-client
+      - my-app-client
+```
+
+On reconcile, the operator:
+
+1. Enables fine-grained-authz on the identity provider (PUT `/identity-provider/instances/{alias}/management/permissions`). Keycloak auto-creates a `token-exchange` scope-permission on the `realm-management` authz resource server.
+2. Resolves each `allowedClients` entry to its Keycloak client UUID.
+3. Ensures a Client-type authz policy named `hostzero-idp-<alias>-token-exchange` exists in `realm-management`'s authz resource server, with `clients` set to the resolved UUIDs.
+4. Binds that policy to the auto-created scope-permission. The operator owns the policy list — any other policy bound manually will be replaced.
+
+Any client not on `allowedClients` attempting `subject_issuer=<alias>` is rejected with `403 not_allowed`. An empty `allowedClients: []` is valid and means "deny all".
+
+### Soft wait on referenced clients
+
+On first apply, the identity provider and the clients it references are often siblings in the same wave. If the operator reconciles the identity provider before a referenced client exists in Keycloak, the token-exchange reconcile defers without flipping `status.ready` to false. `status.tokenExchange.message` carries the reason; the next reconcile picks up the client once it lands.
+
+### Status
+
+```yaml
+status:
+  ready: true
+  tokenExchange:
+    enabled: true
+    permissionID: <UUID of the token-exchange scope-permission>
+    policyID:     <UUID of the operator-managed policy>
+    policyName:   hostzero-idp-<alias>-token-exchange
+```
+
+`enabled: false` with a non-empty `message` indicates the operator is still waiting on referenced state.
+
+### Cleanup
+
+Deleting the identity provider also removes the operator-managed policy from `realm-management`'s authz resource server. The scope-permission itself is removed by Keycloak when management-permissions are toggled off (implicit on IdP delete).
+
 ## Definition Properties
 
 Common properties from [Keycloak IdentityProviderRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#IdentityProviderRepresentation):
