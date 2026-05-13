@@ -91,8 +91,8 @@ func (r *KeycloakIdentityProviderReconciler) reconcileTokenExchange(
 	// 4. Find or create the managed policy.
 	policyName := fmt.Sprintf("hostzero-idp-%s-token-exchange", alias)
 	desired := keycloak.ClientPolicyRepresentation{
-		Name:             policyName,
-		Description:      fmt.Sprintf("Managed by hostzero-keycloak-operator; allowed token-exchange clients for IdP %q", alias),
+		Name:        policyName,
+		Description: fmt.Sprintf("Managed by hostzero-keycloak-operator; allowed token-exchange clients for IdP %q", alias),
 		// Type is implicit on the URL path (/policy/client) for POST, but the
 		// type-specific GET on /policy/client/{id} populates Type="client".
 		// Set it explicitly so clientPolicyEqual stays symmetric and the
