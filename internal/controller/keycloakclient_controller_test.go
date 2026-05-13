@@ -3,6 +3,10 @@ package controller
 import (
 	"encoding/json"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/runtime"
+
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 )
 
 func TestDefinitionsMatch_ScopesUnordered(t *testing.T) {
@@ -199,5 +203,59 @@ func TestDefinitionsMatch_ProtocolMappersExtraInDesired(t *testing.T) {
 
 	if definitionsMatch(desired, current) {
 		t.Error("expected no match: CR adds a protocolMapper that current lacks")
+	}
+}
+
+func TestIsPublicClient(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "public", raw: `{"clientId":"app","publicClient":true}`, want: true},
+		{name: "explicit confidential", raw: `{"clientId":"app","publicClient":false}`, want: false},
+		{name: "field absent", raw: `{"clientId":"app"}`, want: false},
+		{name: "definition empty", raw: ``, want: false},
+		{name: "definition garbage", raw: `not json`, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			kc := &keycloakv1beta1.KeycloakClient{}
+			if tc.raw != "" {
+				kc.Spec.Definition = &runtime.RawExtension{Raw: []byte(tc.raw)}
+			}
+			if got := isPublicClient(kc); got != tc.want {
+				t.Errorf("isPublicClient(%q) = %v, want %v", tc.raw, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsPublicClient_NilSpec(t *testing.T) {
+	kc := &keycloakv1beta1.KeycloakClient{}
+	if isPublicClient(kc) {
+		t.Error("expected false for nil Definition")
+	}
+}
+
+func TestIsPublicClient_EmptyRaw(t *testing.T) {
+	// Definition is non-nil but Raw is empty — exercises the
+	// len(kcClient.Spec.Definition.Raw) == 0 branch that the table-driven
+	// "definition empty" case skips (since it leaves Definition nil).
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{name: "nil raw", raw: nil},
+		{name: "empty raw", raw: []byte{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			kc := &keycloakv1beta1.KeycloakClient{}
+			kc.Spec.Definition = &runtime.RawExtension{Raw: tc.raw}
+			if isPublicClient(kc) {
+				t.Errorf("expected false for non-nil Definition with %s", tc.name)
+			}
+		})
 	}
 }

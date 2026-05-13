@@ -138,6 +138,70 @@ func TestKeycloakClientE2E(t *testing.T) {
 		t.Log("Verified: No secret created for public client")
 	})
 
+	t.Run("PublicClientWithSecretRef", func(t *testing.T) {
+		// Public client that opts in to a Secret via ClientSecretRef. The
+		// Secret should be materialised but only carry the client-id key —
+		// public clients have no client_secret. Matches the legacy operator
+		// behaviour relied on by consumers using envFrom: secretRef for the
+		// client-id.
+		clientName := fmt.Sprintf("public-client-secref-%d", time.Now().UnixNano())
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"clientId": "%s",
+			"name": "Public Client With Secret Ref",
+			"enabled": true,
+			"publicClient": true,
+			"standardFlowEnabled": true,
+			"redirectUris": ["http://localhost:8080/*"]
+		}`, clientName))
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name: clientName + "-secret",
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcClient)
+		})
+
+		// Wait for client to be ready
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcClient.Name,
+				Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "Public client with SecretRef did not become ready")
+
+		// Verify secret was created with client-id only
+		secret := &corev1.Secret{}
+		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      clientName + "-secret",
+				Namespace: testNamespace,
+			}, secret); err != nil {
+				return false, nil
+			}
+			return true, nil
+		})
+		require.NoError(t, err, "Secret was not created for public client with ClientSecretRef")
+		require.Contains(t, secret.Data, "client-id", "Secret should contain client-id")
+		require.Equal(t, clientName, string(secret.Data["client-id"]), "client-id value should match clientId")
+		require.NotContains(t, secret.Data, "client-secret", "Public client Secret must not contain client-secret key")
+		t.Logf("Public client Secret created with keys: %v", getSecretKeys(secret))
+	})
+
 	t.Run("BearerOnlyClient", func(t *testing.T) {
 		// Create bearer-only client (for backend services)
 		clientName := fmt.Sprintf("bearer-client-%d", time.Now().UnixNano())
