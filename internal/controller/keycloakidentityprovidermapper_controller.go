@@ -127,11 +127,6 @@ func (r *KeycloakIdentityProviderMapperReconciler) Reconcile(ctx context.Context
 		}
 		log.Info("identity provider mapper created successfully", "name", mapperName, "id", mapperID)
 	} else {
-		// Drift-check: skip the PUT when the existing mapper already matches
-		// the desired definition. Without this, every reconcile pass (default
-		// sync-period 5m) fires a no-op admin-API PUT against Keycloak — same
-		// pattern the other controllers got drift detection for in
-		// b88be9a / #71 (the IdP-mapper kind landed in #68 and was missed).
 		drifted, compareErr := identityProviderMapperDrifted(definition, existingMapper)
 		if compareErr != nil {
 			log.Error(compareErr, "failed to compare current mapper state, falling through to update")
