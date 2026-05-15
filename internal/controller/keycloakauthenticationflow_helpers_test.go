@@ -343,6 +343,30 @@ func TestMatchExecutions(t *testing.T) {
 	})
 }
 
+func TestDesiredIdentifier(t *testing.T) {
+	tests := []struct {
+		name string
+		exec flowExecution
+		want execIdentifier
+	}{
+		{
+			name: "authenticator returns provider id",
+			exec: flowExecution{Authenticator: "auth-cookie", Requirement: "ALTERNATIVE"},
+			want: execIdentifier{name: "auth-cookie", isFlow: false},
+		},
+		{
+			name: "sub-flow returns alias and isFlow=true",
+			exec: flowExecution{SubFlow: &flowDefinition{Alias: "forms", ProviderID: "basic-flow"}, Requirement: "ALTERNATIVE"},
+			want: execIdentifier{name: "forms", isFlow: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, desiredIdentifier(tt.exec))
+		})
+	}
+}
+
 func TestConfigMapsEqual(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -232,7 +232,7 @@ kubectl get kcaf       # KeycloakAuthenticationFlow
 
 ## Behavior on update
 
-When the spec changes the controller reconciles the live flow in place rather than deleting and recreating it. The top-level flow ID stays stable across updates, which is what allows a flow to be referenced as a sub-flow execution by another flow or as a realm binding override (`browserFlow`, `registrationFlow`, etc.) and still be edited — Keycloak refuses to delete a flow that is currently in use, so an out-of-place rebuild would fail.
+Every reconcile (spec change or periodic resync) reads the live execution tree from Keycloak and converges it with the spec, so external drift — admin UI edits, `kcadm` reorders, realm re-imports — is reverted on the next pass. The top-level flow ID stays stable across updates so flows referenced as a sub-flow execution or as a realm binding (`browserFlow`, `registrationFlow`, etc.) keep working.
 
 The reconciler walks the desired tree against the live tree and applies the minimum set of API calls:
 
@@ -246,7 +246,7 @@ The reconciler walks the desired tree against the live tree and applies the mini
   - if `requirement` differs, it is patched via `PUT /authentication/flows/{alias}/executions`.
   - leaf `authenticatorConfig` is converged: created when the spec adds it, deleted when the spec drops it, and updated in place via `PUT /authentication/config/{id}` when the key/value contents change.
   - sub-flow nodes recurse — children of matched sub-flows are reconciled the same way.
-- **Reorder:** at the end of each level, the controller raises priorities until the live order matches the desired order.
+- **Reorder:** at the end of each level, the controller assigns explicit `priority` values to every child via `PUT /authentication/flows/{alias}/executions` so the live order matches the spec deterministically. See [Known limitations](#known-limitations) for the Keycloak version requirement.
 
 A one-line summary of what changed (`added=N updated=M removed=K reorderedParents=R`) is logged for each update.
 
@@ -258,6 +258,12 @@ Two changes cannot be applied in place and are reported as failures with a clear
 
 - **Top-level `providerId` change** (e.g. `basic-flow` → `client-flow`): Keycloak does not support swapping the provider type of an existing flow. The status is set to `ProviderChangeUnsupported` and the message tells you to pick a new alias.
 - **Renaming the top-level `alias`**: the controller treats this as "old flow + new flow"; the old flow has to be removed by deleting its `KeycloakAuthenticationFlow` resource.
+
+## Known limitations
+
+### Execution ordering requires Keycloak 25+
+
+Order enforcement relies on the `priority` field added to `PUT /authentication/flows/{alias}/executions` in [keycloak/keycloak#27751](https://github.com/keycloak/keycloak/pull/27751). On Keycloak 24 and older the field is silently dropped, so the operator cannot enforce or repair execution order on those versions. Initial order still matches the spec there because pre-25 Keycloak assigned sequential priorities on add. Other drift (adds, removes, requirement changes, config changes) is detected and repaired on every Keycloak version.
 
 ## Notes
 

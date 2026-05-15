@@ -1416,19 +1416,22 @@ type AuthenticationFlowRepresentation struct {
 // by GET /authentication/flows/{flowAlias}/executions. This is a flat list with
 // level/index fields indicating the tree structure.
 type AuthenticationExecutionInfo struct {
-	ID                   *string  `json:"id,omitempty"`
-	Requirement          *string  `json:"requirement,omitempty"`
-	DisplayName          *string  `json:"displayName,omitempty"`
-	Alias                *string  `json:"alias,omitempty"`
-	Description          *string  `json:"description,omitempty"`
-	Configurable         *bool    `json:"configurable,omitempty"`
-	AuthenticationFlow   *bool    `json:"authenticationFlow,omitempty"`
-	ProviderID           *string  `json:"providerId,omitempty"`
-	AuthenticationConfig *string  `json:"authenticationConfig,omitempty"`
-	FlowID               *string  `json:"flowId,omitempty"`
-	Level                *int     `json:"level,omitempty"`
-	Index                *int     `json:"index,omitempty"`
-	RequirementChoices   []string `json:"requirementChoices,omitempty"`
+	ID                   *string `json:"id,omitempty"`
+	Requirement          *string `json:"requirement,omitempty"`
+	DisplayName          *string `json:"displayName,omitempty"`
+	Alias                *string `json:"alias,omitempty"`
+	Description          *string `json:"description,omitempty"`
+	Configurable         *bool   `json:"configurable,omitempty"`
+	AuthenticationFlow   *bool   `json:"authenticationFlow,omitempty"`
+	ProviderID           *string `json:"providerId,omitempty"`
+	AuthenticationConfig *string `json:"authenticationConfig,omitempty"`
+	FlowID               *string `json:"flowId,omitempty"`
+	Level                *int    `json:"level,omitempty"`
+	Index                *int    `json:"index,omitempty"`
+	// Priority is only honored on PUT since Keycloak 25
+	// (keycloak/keycloak#27751); older versions silently drop it.
+	Priority           *int     `json:"priority,omitempty"`
+	RequirementChoices []string `json:"requirementChoices,omitempty"`
 }
 
 // AuthenticatorConfigRepresentation represents an authenticator config

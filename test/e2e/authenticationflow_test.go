@@ -541,6 +541,173 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 		t.Logf("Realm-bound flow %s updated in place without releasing the binding", flowAlias)
 	})
 
+	// Regression for keycloak/keycloak#35765 (new executions all default to
+	// priority 0 on KC 25/26, so order is non-deterministic without an
+	// explicit priority).
+	t.Run("FlowExecutionOrderMatchesSpec", func(t *testing.T) {
+		skipIfNoKeycloakAccess(t)
+		flowAlias := fmt.Sprintf("ordered-flow-%d", time.Now().UnixNano())
+		subFlowA := flowAlias + "-sub-a"
+		subFlowB := flowAlias + "-sub-b"
+		flow := &keycloakv1beta1.KeycloakAuthenticationFlow{
+			ObjectMeta: metav1.ObjectMeta{Name: flowAlias, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakAuthenticationFlowSpec{
+				RealmRef:    &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:       flowAlias,
+				Description: "Order regression for keycloak/keycloak#35765",
+				ProviderId:  "basic-flow",
+				Executions: rawExecutions(fmt.Sprintf(`[
+					{"authenticator":"direct-grant-validate-username","requirement":"REQUIRED"},
+					{
+						"subFlow":{
+							"alias":"%s",
+							"providerId":"basic-flow",
+							"executions":[
+								{"authenticator":"conditional-user-configured","requirement":"REQUIRED"}
+							]
+						},
+						"requirement":"CONDITIONAL"
+					},
+					{"authenticator":"direct-grant-validate-password","requirement":"REQUIRED"},
+					{
+						"subFlow":{
+							"alias":"%s",
+							"providerId":"basic-flow",
+							"executions":[
+								{"authenticator":"conditional-user-configured","requirement":"REQUIRED"},
+								{"authenticator":"direct-grant-validate-otp","requirement":"REQUIRED"}
+							]
+						},
+						"requirement":"CONDITIONAL"
+					},
+					{"authenticator":"user-session-limits","requirement":"REQUIRED"}
+				]`, subFlowA, subFlowB)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, flow))
+		t.Cleanup(func() { k8sClient.Delete(ctx, flow) })
+
+		waitForFlowReady(t, flow.Name)
+
+		want := []string{
+			"direct-grant-validate-username",
+			subFlowA,
+			"direct-grant-validate-password",
+			subFlowB,
+			"user-session-limits",
+		}
+
+		kc := getInternalKeycloakClient(t)
+		execs, err := kc.GetFlowExecutions(ctx, realmName, flowAlias)
+		require.NoError(t, err)
+
+		var got []string
+		for i := range execs {
+			e := execs[i]
+			if e.Level == nil || *e.Level != 0 {
+				continue
+			}
+			switch {
+			case e.AuthenticationFlow != nil && *e.AuthenticationFlow && e.DisplayName != nil:
+				got = append(got, *e.DisplayName)
+			case e.ProviderID != nil:
+				got = append(got, *e.ProviderID)
+			}
+		}
+		require.Equal(t, want, got, "top-level executions must appear in the order declared in the spec")
+
+		subBExecs, err := kc.GetFlowExecutions(ctx, realmName, subFlowB)
+		require.NoError(t, err)
+		var subBGot []string
+		for _, e := range subBExecs {
+			if e.Level != nil && *e.Level == 0 && e.ProviderID != nil {
+				subBGot = append(subBGot, *e.ProviderID)
+			}
+		}
+		require.Equal(t, []string{"conditional-user-configured", "direct-grant-validate-otp"}, subBGot,
+			"sub-flow executions must also appear in the order declared in the spec")
+		t.Logf("Flow %s executions are in spec order", flowAlias)
+	})
+
+	t.Run("FlowExecutionOrderDriftIsRepaired", func(t *testing.T) {
+		skipIfNoKeycloakAccess(t)
+		flowAlias := fmt.Sprintf("drift-order-flow-%d", time.Now().UnixNano())
+		flow := &keycloakv1beta1.KeycloakAuthenticationFlow{
+			ObjectMeta: metav1.ObjectMeta{Name: flowAlias, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakAuthenticationFlowSpec{
+				RealmRef:    &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:       flowAlias,
+				Description: "Order drift regression",
+				ProviderId:  "basic-flow",
+				Executions: rawExecutions(`[
+					{"authenticator":"direct-grant-validate-username","requirement":"REQUIRED"},
+					{"authenticator":"direct-grant-validate-password","requirement":"REQUIRED"},
+					{"authenticator":"direct-grant-validate-otp","requirement":"REQUIRED"}
+				]`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, flow))
+		t.Cleanup(func() { k8sClient.Delete(ctx, flow) })
+
+		waitForFlowReady(t, flow.Name)
+
+		kc := getInternalKeycloakClient(t)
+
+		// Drift Keycloak directly without touching the CR.
+		live, err := kc.GetFlowExecutions(ctx, realmName, flowAlias)
+		require.NoError(t, err)
+		var otpID string
+		for _, e := range live {
+			if e.Level != nil && *e.Level == 0 && e.ProviderID != nil && *e.ProviderID == "direct-grant-validate-otp" {
+				require.NotNil(t, e.ID)
+				otpID = *e.ID
+				break
+			}
+		}
+		require.NotEmpty(t, otpID, "OTP execution must exist in live flow")
+		require.NoError(t, kc.RaiseExecutionPriority(ctx, realmName, otpID))
+		require.NoError(t, kc.RaiseExecutionPriority(ctx, realmName, otpID))
+
+		drifted, err := kc.GetFlowExecutions(ctx, realmName, flowAlias)
+		require.NoError(t, err)
+		var driftedOrder []string
+		for _, e := range drifted {
+			if e.Level != nil && *e.Level == 0 && e.ProviderID != nil {
+				driftedOrder = append(driftedOrder, *e.ProviderID)
+			}
+		}
+		require.Equal(t, []string{
+			"direct-grant-validate-otp",
+			"direct-grant-validate-username",
+			"direct-grant-validate-password",
+		}, driftedOrder, "raise-priority must have actually moved the OTP to the top")
+
+		// Force a reconcile without bumping the spec.
+		fresh := &keycloakv1beta1.KeycloakAuthenticationFlow{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: flow.Name, Namespace: flow.Namespace}, fresh))
+		bumpReconcile(t, fresh)
+
+		require.Eventually(t, func() bool {
+			repaired, err := kc.GetFlowExecutions(ctx, realmName, flowAlias)
+			if err != nil {
+				return false
+			}
+			var got []string
+			for _, e := range repaired {
+				if e.Level != nil && *e.Level == 0 && e.ProviderID != nil {
+					got = append(got, *e.ProviderID)
+				}
+			}
+			want := []string{
+				"direct-grant-validate-username",
+				"direct-grant-validate-password",
+				"direct-grant-validate-otp",
+			}
+			return len(got) == len(want) && got[0] == want[0] && got[1] == want[1] && got[2] == want[2]
+		}, 30*time.Second, 500*time.Millisecond, "controller did not repair execution order drift")
+		t.Logf("Flow %s execution order drift was detected and repaired", flowAlias)
+	})
+
 	t.Run("FlowCleanup", func(t *testing.T) {
 		flowAlias := fmt.Sprintf("cleanup-flow-%d", time.Now().UnixNano())
 		flow := &keycloakv1beta1.KeycloakAuthenticationFlow{

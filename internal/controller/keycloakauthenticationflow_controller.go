@@ -201,12 +201,6 @@ func (r *KeycloakAuthenticationFlowReconciler) Reconcile(ctx context.Context, re
 	}
 
 	if existingFlowID != "" {
-		if flow.Status.ObservedGeneration == 0 || flow.Status.ObservedGeneration >= flow.Generation {
-			log.Info("flow already exists", "alias", flow.Spec.Alias, "id", existingFlowID)
-			return r.updateStatus(ctx, flow, true, "Ready", "Authentication flow synchronized", existingFlowID, realmName)
-		}
-
-		log.Info("spec changed, updating flow in place", "alias", flow.Spec.Alias)
 		stats, err := r.updateExistingFlow(ctx, kc, realmName, flow, existingFlowID, executions)
 		if err != nil {
 			RecordError(controllerName, "keycloak_api_error")
@@ -215,14 +209,18 @@ func (r *KeycloakAuthenticationFlowReconciler) Reconcile(ctx context.Context, re
 			}
 			return r.updateStatus(ctx, flow, false, "UpdateFailed", fmt.Sprintf("Failed to update flow: %v", err), existingFlowID, realmName)
 		}
-		log.Info("authentication flow updated in place",
-			"alias", flow.Spec.Alias,
-			"id", existingFlowID,
-			"added", stats.added,
-			"updated", stats.updated,
-			"removed", stats.removed,
-			"reorderedParents", stats.reorderedParents,
-		)
+		if stats.touched() {
+			log.Info("authentication flow updated in place",
+				"alias", flow.Spec.Alias,
+				"id", existingFlowID,
+				"added", stats.added,
+				"updated", stats.updated,
+				"removed", stats.removed,
+				"reorderedParents", stats.reorderedParents,
+			)
+		} else {
+			log.V(1).Info("flow already in sync, skipping update", "alias", flow.Spec.Alias, "id", existingFlowID)
+		}
 		return r.updateStatus(ctx, flow, true, "Ready", "Authentication flow synchronized", existingFlowID, realmName)
 	}
 
@@ -292,7 +290,7 @@ func (r *KeycloakAuthenticationFlowReconciler) addExecutions(ctx context.Context
 		}
 	}
 	if len(executions) > 1 {
-		if err := r.reorderChildren(ctx, kc, realmName, parentAlias, executions); err != nil {
+		if _, err := r.reorderChildren(ctx, kc, realmName, parentAlias, executions); err != nil {
 			return fmt.Errorf("reordering executions in flow %q: %w", parentAlias, err)
 		}
 	}
@@ -372,47 +370,88 @@ func buildSubFlowDef(alias, description, providerId string) map[string]interface
 	return def
 }
 
-// reorderChildren bubble-sorts the direct children of parentAlias into the
-// order described by desired, using Keycloak's raise-priority endpoint (the
-// only tool the API offers for reordering).
-func (r *KeycloakAuthenticationFlowReconciler) reorderChildren(ctx context.Context, kc *keycloak.Client, realmName, parentAlias string, desired []flowExecution) error {
-	ids := make([]execIdentifier, 0, len(desired))
-	for _, e := range desired {
-		if e.SubFlow != nil {
-			ids = append(ids, execIdentifier{name: e.SubFlow.Alias, isFlow: true})
-		} else {
-			ids = append(ids, execIdentifier{name: e.Authenticator, isFlow: false})
-		}
+// Gap left between priorities so future inserts don't need to renumber.
+const reorderPriorityStep = 10
+
+// reorderChildren PUTs an explicit priority on each child of parentAlias so
+// the live order matches desired. Requires Keycloak 25+: older versions drop
+// the priority field, and the raise-/lower-priority swap endpoints don't
+// help on KC 25/26 either because new executions all share priority 0
+// (keycloak/keycloak#35765). Returns true when at least one PUT was issued.
+func (r *KeycloakAuthenticationFlowReconciler) reorderChildren(ctx context.Context, kc *keycloak.Client, realmName, parentAlias string, desired []flowExecution) (bool, error) {
+	execs, err := kc.GetFlowExecutions(ctx, realmName, parentAlias)
+	if err != nil {
+		return false, err
 	}
+	topLevel := filterTopLevelExecutions(execs)
 
-	for targetIdx := 0; targetIdx < len(ids); targetIdx++ {
-		execs, err := kc.GetFlowExecutions(ctx, realmName, parentAlias)
-		if err != nil {
-			return err
-		}
-		topLevel := filterTopLevelExecutions(execs)
-
-		currentIdx := -1
-		for i, e := range topLevel {
-			if matchesIdentifier(e, ids[targetIdx]) {
-				currentIdx = i
+	matchIdx := make([]int, len(desired))
+	used := make([]bool, len(topLevel))
+	for i, d := range desired {
+		id := desiredIdentifier(d)
+		matchIdx[i] = -1
+		for j := range topLevel {
+			if used[j] {
+				continue
+			}
+			if matchesIdentifier(topLevel[j], id) {
+				matchIdx[i] = j
+				used[j] = true
 				break
 			}
 		}
-		if currentIdx < 0 || currentIdx == targetIdx {
+		if matchIdx[i] < 0 {
+			return false, fmt.Errorf("execution %q not found in flow %q after add (cannot reorder)", id.name, parentAlias)
+		}
+	}
+
+	// Position equality alone is not enough: with all priorities at 0,
+	// Keycloak's sort order for ties is non-deterministic, so we'd skip
+	// the PUTs and never lock the order in. Require a positive priority.
+	if liveMatchesDesiredOrder(topLevel, matchIdx) {
+		return false, nil
+	}
+
+	for i, j := range matchIdx {
+		match := topLevel[j]
+		if match.ID == nil {
 			continue
 		}
-
-		for i := 0; i < currentIdx-targetIdx; i++ {
-			if topLevel[currentIdx].ID == nil {
-				break
-			}
-			if err := kc.RaiseExecutionPriority(ctx, realmName, *topLevel[currentIdx].ID); err != nil {
-				return fmt.Errorf("raising priority of execution: %w", err)
-			}
+		priority := (i + 1) * reorderPriorityStep
+		upd := keycloak.AuthenticationExecutionInfo{
+			ID:       match.ID,
+			Priority: &priority,
+		}
+		if match.Requirement != nil {
+			upd.Requirement = match.Requirement
+		}
+		if match.AuthenticationFlow != nil {
+			upd.AuthenticationFlow = match.AuthenticationFlow
+		}
+		if err := kc.UpdateFlowExecution(ctx, realmName, parentAlias, upd); err != nil {
+			return true, fmt.Errorf("setting priority on execution %q in flow %q: %w", desired[i].Authenticator, parentAlias, err)
 		}
 	}
-	return nil
+	return true, nil
+}
+
+func liveMatchesDesiredOrder(topLevel []keycloak.AuthenticationExecutionInfo, matchIdx []int) bool {
+	for i, j := range matchIdx {
+		if i != j {
+			return false
+		}
+		if topLevel[j].Priority == nil || *topLevel[j].Priority <= 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func desiredIdentifier(e flowExecution) execIdentifier {
+	if e.SubFlow != nil {
+		return execIdentifier{name: e.SubFlow.Alias, isFlow: true}
+	}
+	return execIdentifier{name: e.Authenticator, isFlow: false}
 }
 
 // findExecution locates a direct child of flowAlias by its provider ID
@@ -524,6 +563,13 @@ type updateStats struct {
 	added, updated, removed, reorderedParents int
 }
 
+func (s *updateStats) touched() bool {
+	if s == nil {
+		return false
+	}
+	return s.added > 0 || s.updated > 0 || s.removed > 0 || s.reorderedParents > 0
+}
+
 // matchExecutions pairs each desired entry with at most one live entry of the
 // same identity (provider id for leaves, alias for sub-flows). Matching is
 // occurrence-based: the i-th desired entry with identity X matches the i-th
@@ -620,10 +666,13 @@ func (r *KeycloakAuthenticationFlowReconciler) reconcileChildren(
 	}
 
 	if len(desired) > 1 {
-		if err := r.reorderChildren(ctx, kc, realmName, parentAlias, desired); err != nil {
+		changed, err := r.reorderChildren(ctx, kc, realmName, parentAlias, desired)
+		if err != nil {
 			return fmt.Errorf("reordering executions in flow %q: %w", parentAlias, err)
 		}
-		stats.reorderedParents++
+		if changed {
+			stats.reorderedParents++
+		}
 	}
 	return nil
 }
@@ -752,6 +801,8 @@ func (r *KeycloakAuthenticationFlowReconciler) updateExistingFlow(
 			errProviderChangeUnsupported, *live.ProviderID, flow.Spec.ProviderId)
 	}
 
+	stats := &updateStats{}
+
 	liveDescription := ""
 	if live.Description != nil {
 		liveDescription = *live.Description
@@ -770,6 +821,7 @@ func (r *KeycloakAuthenticationFlowReconciler) updateExistingFlow(
 		if err := kc.UpdateAuthenticationFlow(ctx, realmName, existingFlowID, upd); err != nil {
 			return nil, fmt.Errorf("updating top-level fields of flow %q: %w", flow.Spec.Alias, err)
 		}
+		stats.updated++
 	}
 
 	liveTree, err := r.readLiveTree(ctx, kc, realmName, flow.Spec.Alias)
@@ -777,7 +829,6 @@ func (r *KeycloakAuthenticationFlowReconciler) updateExistingFlow(
 		return nil, fmt.Errorf("reading live execution tree for flow %q: %w", flow.Spec.Alias, err)
 	}
 
-	stats := &updateStats{}
 	if err := r.reconcileChildren(ctx, kc, realmName, flow.Spec.Alias, executions, liveTree, stats); err != nil {
 		return nil, err
 	}
