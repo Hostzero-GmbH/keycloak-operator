@@ -60,53 +60,87 @@ spec:
           spec:
             description: KeycloakInstanceSpec defines the desired state of KeycloakInstance
             properties:
+              auth:
+                description: |-
+                  Auth selects how the operator authenticates to Keycloak.
+                  Exactly one of auth.passwordGrant or auth.clientCredentials must be set.
+                properties:
+                  clientCredentials:
+                    description: |-
+                      ClientCredentials configures OAuth2 client_credentials grant
+                      authentication via a confidential client / service account.
+                    properties:
+                      clientId:
+                        description: |-
+                          ClientID, when set, overrides the value read from secretRef.clientIdKey.
+                          The client ID is not a secret, so providing it inline is allowed.
+                        type: string
+                      secretRef:
+                        description: ClientCredentialsSecretRefSpec references a Secret
+                          containing client credentials.
+                        properties:
+                          clientIdKey:
+                            default: client-id
+                            description: ClientIdKey is ignored when ClientCredentialsSpec.ClientID
+                              is set.
+                            type: string
+                          clientSecretKey:
+                            default: client-secret
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            description: Namespace defaults to the KeycloakInstance
+                              namespace when unset.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    required:
+                    - secretRef
+                    type: object
+                  passwordGrant:
+                    description: |-
+                      PasswordGrant configures resource-owner password grant authentication
+                      against a user account (typically the master-realm admin).
+                    properties:
+                      secretRef:
+                        description: PasswordGrantSecretRefSpec references a Secret
+                          containing admin credentials.
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            description: Namespace defaults to the KeycloakInstance
+                              namespace when unset.
+                            type: string
+                          passwordKey:
+                            default: password
+                            type: string
+                          usernameKey:
+                            default: username
+                            description: UsernameKey is ignored when PasswordGrantSpec.Username
+                              is set.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      username:
+                        description: |-
+                          Username, when set, overrides the value read from secretRef.usernameKey.
+                          The admin username is not a secret, so providing it inline is allowed.
+                        type: string
+                    required:
+                    - secretRef
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of auth.passwordGrant or auth.clientCredentials
+                    must be set
+                  rule: has(self.passwordGrant) != has(self.clientCredentials)
               baseUrl:
                 description: BaseUrl is the URL of the Keycloak server (e.g., http://keycloak:8080)
                 type: string
-              client:
-                description: Client contains optional service account client configuration
-                properties:
-                  id:
-                    description: ID is the client ID for service account authentication
-                    type: string
-                  secret:
-                    description: Secret is the client secret (optional for public
-                      clients)
-                    type: string
-                required:
-                - id
-                type: object
-              credentials:
-                description: Credentials contains the reference to the admin credentials
-                  secret
-                properties:
-                  secretRef:
-                    description: SecretRef contains the reference to the secret with
-                      credentials
-                    properties:
-                      name:
-                        description: Name is the name of the secret
-                        type: string
-                      namespace:
-                        description: Namespace is the namespace of the secret (defaults
-                          to resource namespace)
-                        type: string
-                      passwordKey:
-                        default: password
-                        description: PasswordKey is the key in the secret for the
-                          password (defaults to "password")
-                        type: string
-                      usernameKey:
-                        default: username
-                        description: UsernameKey is the key in the secret for the
-                          username (defaults to "username")
-                        type: string
-                    required:
-                    - name
-                    type: object
-                required:
-                - secretRef
-                type: object
               realm:
                 description: Realm is the admin realm (defaults to "master")
                 type: string
@@ -126,8 +160,8 @@ spec:
                     type: string
                 type: object
             required:
+            - auth
             - baseUrl
-            - credentials
             type: object
           status:
             description: KeycloakInstanceStatus defines the observed state of KeycloakInstance

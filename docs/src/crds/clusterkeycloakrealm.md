@@ -155,10 +155,11 @@ metadata:
   name: platform-keycloak
 spec:
   baseUrl: https://auth.example.com
-  credentials:
-    secretRef:
-      name: admin-creds
-      namespace: auth-system
+  auth:
+    passwordGrant:
+      secretRef:
+        name: admin-creds
+        namespace: auth-system
 ---
 # Realm for each tenant (cluster-scoped)
 apiVersion: keycloak.hostzero.com/v1beta1

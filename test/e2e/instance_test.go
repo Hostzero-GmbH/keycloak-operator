@@ -61,9 +61,11 @@ func TestKeycloakInstanceE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakInstanceSpec{
 				BaseUrl: keycloakURL,
-				Credentials: keycloakv1beta1.CredentialsSpec{
-					SecretRef: keycloakv1beta1.SecretRefSpec{
-						Name: secretName,
+				Auth: keycloakv1beta1.AuthSpec{
+					PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+						SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{
+							Name: secretName,
+						},
 					},
 				},
 			},
@@ -112,9 +114,11 @@ func TestKeycloakInstanceE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakInstanceSpec{
 				BaseUrl: "http://non-existent-keycloak.invalid:8080",
-				Credentials: keycloakv1beta1.CredentialsSpec{
-					SecretRef: keycloakv1beta1.SecretRefSpec{
-						Name: secretName,
+				Auth: keycloakv1beta1.AuthSpec{
+					PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+						SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{
+							Name: secretName,
+						},
 					},
 				},
 			},
@@ -147,9 +151,11 @@ func TestKeycloakInstanceE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakInstanceSpec{
 				BaseUrl: keycloakURL,
-				Credentials: keycloakv1beta1.CredentialsSpec{
-					SecretRef: keycloakv1beta1.SecretRefSpec{
-						Name: "non-existent-secret",
+				Auth: keycloakv1beta1.AuthSpec{
+					PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+						SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{
+							Name: "non-existent-secret",
+						},
 					},
 				},
 			},

@@ -1,4 +1,4 @@
-# Sample KeycloakInstance connecting to a local Keycloak server
+# Sample KeycloakInstance connecting via admin user/password.
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakInstance
 metadata:
@@ -6,7 +6,20 @@ metadata:
   namespace: default
 spec:
   baseUrl: http://keycloak:8080
-  credentials:
-    secretName: keycloak-admin
-    usernameKey: username
-    passwordKey: password
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-admin
+---
+# Sample KeycloakInstance connecting via an OAuth2 service-account client.
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakInstance
+metadata:
+  name: keycloak-instance-svc
+  namespace: default
+spec:
+  baseUrl: http://keycloak:8080
+  auth:
+    clientCredentials:
+      secretRef:
+        name: keycloak-operator-client

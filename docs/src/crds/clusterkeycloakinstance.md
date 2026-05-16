@@ -1,30 +1,13 @@
 # ClusterKeycloakInstance
 
-The `ClusterKeycloakInstance` resource makes a Keycloak server known to the operator at the **cluster level**, allowing resources in any namespace to reference it.
-
-## Overview
-
-This is the cluster-scoped equivalent of `KeycloakInstance`. Use it when:
-- You have a central Keycloak server shared across multiple namespaces
-- You want to avoid duplicating instance definitions in each namespace
-- You need cross-namespace realm and client management
+`ClusterKeycloakInstance` is the cluster-scoped counterpart of
+[`KeycloakInstance`](keycloakinstance.md). Resources in any namespace can
+reference it, making it useful for a shared Keycloak server on a multi-tenant
+platform.
 
 ## Example
 
-```yaml
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: ClusterKeycloakInstance
-metadata:
-  name: central-keycloak
-spec:
-  baseUrl: https://keycloak.example.com
-  credentials:
-    secretRef:
-      name: keycloak-admin-credentials
-      namespace: keycloak-system
-```
-
-### With Client Authentication
+### Password grant
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -33,131 +16,70 @@ metadata:
   name: central-keycloak
 spec:
   baseUrl: https://keycloak.example.com
-  realm: master
-  credentials:
-    secretRef:
-      name: keycloak-admin-credentials
-      namespace: keycloak-system
-      usernameKey: admin-user
-      passwordKey: admin-password
-  client:
-    id: admin-cli
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-admin
+        namespace: keycloak-system
 ```
+
+### Service-account client
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: ClusterKeycloakInstance
+metadata:
+  name: central-keycloak
+spec:
+  baseUrl: https://keycloak.example.com
+  auth:
+    clientCredentials:
+      secretRef:
+        name: keycloak-operator-client
+        namespace: keycloak-system
+```
+
+## Authentication
+
+Same rules as [`KeycloakInstance`](keycloakinstance.md): exactly one of
+`auth.passwordGrant` / `auth.clientCredentials`; passwords and client secrets
+always live in a Secret; `username` / `clientId` may be inlined.
+
+The only difference: `secretRef.namespace` is **required** because the resource
+is cluster-scoped.
 
 ## Spec
 
 | Field | Type | Description | Required |
 |-------|------|-------------|----------|
 | `baseUrl` | string | URL of the Keycloak server | Yes |
-| `credentials.secretRef.name` | string | Name of the credentials secret | Yes |
-| `credentials.secretRef.namespace` | string | Namespace of the credentials secret | Yes |
-| `credentials.secretRef.usernameKey` | string | Key for username in secret | No (default: "username") |
-| `credentials.secretRef.passwordKey` | string | Key for password in secret | No (default: "password") |
-| `realm` | string | Admin realm name | No (default: "master") |
-| `client.id` | string | Client ID for authentication | No |
-| `client.secret` | string | Client secret (if confidential) | No |
-| `token.secretName` | string | Secret to cache access tokens | No |
-| `token.tokenKey` | string | Key in the secret for the token | No |
-| `token.expiresKey` | string | Key in the secret for the token expiration | No |
-
-## Status
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ready` | boolean | Whether connection to Keycloak is established |
-| `version` | string | Detected Keycloak server version |
-| `status` | string | Current status (Ready, ConnectionFailed, Error) |
-| `message` | string | Additional status information |
-| `resourcePath` | string | API path for this resource |
-| `conditions` | []Condition | Kubernetes conditions |
-
-## Behavior
-
-### Connection Verification
-
-The operator periodically verifies the connection to Keycloak by:
-1. Authenticating with the provided credentials
-2. Fetching server info to detect the version
-3. Updating the `ready` status and connection metrics
-
-### Secret Reference
-
-Since `ClusterKeycloakInstance` is cluster-scoped, the `namespace` field in `secretRef` is **required** (unlike the namespaced `KeycloakInstance` where it defaults to the resource's namespace).
-
-### Client Manager
-
-The operator maintains a pool of authenticated Keycloak clients. When a `ClusterKeycloakInstance` is created, a client is registered in the pool with a special cluster-scoped key, making it available for all resources that reference it.
-
-## Use Cases
-
-### Central Keycloak for Multi-Tenant Platform
-
-```yaml
-# Define the central instance once
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: ClusterKeycloakInstance
-metadata:
-  name: platform-keycloak
-spec:
-  baseUrl: https://auth.platform.example.com
-  credentials:
-    secretRef:
-      name: keycloak-admin
-      namespace: auth-system
----
-# Create cluster-scoped realms for each tenant
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: ClusterKeycloakRealm
-metadata:
-  name: tenant-a-realm
-spec:
-  clusterInstanceRef:
-    name: platform-keycloak
-  definition:
-    realm: tenant-a
-    enabled: true
-```
-
-### Shared Instance Across Environments
-
-```yaml
-# Credentials in a secure namespace
-apiVersion: v1
-kind: Secret
-metadata:
-  name: keycloak-credentials
-  namespace: keycloak-secrets
-type: Opaque
-stringData:
-  username: admin
-  password: ${KEYCLOAK_ADMIN_PASSWORD}
----
-# Cluster instance referencing the secret
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: ClusterKeycloakInstance
-metadata:
-  name: shared-keycloak
-spec:
-  baseUrl: https://keycloak.internal.example.com
-  credentials:
-    secretRef:
-      name: keycloak-credentials
-      namespace: keycloak-secrets
-```
+| `auth.passwordGrant` / `auth.clientCredentials` | object | Authentication method (exactly one) | Yes |
+| `auth.passwordGrant.username` | string | Inline admin username (overrides `secretRef.usernameKey`) | No |
+| `auth.passwordGrant.secretRef.name` | string | Name of the credentials Secret | Yes |
+| `auth.passwordGrant.secretRef.namespace` | string | Namespace of the credentials Secret | Yes |
+| `auth.passwordGrant.secretRef.usernameKey` | string | Secret key for the username | No (default `username`) |
+| `auth.passwordGrant.secretRef.passwordKey` | string | Secret key for the password | No (default `password`) |
+| `auth.clientCredentials.clientId` | string | Inline client id (overrides `secretRef.clientIdKey`) | No |
+| `auth.clientCredentials.secretRef.name` | string | Name of the client-credentials Secret | Yes |
+| `auth.clientCredentials.secretRef.namespace` | string | Namespace of the client-credentials Secret | Yes |
+| `auth.clientCredentials.secretRef.clientIdKey` | string | Secret key for the client id | No (default `client-id`) |
+| `auth.clientCredentials.secretRef.clientSecretKey` | string | Secret key for the client secret | No (default `client-secret`) |
+| `realm` | string | Admin realm name | No (default `master`) |
+| `token.*` | object | Token cache configuration | No |
 
 ## Comparison with KeycloakInstance
 
 | Aspect | KeycloakInstance | ClusterKeycloakInstance |
 |--------|------------------|-------------------------|
 | Scope | Namespaced | Cluster |
-| Secret namespace | Optional (defaults to same) | Required |
+| Secret namespace | Optional (defaults to same as resource) | Required |
 | Accessible from | Same namespace only | Any namespace |
 | Short name | `kci` | `ckci` |
-| Use case | Single namespace | Multi-namespace/platform |
 
-## Notes
+## Migrating from the pre-`auth` shape
 
-- Only one `ClusterKeycloakInstance` with a given name can exist
-- Deleting the instance will invalidate all resources that reference it
-- The credentials secret must exist before creating the instance
-- The operator requires RBAC permissions to read secrets from the specified namespace
+The legacy `spec.credentials` / `spec.client` blocks have been replaced by
+`spec.auth`. Migrate existing manifests as shown in the
+[KeycloakInstance migration guide](keycloakinstance.md#migrating-from-the-pre-auth-shape);
+the only difference is that `secretRef.namespace` must always be set for
+cluster-scoped resources.

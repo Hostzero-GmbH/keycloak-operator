@@ -4,56 +4,94 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ClusterKeycloakInstanceSpec defines the desired state of ClusterKeycloakInstance
-// It mirrors KeycloakInstanceSpec but is cluster-scoped
+// ClusterKeycloakInstanceSpec defines the desired state of ClusterKeycloakInstance.
+// It mirrors KeycloakInstanceSpec but is cluster-scoped: secret references must
+// specify a namespace explicitly.
 type ClusterKeycloakInstanceSpec struct {
 	// BaseUrl is the URL of the Keycloak server (e.g., http://keycloak:8080)
 	// +kubebuilder:validation:Required
 	BaseUrl string `json:"baseUrl"`
 
-	// Credentials contains the reference to the admin credentials secret
+	// Auth selects how the operator authenticates to Keycloak.
+	// Exactly one of auth.passwordGrant or auth.clientCredentials must be set.
 	// +kubebuilder:validation:Required
-	Credentials ClusterCredentialsSpec `json:"credentials"`
+	Auth ClusterAuthSpec `json:"auth"`
 
 	// Realm is the admin realm (defaults to "master")
 	// +optional
 	Realm *string `json:"realm,omitempty"`
-
-	// Client contains optional service account client configuration
-	// +optional
-	Client *ClientAuthSpec `json:"client,omitempty"`
 
 	// Token contains optional token caching configuration
 	// +optional
 	Token *TokenSpec `json:"token,omitempty"`
 }
 
-// ClusterCredentialsSpec defines admin credentials for cluster-scoped instances
-type ClusterCredentialsSpec struct {
-	// SecretRef contains the reference to the secret with credentials
-	// +kubebuilder:validation:Required
-	SecretRef ClusterSecretRefSpec `json:"secretRef"`
+// ClusterAuthSpec is the cluster-scoped equivalent of AuthSpec.
+// +kubebuilder:validation:XValidation:rule="has(self.passwordGrant) != has(self.clientCredentials)",message="exactly one of auth.passwordGrant or auth.clientCredentials must be set"
+type ClusterAuthSpec struct {
+	// +optional
+	PasswordGrant *ClusterPasswordGrantSpec `json:"passwordGrant,omitempty"`
+
+	// +optional
+	ClientCredentials *ClusterClientCredentialsSpec `json:"clientCredentials,omitempty"`
 }
 
-// ClusterSecretRefSpec defines a reference to a secret for cluster-scoped resources
-type ClusterSecretRefSpec struct {
-	// Name is the name of the secret
+// ClusterPasswordGrantSpec configures password-grant authentication
+// for cluster-scoped instances.
+type ClusterPasswordGrantSpec struct {
+	// Username, when set, overrides secretRef.usernameKey.
+	// +optional
+	Username *string `json:"username,omitempty"`
+
+	// +kubebuilder:validation:Required
+	SecretRef ClusterPasswordGrantSecretRefSpec `json:"secretRef"`
+}
+
+// ClusterPasswordGrantSecretRefSpec references an admin-credentials Secret.
+// Namespace is required because the resource is cluster-scoped.
+type ClusterPasswordGrantSecretRefSpec struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
-	// Namespace is the namespace of the secret (required for cluster-scoped resources)
 	// +kubebuilder:validation:Required
 	Namespace string `json:"namespace"`
 
-	// UsernameKey is the key in the secret for the username (defaults to "username")
 	// +kubebuilder:default="username"
 	// +optional
 	UsernameKey string `json:"usernameKey,omitempty"`
 
-	// PasswordKey is the key in the secret for the password (defaults to "password")
 	// +kubebuilder:default="password"
 	// +optional
 	PasswordKey string `json:"passwordKey,omitempty"`
+}
+
+// ClusterClientCredentialsSpec configures OAuth2 client_credentials
+// authentication for cluster-scoped instances.
+type ClusterClientCredentialsSpec struct {
+	// ClientID, when set, overrides secretRef.clientIdKey.
+	// +optional
+	ClientID *string `json:"clientId,omitempty"`
+
+	// +kubebuilder:validation:Required
+	SecretRef ClusterClientCredentialsSecretRefSpec `json:"secretRef"`
+}
+
+// ClusterClientCredentialsSecretRefSpec references a client-credentials Secret.
+// Namespace is required because the resource is cluster-scoped.
+type ClusterClientCredentialsSecretRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
+
+	// +kubebuilder:default="client-id"
+	// +optional
+	ClientIdKey string `json:"clientIdKey,omitempty"`
+
+	// +kubebuilder:default="client-secret"
+	// +optional
+	ClientSecretKey string `json:"clientSecretKey,omitempty"`
 }
 
 // ClusterKeycloakInstanceStatus defines the observed state of ClusterKeycloakInstance

@@ -229,9 +229,11 @@ func createTestInstance(t *testing.T) string {
 		},
 		Spec: keycloakv1beta1.KeycloakInstanceSpec{
 			BaseUrl: keycloakInternalURL,
-			Credentials: keycloakv1beta1.CredentialsSpec{
-				SecretRef: keycloakv1beta1.SecretRefSpec{
-					Name: "keycloak-credentials",
+			Auth: keycloakv1beta1.AuthSpec{
+				PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+					SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{
+						Name: "keycloak-credentials",
+					},
 				},
 			},
 		},

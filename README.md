@@ -182,10 +182,12 @@ metadata:
   name: keycloak-instance
 spec:
   baseUrl: http://keycloak:8080
-  credentials:
-    secretName: keycloak-admin
-    usernameKey: username
-    passwordKey: password
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-admin
+        usernameKey: username
+        passwordKey: password
 ```
 
 ### KeycloakRealm

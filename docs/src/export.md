@@ -319,9 +319,10 @@ metadata:
   namespace: keycloak
 spec:
   baseUrl: https://keycloak.example.com
-  credentials:
-    secretRef:
-      name: keycloak-admin
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-admin
 EOF
 ```
 

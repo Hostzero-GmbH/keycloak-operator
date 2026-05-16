@@ -5,12 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -81,8 +78,7 @@ func (r *ClusterKeycloakInstanceReconciler) Reconcile(ctx context.Context, req c
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Get credentials from secret
-	cfg, err := r.getKeycloakConfig(ctx, instance, log)
+	cfg, err := GetKeycloakConfigFromClusterInstance(ctx, r.Client, instance)
 	if err != nil {
 		return r.updateStatus(ctx, instance, false, "", "Error", err.Error())
 	}
@@ -117,59 +113,6 @@ func (r *ClusterKeycloakInstanceReconciler) Reconcile(ctx context.Context, req c
 // clusterInstanceKey returns a unique key for cluster-scoped instances
 func clusterInstanceKey(name string) string {
 	return fmt.Sprintf("_cluster/%s", name)
-}
-
-func (r *ClusterKeycloakInstanceReconciler) getKeycloakConfig(ctx context.Context, instance *keycloakv1beta1.ClusterKeycloakInstance, log logr.Logger) (keycloak.Config, error) {
-	cfg := keycloak.Config{
-		BaseURL: instance.Spec.BaseUrl,
-	}
-
-	if instance.Spec.Realm != nil {
-		cfg.Realm = *instance.Spec.Realm
-	}
-
-	// Get credentials secret (namespace is required for cluster-scoped resources)
-	secret := &corev1.Secret{}
-	secretName := types.NamespacedName{
-		Name:      instance.Spec.Credentials.SecretRef.Name,
-		Namespace: instance.Spec.Credentials.SecretRef.Namespace,
-	}
-
-	if err := r.Get(ctx, secretName, secret); err != nil {
-		return cfg, fmt.Errorf("failed to get credentials secret: %w", err)
-	}
-
-	// Extract credentials
-	usernameKey := instance.Spec.Credentials.SecretRef.UsernameKey
-	if usernameKey == "" {
-		usernameKey = "username"
-	}
-	passwordKey := instance.Spec.Credentials.SecretRef.PasswordKey
-	if passwordKey == "" {
-		passwordKey = "password"
-	}
-
-	if username, ok := secret.Data[usernameKey]; ok {
-		cfg.Username = string(username)
-	} else {
-		return cfg, fmt.Errorf("username key %q not found in secret", usernameKey)
-	}
-
-	if password, ok := secret.Data[passwordKey]; ok {
-		cfg.Password = string(password)
-	} else {
-		return cfg, fmt.Errorf("password key %q not found in secret", passwordKey)
-	}
-
-	// Check for client credentials
-	if instance.Spec.Client != nil {
-		cfg.ClientID = instance.Spec.Client.ID
-		if instance.Spec.Client.Secret != nil {
-			cfg.ClientSecret = *instance.Spec.Client.Secret
-		}
-	}
-
-	return cfg, nil
 }
 
 func (r *ClusterKeycloakInstanceReconciler) updateStatus(ctx context.Context, instance *keycloakv1beta1.ClusterKeycloakInstance, ready bool, version, status, message string) (ctrl.Result, error) {
