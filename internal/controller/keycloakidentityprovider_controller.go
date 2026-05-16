@@ -62,8 +62,18 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 			// Delete identity provider from Keycloak unless preserve annotation is set
 			if ShouldPreserveResource(idp) {
 				log.Info("preserving identity provider in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
-			} else if err := r.deleteIdentityProvider(ctx, idp); err != nil {
-				log.Error(err, "failed to delete identity provider from Keycloak")
+			} else {
+				// Best-effort cleanup of the operator-managed token-exchange policy
+				// in realm-management's authz resource server before the IdP itself
+				// goes away. Errors are logged but don't block deletion.
+				if kc, realmName, resolveErr := r.getKeycloakClientAndRealm(ctx, idp); resolveErr == nil {
+					if cleanupErr := r.cleanupTokenExchange(ctx, kc, realmName, idp); cleanupErr != nil {
+						log.Error(cleanupErr, "failed to clean up token-exchange policy")
+					}
+				}
+				if err := r.deleteIdentityProvider(ctx, idp); err != nil {
+					log.Error(err, "failed to delete identity provider from Keycloak")
+				}
 			}
 
 			controllerutil.RemoveFinalizer(idp, FinalizerName)
@@ -114,7 +124,7 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		secretData, err := r.resolveConfigSecret(ctx, idp)
 		if err != nil {
 			RecordError(controllerName, "secret_error")
-			return r.updateStatus(ctx, idp, false, "ConfigSecretError", err.Error(), "")
+			return r.updateStatus(ctx, idp, false, "ConfigSecretError", err.Error(), alias)
 		}
 		definition = mergeIDPConfig(definition, secretData)
 	}
@@ -151,6 +161,35 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 			log.Info("identity provider updated successfully", "alias", alias)
 		} else {
 			log.V(1).Info("identity provider already in sync, skipping update", "alias", alias)
+		}
+	}
+
+	// Reconcile the token-exchange permission, if managed. Failure here is
+	// surfaced on status.tokenExchange.message but does not flip the parent
+	// Ready=false — the IdP itself is in sync regardless of the TE side, and
+	// flapping the parent Ready bit on transient authz-API hiccups would
+	// cascade into dependent resources (KeycloakIdentityProviderMapper, etc.).
+	if idp.Spec.TokenExchange != nil {
+		teStatus, teErr := r.reconcileTokenExchange(ctx, kc, realmName, alias, idp)
+		switch {
+		case teErr == nil:
+			idp.Status.TokenExchange = teStatus
+		case IsTokenExchangeWaiting(teErr):
+			// Soft wait — referenced state (typically one of the allowedClients)
+			// isn't there yet. Log at INFO level and surface a friendly status
+			// message; the requeue happens via updateStatus's RequeueAfter.
+			log.Info("token-exchange reconcile waiting", "alias", alias, "reason", teErr.Error())
+			if idp.Status.TokenExchange == nil {
+				idp.Status.TokenExchange = &keycloakv1beta1.IDPTokenExchangeStatus{}
+			}
+			idp.Status.TokenExchange.Message = teErr.Error()
+		default:
+			RecordError(controllerName, "tokenexchange_error")
+			log.Error(teErr, "failed to reconcile token-exchange permission", "alias", alias)
+			if idp.Status.TokenExchange == nil {
+				idp.Status.TokenExchange = &keycloakv1beta1.IDPTokenExchangeStatus{}
+			}
+			idp.Status.TokenExchange.Message = teErr.Error()
 		}
 	}
 
@@ -224,6 +263,7 @@ func (r *KeycloakIdentityProviderReconciler) updateStatus(ctx context.Context, i
 	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
 }
 
+// resolveConfigSecret reads all keys from a referenced Secret (upstream ConfigSecretRef path).
 func (r *KeycloakIdentityProviderReconciler) resolveConfigSecret(ctx context.Context, idp *keycloakv1beta1.KeycloakIdentityProvider) (map[string]string, error) {
 	ref := idp.Spec.ConfigSecretRef
 	secret := &corev1.Secret{}

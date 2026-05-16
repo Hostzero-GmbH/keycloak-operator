@@ -227,6 +227,27 @@ func (c *Client) Update(ctx context.Context, path string, body interface{}) erro
 	return nil
 }
 
+// put is like Update but decodes the response body into result. Use when the
+// PUT endpoint returns a useful body (e.g. management/permissions, which
+// returns a ManagementPermissionReference on toggle).
+func (c *Client) put(ctx context.Context, path string, body interface{}, result interface{}) error {
+	req, err := c.request(ctx)
+	if err != nil {
+		return err
+	}
+
+	resp, err := req.SetBody(body).SetResult(result).Put(c.baseURL + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+
+	if resp.IsError() {
+		return fmt.Errorf("%s: %s", resp.Status(), string(resp.Body()))
+	}
+
+	return nil
+}
+
 // Delete deletes a resource
 func (c *Client) Delete(ctx context.Context, path string) error {
 	req, err := c.request(ctx)
@@ -779,6 +800,182 @@ func (c *Client) UpdateIdentityProvider(ctx context.Context, realmName, alias st
 // DeleteIdentityProvider deletes an identity provider
 func (c *Client) DeleteIdentityProvider(ctx context.Context, realmName, alias string) error {
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/identity-provider/instances/"+url.PathEscape(alias))
+}
+
+// ============================================================================
+// Identity Provider — Fine-grained Authz / Token-Exchange Permission
+// ============================================================================
+
+// ManagementPermissionReference is what Keycloak returns when toggling
+// fine-grained-authz on a resource (here: an IdP). When `Enabled==true`,
+// `ScopePermissions` carries the per-scope permission IDs that Keycloak
+// auto-created under the realm-management authz resource server — for IdPs
+// the key we care about is "token-exchange".
+type ManagementPermissionReference struct {
+	Enabled          bool              `json:"enabled"`
+	Resource         string            `json:"resource,omitempty"`
+	ScopePermissions map[string]string `json:"scopePermissions,omitempty"`
+}
+
+// SetIdentityProviderPermissionsEnabled toggles fine-grained-authz on an IdP.
+// Returns the resulting reference (carries the auto-created scope-permission
+// IDs in ScopePermissions, e.g. ScopePermissions["token-exchange"]).
+func (c *Client) SetIdentityProviderPermissionsEnabled(ctx context.Context, realmName, alias string, enabled bool) (*ManagementPermissionReference, error) {
+	path := "/admin/realms/" + url.PathEscape(realmName) + "/identity-provider/instances/" + url.PathEscape(alias) + "/management/permissions"
+	body := map[string]bool{"enabled": enabled}
+	var ref ManagementPermissionReference
+	cfg := DefaultRetryConfig()
+	err := WithRetryVoid(ctx, cfg, "SetIdentityProviderPermissionsEnabled", func() error {
+		return c.put(ctx, path, body, &ref)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ref, nil
+}
+
+// GetIdentityProviderPermissions reads the current state of fine-grained
+// authz on an IdP (Enabled flag + scope-permission IDs).
+func (c *Client) GetIdentityProviderPermissions(ctx context.Context, realmName, alias string) (*ManagementPermissionReference, error) {
+	path := "/admin/realms/" + url.PathEscape(realmName) + "/identity-provider/instances/" + url.PathEscape(alias) + "/management/permissions"
+	var ref ManagementPermissionReference
+	if err := c.Get(ctx, path, &ref); err != nil {
+		return nil, err
+	}
+	return &ref, nil
+}
+
+// ClientPolicyRepresentation is the body shape Keycloak expects for
+// Client-type authz policies (carries the list of allowed-client UUIDs).
+type ClientPolicyRepresentation struct {
+	ID               string   `json:"id,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Description      string   `json:"description,omitempty"`
+	Type             string   `json:"type,omitempty"`
+	Logic            string   `json:"logic,omitempty"`            // POSITIVE | NEGATIVE
+	DecisionStrategy string   `json:"decisionStrategy,omitempty"` // UNANIMOUS | AFFIRMATIVE | CONSENSUS
+	Clients          []string `json:"clients,omitempty"`          // client UUIDs (NOT clientId text)
+}
+
+// SearchClientPolicyByName looks up a Client-type authz policy by name within
+// a resource server (a Keycloak client with `authorizationServicesEnabled`,
+// e.g. realm-management). Returns nil with no error when not found.
+//
+// Uses the search hit's ID to do a second, type-specific GET (`/policy/client/{id}`)
+// because the generic `/policy?name=…` listing returns a flattened shape with
+// `config.clients` as a JSON-encoded string, whereas the type-specific GET
+// returns a proper PolicyRepresentation with top-level `clients` — which is the
+// shape this lib's struct uses (and that POST/PUT also accept).
+func (c *Client) SearchClientPolicyByName(ctx context.Context, realmName, resourceServerUUID, name string) (*ClientPolicyRepresentation, error) {
+	listPath := "/admin/realms/" + url.PathEscape(realmName) + "/clients/" + url.PathEscape(resourceServerUUID) + "/authz/resource-server/policy"
+	params := map[string]string{
+		"name":  name,
+		"exact": "true",
+	}
+	// Hits from the generic search expose only id+name+type+meta — enough to dispatch
+	// the per-type GET below.
+	var hits []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+	if err := c.List(ctx, listPath, params, &hits); err != nil {
+		return nil, err
+	}
+	for _, h := range hits {
+		if h.Name != name {
+			continue
+		}
+		clientPath := "/admin/realms/" + url.PathEscape(realmName) + "/clients/" + url.PathEscape(resourceServerUUID) + "/authz/resource-server/policy/client/" + url.PathEscape(h.ID)
+		var full ClientPolicyRepresentation
+		if err := c.Get(ctx, clientPath, &full); err != nil {
+			return nil, err
+		}
+		return &full, nil
+	}
+	return nil, nil
+}
+
+// CreateClientPolicy creates a Client-type authz policy in a resource server.
+// Returns the new policy's Keycloak ID.
+//
+// Keycloak's POST to `/authz/resource-server/policy/client` does not set a
+// `Location` header on the 201 response (unlike most other admin endpoints) —
+// the new ID lives in the response body. We therefore parse the body directly
+// instead of relying on the generic `Client.Create` (which infers IDs from
+// Location and would return an empty string here, breaking any downstream
+// caller that needs the ID — e.g. binding the policy to a scope permission).
+func (c *Client) CreateClientPolicy(ctx context.Context, realmName, resourceServerUUID string, policy ClientPolicyRepresentation) (string, error) {
+	path := "/admin/realms/" + url.PathEscape(realmName) + "/clients/" + url.PathEscape(resourceServerUUID) + "/authz/resource-server/policy/client"
+	cfg := DefaultRetryConfig()
+	return WithRetry(ctx, cfg, "CreateClientPolicy", func() (string, error) {
+		var created ClientPolicyRepresentation
+		if err := c.Post(ctx, path, policy, &created); err != nil {
+			return "", err
+		}
+		if created.ID == "" {
+			return "", fmt.Errorf("Keycloak created the policy but returned an empty id in the body")
+		}
+		return created.ID, nil
+	})
+}
+
+// UpdateClientPolicy updates an existing Client-type authz policy.
+func (c *Client) UpdateClientPolicy(ctx context.Context, realmName, resourceServerUUID, policyID string, policy ClientPolicyRepresentation) error {
+	path := "/admin/realms/" + url.PathEscape(realmName) + "/clients/" + url.PathEscape(resourceServerUUID) + "/authz/resource-server/policy/client/" + url.PathEscape(policyID)
+	cfg := DefaultRetryConfig()
+	return WithRetryVoid(ctx, cfg, "UpdateClientPolicy", func() error {
+		body, err := json.Marshal(policy)
+		if err != nil {
+			return err
+		}
+		return c.Update(ctx, path, body)
+	})
+}
+
+// DeletePolicy deletes any authz policy by ID (the type-agnostic endpoint).
+func (c *Client) DeletePolicy(ctx context.Context, realmName, resourceServerUUID, policyID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(resourceServerUUID)+"/authz/resource-server/policy/"+url.PathEscape(policyID))
+}
+
+// ScopePermissionRepresentation is the body shape for a scope-based
+// authorization permission (what Keycloak auto-creates as
+// `token-exchange.permission.idp.<id>` when IdP permissions are enabled).
+type ScopePermissionRepresentation struct {
+	ID               string   `json:"id,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Description      string   `json:"description,omitempty"`
+	Type             string   `json:"type,omitempty"` // typically "scope"
+	Logic            string   `json:"logic,omitempty"`
+	DecisionStrategy string   `json:"decisionStrategy,omitempty"`
+	Resources        []string `json:"resources,omitempty"`
+	Scopes           []string `json:"scopes,omitempty"`
+	Policies         []string `json:"policies,omitempty"` // policy IDs bound to this permission
+}
+
+// GetScopePermission reads a scope permission's full body from a resource server.
+func (c *Client) GetScopePermission(ctx context.Context, realmName, resourceServerUUID, permissionID string) (*ScopePermissionRepresentation, error) {
+	path := "/admin/realms/" + url.PathEscape(realmName) + "/clients/" + url.PathEscape(resourceServerUUID) + "/authz/resource-server/permission/scope/" + url.PathEscape(permissionID)
+	var perm ScopePermissionRepresentation
+	if err := c.Get(ctx, path, &perm); err != nil {
+		return nil, err
+	}
+	return &perm, nil
+}
+
+// UpdateScopePermission updates a scope permission. Use this to bind policies
+// (the auto-created `token-exchange.permission.idp.<id>` ships without
+// policies; the operator PUTs back the same body with Policies populated).
+func (c *Client) UpdateScopePermission(ctx context.Context, realmName, resourceServerUUID, permissionID string, perm ScopePermissionRepresentation) error {
+	path := "/admin/realms/" + url.PathEscape(realmName) + "/clients/" + url.PathEscape(resourceServerUUID) + "/authz/resource-server/permission/scope/" + url.PathEscape(permissionID)
+	cfg := DefaultRetryConfig()
+	return WithRetryVoid(ctx, cfg, "UpdateScopePermission", func() error {
+		body, err := json.Marshal(perm)
+		if err != nil {
+			return err
+		}
+		return c.Update(ctx, path, body)
+	})
 }
 
 // ============================================================================
