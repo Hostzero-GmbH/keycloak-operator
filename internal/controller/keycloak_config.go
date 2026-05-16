@@ -76,48 +76,34 @@ func GetKeycloakConfigFromInstance(ctx context.Context, c client.Client, instanc
 		cfg.Realm = *instance.Spec.Realm
 	}
 
-	// Get credentials secret
-	secret := &corev1.Secret{}
-	secretNamespace := instance.Namespace
-	if instance.Spec.Credentials.SecretRef.Namespace != nil {
-		secretNamespace = *instance.Spec.Credentials.SecretRef.Namespace
-	}
-	secretName := types.NamespacedName{
-		Name:      instance.Spec.Credentials.SecretRef.Name,
-		Namespace: secretNamespace,
-	}
-
-	if err := c.Get(ctx, secretName, secret); err != nil {
-		return cfg, fmt.Errorf("failed to get credentials secret: %w", err)
-	}
-
-	// Extract credentials
-	usernameKey := instance.Spec.Credentials.SecretRef.UsernameKey
-	if usernameKey == "" {
-		usernameKey = "username"
-	}
-	passwordKey := instance.Spec.Credentials.SecretRef.PasswordKey
-	if passwordKey == "" {
-		passwordKey = "password"
+	auth := instance.Spec.Auth
+	switch {
+	case auth.ClientCredentials != nil:
+		clientID, clientSecret, err := resolveClientCredentials(ctx, c, auth.ClientCredentials, instance.Namespace)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.ClientID = clientID
+		cfg.ClientSecret = clientSecret
+	case auth.PasswordGrant != nil:
+		username, password, err := resolvePasswordGrant(ctx, c, auth.PasswordGrant, instance.Namespace)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.Username = username
+		cfg.Password = password
+	default:
+		return cfg, fmt.Errorf("auth.passwordGrant or auth.clientCredentials must be set")
 	}
 
-	if username, ok := secret.Data[usernameKey]; ok {
-		cfg.Username = string(username)
-	} else {
-		return cfg, fmt.Errorf("username key %q not found in secret", usernameKey)
-	}
-
-	if password, ok := secret.Data[passwordKey]; ok {
-		cfg.Password = string(password)
-	} else {
-		return cfg, fmt.Errorf("password key %q not found in secret", passwordKey)
-	}
-
-	// Check for client credentials
-	if instance.Spec.Client != nil {
-		cfg.ClientID = instance.Spec.Client.ID
-		if instance.Spec.Client.Secret != nil {
-			cfg.ClientSecret = *instance.Spec.Client.Secret
+	if instance.Spec.TLS != nil {
+		cfg.InsecureSkipVerify = instance.Spec.TLS.InsecureSkipVerify
+		if instance.Spec.TLS.CACert != nil {
+			pem, err := resolveCACert(ctx, c, instance.Spec.TLS.CACert, instance.Namespace)
+			if err != nil {
+				return cfg, err
+			}
+			cfg.CACert = pem
 		}
 	}
 
@@ -134,48 +120,262 @@ func GetKeycloakConfigFromClusterInstance(ctx context.Context, c client.Client, 
 		cfg.Realm = *instance.Spec.Realm
 	}
 
-	// Get credentials secret (namespace is required for cluster-scoped resources)
-	secret := &corev1.Secret{}
-	secretName := types.NamespacedName{
-		Name:      instance.Spec.Credentials.SecretRef.Name,
-		Namespace: instance.Spec.Credentials.SecretRef.Namespace,
+	auth := instance.Spec.Auth
+	switch {
+	case auth.ClientCredentials != nil:
+		clientID, clientSecret, err := resolveClusterClientCredentials(ctx, c, auth.ClientCredentials)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.ClientID = clientID
+		cfg.ClientSecret = clientSecret
+	case auth.PasswordGrant != nil:
+		username, password, err := resolveClusterPasswordGrant(ctx, c, auth.PasswordGrant)
+		if err != nil {
+			return cfg, err
+		}
+		cfg.Username = username
+		cfg.Password = password
+	default:
+		return cfg, fmt.Errorf("auth.passwordGrant or auth.clientCredentials must be set")
 	}
 
-	if err := c.Get(ctx, secretName, secret); err != nil {
-		return cfg, fmt.Errorf("failed to get credentials secret: %w", err)
-	}
-
-	// Extract credentials
-	usernameKey := instance.Spec.Credentials.SecretRef.UsernameKey
-	if usernameKey == "" {
-		usernameKey = "username"
-	}
-	passwordKey := instance.Spec.Credentials.SecretRef.PasswordKey
-	if passwordKey == "" {
-		passwordKey = "password"
-	}
-
-	if username, ok := secret.Data[usernameKey]; ok {
-		cfg.Username = string(username)
-	} else {
-		return cfg, fmt.Errorf("username key %q not found in secret", usernameKey)
-	}
-
-	if password, ok := secret.Data[passwordKey]; ok {
-		cfg.Password = string(password)
-	} else {
-		return cfg, fmt.Errorf("password key %q not found in secret", passwordKey)
-	}
-
-	// Check for client credentials
-	if instance.Spec.Client != nil {
-		cfg.ClientID = instance.Spec.Client.ID
-		if instance.Spec.Client.Secret != nil {
-			cfg.ClientSecret = *instance.Spec.Client.Secret
+	if instance.Spec.TLS != nil {
+		cfg.InsecureSkipVerify = instance.Spec.TLS.InsecureSkipVerify
+		if instance.Spec.TLS.CACert != nil {
+			pem, err := resolveClusterCACert(ctx, c, instance.Spec.TLS.CACert)
+			if err != nil {
+				return cfg, err
+			}
+			cfg.CACert = pem
 		}
 	}
 
 	return cfg, nil
+}
+
+// resolvePasswordGrant loads the admin credentials Secret referenced by spec
+// and returns (username, password). The inline Username takes precedence over
+// the value stored under SecretRef.UsernameKey.
+func resolvePasswordGrant(ctx context.Context, c client.Client, spec *keycloakv1beta1.PasswordGrantSpec, defaultNamespace string) (string, string, error) {
+	namespace := defaultNamespace
+	if spec.SecretRef.Namespace != nil {
+		namespace = *spec.SecretRef.Namespace
+	}
+	secret := &corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Name: spec.SecretRef.Name, Namespace: namespace}, secret); err != nil {
+		return "", "", fmt.Errorf("failed to get credentials secret: %w", err)
+	}
+
+	usernameKey := spec.SecretRef.UsernameKey
+	if usernameKey == "" {
+		usernameKey = "username"
+	}
+	passwordKey := spec.SecretRef.PasswordKey
+	if passwordKey == "" {
+		passwordKey = "password"
+	}
+
+	var username string
+	if spec.Username != nil && *spec.Username != "" {
+		username = *spec.Username
+	} else if v, ok := secret.Data[usernameKey]; ok {
+		username = string(v)
+	} else {
+		return "", "", fmt.Errorf("username key %q not found in secret", usernameKey)
+	}
+
+	password, ok := secret.Data[passwordKey]
+	if !ok {
+		return "", "", fmt.Errorf("password key %q not found in secret", passwordKey)
+	}
+	return username, string(password), nil
+}
+
+// resolveClientCredentials loads the client-credentials Secret referenced by
+// spec and returns (clientID, clientSecret). The inline ClientID takes
+// precedence over the value stored under SecretRef.ClientIdKey.
+func resolveClientCredentials(ctx context.Context, c client.Client, spec *keycloakv1beta1.ClientCredentialsSpec, defaultNamespace string) (string, string, error) {
+	namespace := defaultNamespace
+	if spec.SecretRef.Namespace != nil {
+		namespace = *spec.SecretRef.Namespace
+	}
+	secret := &corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Name: spec.SecretRef.Name, Namespace: namespace}, secret); err != nil {
+		return "", "", fmt.Errorf("failed to get client credentials secret: %w", err)
+	}
+
+	clientIdKey := spec.SecretRef.ClientIdKey
+	if clientIdKey == "" {
+		clientIdKey = "client-id"
+	}
+	clientSecretKey := spec.SecretRef.ClientSecretKey
+	if clientSecretKey == "" {
+		clientSecretKey = "client-secret"
+	}
+
+	var clientID string
+	if spec.ClientID != nil && *spec.ClientID != "" {
+		clientID = *spec.ClientID
+	} else if v, ok := secret.Data[clientIdKey]; ok {
+		clientID = string(v)
+	} else {
+		return "", "", fmt.Errorf("client id key %q not found in secret", clientIdKey)
+	}
+
+	clientSecret, ok := secret.Data[clientSecretKey]
+	if !ok {
+		return "", "", fmt.Errorf("client secret key %q not found in secret", clientSecretKey)
+	}
+	return clientID, string(clientSecret), nil
+}
+
+// resolveClusterPasswordGrant is the cluster-scoped variant of
+// resolvePasswordGrant; namespace is required on the SecretRef.
+func resolveClusterPasswordGrant(ctx context.Context, c client.Client, spec *keycloakv1beta1.ClusterPasswordGrantSpec) (string, string, error) {
+	secret := &corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Name: spec.SecretRef.Name, Namespace: spec.SecretRef.Namespace}, secret); err != nil {
+		return "", "", fmt.Errorf("failed to get credentials secret: %w", err)
+	}
+
+	usernameKey := spec.SecretRef.UsernameKey
+	if usernameKey == "" {
+		usernameKey = "username"
+	}
+	passwordKey := spec.SecretRef.PasswordKey
+	if passwordKey == "" {
+		passwordKey = "password"
+	}
+
+	var username string
+	if spec.Username != nil && *spec.Username != "" {
+		username = *spec.Username
+	} else if v, ok := secret.Data[usernameKey]; ok {
+		username = string(v)
+	} else {
+		return "", "", fmt.Errorf("username key %q not found in secret", usernameKey)
+	}
+
+	password, ok := secret.Data[passwordKey]
+	if !ok {
+		return "", "", fmt.Errorf("password key %q not found in secret", passwordKey)
+	}
+	return username, string(password), nil
+}
+
+// resolveCACert loads a PEM-encoded CA bundle from the referenced Secret or
+// ConfigMap. The CEL XValidation on CACertSource guarantees exactly one of
+// secretRef / configMapRef is set.
+func resolveCACert(ctx context.Context, c client.Client, src *keycloakv1beta1.CACertSource, defaultNamespace string) (string, error) {
+	switch {
+	case src.SecretRef != nil:
+		namespace := defaultNamespace
+		if src.SecretRef.Namespace != nil {
+			namespace = *src.SecretRef.Namespace
+		}
+		key := src.SecretRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		secret := &corev1.Secret{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.SecretRef.Name, Namespace: namespace}, secret); err != nil {
+			return "", fmt.Errorf("failed to get caCert secret: %w", err)
+		}
+		data, ok := secret.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in secret %s/%s", key, namespace, src.SecretRef.Name)
+		}
+		return string(data), nil
+	case src.ConfigMapRef != nil:
+		namespace := defaultNamespace
+		if src.ConfigMapRef.Namespace != nil {
+			namespace = *src.ConfigMapRef.Namespace
+		}
+		key := src.ConfigMapRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		cm := &corev1.ConfigMap{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.ConfigMapRef.Name, Namespace: namespace}, cm); err != nil {
+			return "", fmt.Errorf("failed to get caCert configmap: %w", err)
+		}
+		data, ok := cm.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in configmap %s/%s", key, namespace, src.ConfigMapRef.Name)
+		}
+		return data, nil
+	default:
+		return "", fmt.Errorf("caCert source must set secretRef or configMapRef")
+	}
+}
+
+// resolveClusterCACert is the cluster-scoped variant of resolveCACert.
+func resolveClusterCACert(ctx context.Context, c client.Client, src *keycloakv1beta1.ClusterCACertSource) (string, error) {
+	switch {
+	case src.SecretRef != nil:
+		key := src.SecretRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		secret := &corev1.Secret{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.SecretRef.Name, Namespace: src.SecretRef.Namespace}, secret); err != nil {
+			return "", fmt.Errorf("failed to get caCert secret: %w", err)
+		}
+		data, ok := secret.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in secret %s/%s", key, src.SecretRef.Namespace, src.SecretRef.Name)
+		}
+		return string(data), nil
+	case src.ConfigMapRef != nil:
+		key := src.ConfigMapRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		cm := &corev1.ConfigMap{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.ConfigMapRef.Name, Namespace: src.ConfigMapRef.Namespace}, cm); err != nil {
+			return "", fmt.Errorf("failed to get caCert configmap: %w", err)
+		}
+		data, ok := cm.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in configmap %s/%s", key, src.ConfigMapRef.Namespace, src.ConfigMapRef.Name)
+		}
+		return data, nil
+	default:
+		return "", fmt.Errorf("caCert source must set secretRef or configMapRef")
+	}
+}
+
+// resolveClusterClientCredentials is the cluster-scoped variant of
+// resolveClientCredentials; namespace is required on the SecretRef.
+func resolveClusterClientCredentials(ctx context.Context, c client.Client, spec *keycloakv1beta1.ClusterClientCredentialsSpec) (string, string, error) {
+	secret := &corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Name: spec.SecretRef.Name, Namespace: spec.SecretRef.Namespace}, secret); err != nil {
+		return "", "", fmt.Errorf("failed to get client credentials secret: %w", err)
+	}
+
+	clientIdKey := spec.SecretRef.ClientIdKey
+	if clientIdKey == "" {
+		clientIdKey = "client-id"
+	}
+	clientSecretKey := spec.SecretRef.ClientSecretKey
+	if clientSecretKey == "" {
+		clientSecretKey = "client-secret"
+	}
+
+	var clientID string
+	if spec.ClientID != nil && *spec.ClientID != "" {
+		clientID = *spec.ClientID
+	} else if v, ok := secret.Data[clientIdKey]; ok {
+		clientID = string(v)
+	} else {
+		return "", "", fmt.Errorf("client id key %q not found in secret", clientIdKey)
+	}
+
+	clientSecret, ok := secret.Data[clientSecretKey]
+	if !ok {
+		return "", "", fmt.Errorf("client secret key %q not found in secret", clientSecretKey)
+	}
+	return clientID, string(clientSecret), nil
 }
 
 // mergeIDIntoDefinition merges an ID field into a JSON definition

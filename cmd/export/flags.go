@@ -8,12 +8,12 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/controller"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
@@ -250,7 +250,6 @@ func (o *Options) GetKeycloakConfig(ctx context.Context, log logr.Logger) (*keyc
 }
 
 func (o *Options) loadFromInstance(ctx context.Context, k8sClient client.Client, log logr.Logger) (*keycloak.Config, error) {
-	// Get KeycloakInstance
 	instance := &keycloakv1beta1.KeycloakInstance{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{
 		Name:      o.FromInstance,
@@ -259,51 +258,14 @@ func (o *Options) loadFromInstance(ctx context.Context, k8sClient client.Client,
 		return nil, fmt.Errorf("failed to get KeycloakInstance %s/%s: %w", o.Namespace, o.FromInstance, err)
 	}
 
-	// Get credentials secret
-	secretNamespace := o.Namespace
-	if instance.Spec.Credentials.SecretRef.Namespace != nil {
-		secretNamespace = *instance.Spec.Credentials.SecretRef.Namespace
+	cfg, err := controller.GetKeycloakConfigFromInstance(ctx, k8sClient, instance)
+	if err != nil {
+		return nil, err
 	}
-
-	secret := &corev1.Secret{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
-		Name:      instance.Spec.Credentials.SecretRef.Name,
-		Namespace: secretNamespace,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("failed to get credentials secret %s/%s: %w", secretNamespace, instance.Spec.Credentials.SecretRef.Name, err)
-	}
-
-	usernameKey := "username"
-	if instance.Spec.Credentials.SecretRef.UsernameKey != "" {
-		usernameKey = instance.Spec.Credentials.SecretRef.UsernameKey
-	}
-	passwordKey := "password"
-	if instance.Spec.Credentials.SecretRef.PasswordKey != "" {
-		passwordKey = instance.Spec.Credentials.SecretRef.PasswordKey
-	}
-
-	username := string(secret.Data[usernameKey])
-	password := string(secret.Data[passwordKey])
-
-	if username == "" || password == "" {
-		return nil, fmt.Errorf("credentials secret is missing username or password")
-	}
-
-	adminRealm := "master"
-	if instance.Spec.Realm != nil {
-		adminRealm = *instance.Spec.Realm
-	}
-
-	return &keycloak.Config{
-		BaseURL:  instance.Spec.BaseUrl,
-		Realm:    adminRealm,
-		Username: username,
-		Password: password,
-	}, nil
+	return &cfg, nil
 }
 
 func (o *Options) loadFromClusterInstance(ctx context.Context, k8sClient client.Client, log logr.Logger) (*keycloak.Config, error) {
-	// Get ClusterKeycloakInstance
 	instance := &keycloakv1beta1.ClusterKeycloakInstance{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{
 		Name: o.FromClusterInstance,
@@ -311,44 +273,9 @@ func (o *Options) loadFromClusterInstance(ctx context.Context, k8sClient client.
 		return nil, fmt.Errorf("failed to get ClusterKeycloakInstance %s: %w", o.FromClusterInstance, err)
 	}
 
-	// Get credentials secret (namespace is required for cluster-scoped instances)
-	if instance.Spec.Credentials.SecretRef.Namespace == "" {
-		return nil, fmt.Errorf("ClusterKeycloakInstance %s has no namespace set for credentials secret", o.FromClusterInstance)
+	cfg, err := controller.GetKeycloakConfigFromClusterInstance(ctx, k8sClient, instance)
+	if err != nil {
+		return nil, err
 	}
-
-	secret := &corev1.Secret{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
-		Name:      instance.Spec.Credentials.SecretRef.Name,
-		Namespace: instance.Spec.Credentials.SecretRef.Namespace,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("failed to get credentials secret %s/%s: %w", instance.Spec.Credentials.SecretRef.Namespace, instance.Spec.Credentials.SecretRef.Name, err)
-	}
-
-	usernameKey := "username"
-	if instance.Spec.Credentials.SecretRef.UsernameKey != "" {
-		usernameKey = instance.Spec.Credentials.SecretRef.UsernameKey
-	}
-	passwordKey := "password"
-	if instance.Spec.Credentials.SecretRef.PasswordKey != "" {
-		passwordKey = instance.Spec.Credentials.SecretRef.PasswordKey
-	}
-
-	username := string(secret.Data[usernameKey])
-	password := string(secret.Data[passwordKey])
-
-	if username == "" || password == "" {
-		return nil, fmt.Errorf("credentials secret is missing username or password")
-	}
-
-	adminRealm := "master"
-	if instance.Spec.Realm != nil {
-		adminRealm = *instance.Spec.Realm
-	}
-
-	return &keycloak.Config{
-		BaseURL:  instance.Spec.BaseUrl,
-		Realm:    adminRealm,
-		Username: username,
-		Password: password,
-	}, nil
+	return &cfg, nil
 }

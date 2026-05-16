@@ -60,60 +60,133 @@ spec:
             type: object
           spec:
             description: |-
-              ClusterKeycloakInstanceSpec defines the desired state of ClusterKeycloakInstance
-              It mirrors KeycloakInstanceSpec but is cluster-scoped
+              ClusterKeycloakInstanceSpec defines the desired state of ClusterKeycloakInstance.
+              It mirrors KeycloakInstanceSpec but is cluster-scoped: secret references must
+              specify a namespace explicitly.
             properties:
+              auth:
+                description: |-
+                  Auth selects how the operator authenticates to Keycloak.
+                  Exactly one of auth.passwordGrant or auth.clientCredentials must be set.
+                properties:
+                  clientCredentials:
+                    description: |-
+                      ClusterClientCredentialsSpec configures OAuth2 client_credentials
+                      authentication for cluster-scoped instances.
+                    properties:
+                      clientId:
+                        description: ClientID, when set, overrides secretRef.clientIdKey.
+                        type: string
+                      secretRef:
+                        description: |-
+                          ClusterClientCredentialsSecretRefSpec references a client-credentials Secret.
+                          Namespace is required because the resource is cluster-scoped.
+                        properties:
+                          clientIdKey:
+                            default: client-id
+                            type: string
+                          clientSecretKey:
+                            default: client-secret
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                    required:
+                    - secretRef
+                    type: object
+                  passwordGrant:
+                    description: |-
+                      ClusterPasswordGrantSpec configures password-grant authentication
+                      for cluster-scoped instances.
+                    properties:
+                      secretRef:
+                        description: |-
+                          ClusterPasswordGrantSecretRefSpec references an admin-credentials Secret.
+                          Namespace is required because the resource is cluster-scoped.
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                          passwordKey:
+                            default: password
+                            type: string
+                          usernameKey:
+                            default: username
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      username:
+                        description: Username, when set, overrides secretRef.usernameKey.
+                        type: string
+                    required:
+                    - secretRef
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of auth.passwordGrant or auth.clientCredentials
+                    must be set
+                  rule: has(self.passwordGrant) != has(self.clientCredentials)
               baseUrl:
                 description: BaseUrl is the URL of the Keycloak server (e.g., http://keycloak:8080)
                 type: string
-              client:
-                description: Client contains optional service account client configuration
-                properties:
-                  id:
-                    description: ID is the client ID for service account authentication
-                    type: string
-                  secret:
-                    description: Secret is the client secret (optional for public
-                      clients)
-                    type: string
-                required:
-                - id
-                type: object
-              credentials:
-                description: Credentials contains the reference to the admin credentials
-                  secret
-                properties:
-                  secretRef:
-                    description: SecretRef contains the reference to the secret with
-                      credentials
-                    properties:
-                      name:
-                        description: Name is the name of the secret
-                        type: string
-                      namespace:
-                        description: Namespace is the namespace of the secret (required
-                          for cluster-scoped resources)
-                        type: string
-                      passwordKey:
-                        default: password
-                        description: PasswordKey is the key in the secret for the
-                          password (defaults to "password")
-                        type: string
-                      usernameKey:
-                        default: username
-                        description: UsernameKey is the key in the secret for the
-                          username (defaults to "username")
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
-                required:
-                - secretRef
-                type: object
               realm:
                 description: Realm is the admin realm (defaults to "master")
                 type: string
+              tls:
+                description: TLS configures how the operator verifies the Keycloak
+                  server certificate.
+                properties:
+                  caCert:
+                    description: |-
+                      ClusterCACertSource references a Secret or ConfigMap key containing a
+                      PEM-encoded CA bundle. Exactly one of secretRef or configMapRef must be set.
+                    properties:
+                      configMapRef:
+                        description: ClusterCACertConfigMapRefSpec is the cluster-scoped
+                          variant; namespace required.
+                        properties:
+                          key:
+                            default: ca.crt
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      secretRef:
+                        description: ClusterCACertSecretRefSpec is the cluster-scoped
+                          variant; namespace required.
+                        properties:
+                          key:
+                            default: ca.crt
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: exactly one of caCert.secretRef or caCert.configMapRef
+                        must be set
+                      rule: has(self.secretRef) != has(self.configMapRef)
+                  insecureSkipVerify:
+                    type: boolean
+                type: object
               token:
                 description: Token contains optional token caching configuration
                 properties:
@@ -130,8 +203,8 @@ spec:
                     type: string
                 type: object
             required:
+            - auth
             - baseUrl
-            - credentials
             type: object
           status:
             description: ClusterKeycloakInstanceStatus defines the observed state

@@ -18,9 +18,10 @@
      name: my-keycloak
    spec:
      baseUrl: https://keycloak.example.com
-     credentials:
-       secretRef:
-         name: keycloak-credentials
+     auth:
+       passwordGrant:
+         secretRef:
+           name: keycloak-credentials
    EOF
 
 3. Create a realm:

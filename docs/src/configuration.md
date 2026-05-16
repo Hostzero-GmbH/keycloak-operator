@@ -28,18 +28,22 @@ metadata:
 spec:
   # Base URL of the Keycloak server
   baseUrl: https://keycloak.example.com
-  
+
   # Realm to authenticate against (default: master)
   realm: master
-  
-  # Credentials for admin access
-  credentials:
-    secretRef:
-      name: keycloak-credentials
-      namespace: keycloak-operator  # Optional, defaults to resource namespace
-      usernameKey: username         # Optional, defaults to "username"
-      passwordKey: password         # Optional, defaults to "password"
+
+  # Authentication: exactly one of auth.passwordGrant or auth.clientCredentials.
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-credentials
+        namespace: keycloak-operator  # Optional, defaults to resource namespace
+        usernameKey: username         # Optional, defaults to "username"
+        passwordKey: password         # Optional, defaults to "password"
 ```
+
+See [KeycloakInstance](./crds/keycloakinstance.md) for the full auth reference,
+including the `clientCredentials` (OAuth2 service-account) variant.
 
 ## Resource References
 

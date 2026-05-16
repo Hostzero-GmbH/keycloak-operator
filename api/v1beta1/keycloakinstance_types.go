@@ -10,60 +10,151 @@ type KeycloakInstanceSpec struct {
 	// +kubebuilder:validation:Required
 	BaseUrl string `json:"baseUrl"`
 
-	// Credentials contains the reference to the admin credentials secret
+	// Auth selects how the operator authenticates to Keycloak.
+	// Exactly one of auth.passwordGrant or auth.clientCredentials must be set.
 	// +kubebuilder:validation:Required
-	Credentials CredentialsSpec `json:"credentials"`
+	Auth AuthSpec `json:"auth"`
 
 	// Realm is the admin realm (defaults to "master")
 	// +optional
 	Realm *string `json:"realm,omitempty"`
 
-	// Client contains optional service account client configuration
+	// TLS configures how the operator verifies the Keycloak server certificate.
 	// +optional
-	Client *ClientAuthSpec `json:"client,omitempty"`
+	TLS *TLSSpec `json:"tls,omitempty"`
 
 	// Token contains optional token caching configuration
 	// +optional
 	Token *TokenSpec `json:"token,omitempty"`
 }
 
-// CredentialsSpec defines admin credentials configuration
-type CredentialsSpec struct {
-	// SecretRef contains the reference to the secret with credentials
-	// +kubebuilder:validation:Required
-	SecretRef SecretRefSpec `json:"secretRef"`
+// TLSSpec configures TLS verification for the Keycloak HTTPS endpoint.
+// Setting insecureSkipVerify disables certificate validation entirely, in
+// which case caCert is ignored.
+type TLSSpec struct {
+	// CACert references a Secret or ConfigMap holding a PEM-encoded CA bundle
+	// used to verify the Keycloak server certificate.
+	// +optional
+	CACert *CACertSource `json:"caCert,omitempty"`
+
+	// InsecureSkipVerify disables TLS certificate verification. Do not enable
+	// in production.
+	// +optional
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 }
 
-// SecretRefSpec defines a reference to a secret
-type SecretRefSpec struct {
-	// Name is the name of the secret
+// CACertSource references a Secret or ConfigMap key containing a PEM-encoded
+// CA bundle. Exactly one of secretRef or configMapRef must be set.
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) != has(self.configMapRef)",message="exactly one of caCert.secretRef or caCert.configMapRef must be set"
+type CACertSource struct {
+	// +optional
+	SecretRef *CACertSecretRefSpec `json:"secretRef,omitempty"`
+
+	// +optional
+	ConfigMapRef *CACertConfigMapRefSpec `json:"configMapRef,omitempty"`
+}
+
+// CACertSecretRefSpec references a Secret key holding a PEM-encoded CA bundle.
+type CACertSecretRefSpec struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
-	// Namespace is the namespace of the secret (defaults to resource namespace)
+	// Namespace defaults to the KeycloakInstance namespace when unset.
 	// +optional
 	Namespace *string `json:"namespace,omitempty"`
 
-	// UsernameKey is the key in the secret for the username (defaults to "username")
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// CACertConfigMapRefSpec references a ConfigMap key holding a PEM-encoded CA
+// bundle (e.g. kube-root-ca.crt or a cert-manager CA bundle).
+type CACertConfigMapRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace defaults to the KeycloakInstance namespace when unset.
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// AuthSpec defines the authentication configuration for connecting to Keycloak.
+// +kubebuilder:validation:XValidation:rule="has(self.passwordGrant) != has(self.clientCredentials)",message="exactly one of auth.passwordGrant or auth.clientCredentials must be set"
+type AuthSpec struct {
+	// PasswordGrant configures resource-owner password grant authentication
+	// against a user account (typically the master-realm admin).
+	// +optional
+	PasswordGrant *PasswordGrantSpec `json:"passwordGrant,omitempty"`
+
+	// ClientCredentials configures OAuth2 client_credentials grant
+	// authentication via a confidential client / service account.
+	// +optional
+	ClientCredentials *ClientCredentialsSpec `json:"clientCredentials,omitempty"`
+}
+
+// PasswordGrantSpec configures password-grant authentication.
+type PasswordGrantSpec struct {
+	// Username, when set, overrides the value read from secretRef.usernameKey.
+	// The admin username is not a secret, so providing it inline is allowed.
+	// +optional
+	Username *string `json:"username,omitempty"`
+
+	// +kubebuilder:validation:Required
+	SecretRef PasswordGrantSecretRefSpec `json:"secretRef"`
+}
+
+// PasswordGrantSecretRefSpec references a Secret containing admin credentials.
+type PasswordGrantSecretRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace defaults to the KeycloakInstance namespace when unset.
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+
+	// UsernameKey is ignored when PasswordGrantSpec.Username is set.
 	// +kubebuilder:default="username"
 	// +optional
 	UsernameKey string `json:"usernameKey,omitempty"`
 
-	// PasswordKey is the key in the secret for the password (defaults to "password")
 	// +kubebuilder:default="password"
 	// +optional
 	PasswordKey string `json:"passwordKey,omitempty"`
 }
 
-// ClientAuthSpec defines client authentication for service accounts
-type ClientAuthSpec struct {
-	// ID is the client ID for service account authentication
-	// +kubebuilder:validation:Required
-	ID string `json:"id"`
-
-	// Secret is the client secret (optional for public clients)
+// ClientCredentialsSpec configures OAuth2 client_credentials authentication.
+type ClientCredentialsSpec struct {
+	// ClientID, when set, overrides the value read from secretRef.clientIdKey.
+	// The client ID is not a secret, so providing it inline is allowed.
 	// +optional
-	Secret *string `json:"secret,omitempty"`
+	ClientID *string `json:"clientId,omitempty"`
+
+	// +kubebuilder:validation:Required
+	SecretRef ClientCredentialsSecretRefSpec `json:"secretRef"`
+}
+
+// ClientCredentialsSecretRefSpec references a Secret containing client credentials.
+type ClientCredentialsSecretRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace defaults to the KeycloakInstance namespace when unset.
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+
+	// ClientIdKey is ignored when ClientCredentialsSpec.ClientID is set.
+	// +kubebuilder:default="client-id"
+	// +optional
+	ClientIdKey string `json:"clientIdKey,omitempty"`
+
+	// +kubebuilder:default="client-secret"
+	// +optional
+	ClientSecretKey string `json:"clientSecretKey,omitempty"`
 }
 
 // TokenSpec defines token caching configuration

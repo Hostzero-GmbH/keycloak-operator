@@ -57,9 +57,10 @@ metadata:
   namespace: keycloak-operator
 spec:
   baseUrl: https://keycloak.example.com
-  credentials:
-    secretRef:
-      name: keycloak-admin-credentials
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-admin-credentials
 ```
 
 Apply it:

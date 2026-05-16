@@ -77,9 +77,10 @@ metadata:
   name: my-keycloak
 spec:
   baseUrl: https://keycloak.example.com
-  credentials:
-    secretRef:
-      name: keycloak-credentials
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-credentials
 ```
 
 ### Create a Realm

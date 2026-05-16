@@ -54,10 +54,12 @@ func TestClusterKeycloakInstanceE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.ClusterKeycloakInstanceSpec{
 				BaseUrl: keycloakInternalURL,
-				Credentials: keycloakv1beta1.ClusterCredentialsSpec{
-					SecretRef: keycloakv1beta1.ClusterSecretRefSpec{
-						Name:      secret.Name,
-						Namespace: secretNS,
+				Auth: keycloakv1beta1.ClusterAuthSpec{
+					PasswordGrant: &keycloakv1beta1.ClusterPasswordGrantSpec{
+						SecretRef: keycloakv1beta1.ClusterPasswordGrantSecretRefSpec{
+							Name:      secret.Name,
+							Namespace: secretNS,
+						},
 					},
 				},
 			},
@@ -398,10 +400,12 @@ func getOrCreateClusterInstance(t *testing.T) string {
 		},
 		Spec: keycloakv1beta1.ClusterKeycloakInstanceSpec{
 			BaseUrl: keycloakInternalURL,
-			Credentials: keycloakv1beta1.ClusterCredentialsSpec{
-				SecretRef: keycloakv1beta1.ClusterSecretRefSpec{
-					Name:      secret.Name,
-					Namespace: testNamespace,
+			Auth: keycloakv1beta1.ClusterAuthSpec{
+				PasswordGrant: &keycloakv1beta1.ClusterPasswordGrantSpec{
+					SecretRef: keycloakv1beta1.ClusterPasswordGrantSecretRefSpec{
+						Name:      secret.Name,
+						Namespace: testNamespace,
+					},
 				},
 			},
 		},
