@@ -96,6 +96,17 @@ func GetKeycloakConfigFromInstance(ctx context.Context, c client.Client, instanc
 		return cfg, fmt.Errorf("auth.passwordGrant or auth.clientCredentials must be set")
 	}
 
+	if instance.Spec.TLS != nil {
+		cfg.InsecureSkipVerify = instance.Spec.TLS.InsecureSkipVerify
+		if instance.Spec.TLS.CACert != nil {
+			pem, err := resolveCACert(ctx, c, instance.Spec.TLS.CACert, instance.Namespace)
+			if err != nil {
+				return cfg, err
+			}
+			cfg.CACert = pem
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -127,6 +138,17 @@ func GetKeycloakConfigFromClusterInstance(ctx context.Context, c client.Client, 
 		cfg.Password = password
 	default:
 		return cfg, fmt.Errorf("auth.passwordGrant or auth.clientCredentials must be set")
+	}
+
+	if instance.Spec.TLS != nil {
+		cfg.InsecureSkipVerify = instance.Spec.TLS.InsecureSkipVerify
+		if instance.Spec.TLS.CACert != nil {
+			pem, err := resolveClusterCACert(ctx, c, instance.Spec.TLS.CACert)
+			if err != nil {
+				return cfg, err
+			}
+			cfg.CACert = pem
+		}
 	}
 
 	return cfg, nil
@@ -239,6 +261,88 @@ func resolveClusterPasswordGrant(ctx context.Context, c client.Client, spec *key
 		return "", "", fmt.Errorf("password key %q not found in secret", passwordKey)
 	}
 	return username, string(password), nil
+}
+
+// resolveCACert loads a PEM-encoded CA bundle from the referenced Secret or
+// ConfigMap. The CEL XValidation on CACertSource guarantees exactly one of
+// secretRef / configMapRef is set.
+func resolveCACert(ctx context.Context, c client.Client, src *keycloakv1beta1.CACertSource, defaultNamespace string) (string, error) {
+	switch {
+	case src.SecretRef != nil:
+		namespace := defaultNamespace
+		if src.SecretRef.Namespace != nil {
+			namespace = *src.SecretRef.Namespace
+		}
+		key := src.SecretRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		secret := &corev1.Secret{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.SecretRef.Name, Namespace: namespace}, secret); err != nil {
+			return "", fmt.Errorf("failed to get caCert secret: %w", err)
+		}
+		data, ok := secret.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in secret %s/%s", key, namespace, src.SecretRef.Name)
+		}
+		return string(data), nil
+	case src.ConfigMapRef != nil:
+		namespace := defaultNamespace
+		if src.ConfigMapRef.Namespace != nil {
+			namespace = *src.ConfigMapRef.Namespace
+		}
+		key := src.ConfigMapRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		cm := &corev1.ConfigMap{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.ConfigMapRef.Name, Namespace: namespace}, cm); err != nil {
+			return "", fmt.Errorf("failed to get caCert configmap: %w", err)
+		}
+		data, ok := cm.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in configmap %s/%s", key, namespace, src.ConfigMapRef.Name)
+		}
+		return data, nil
+	default:
+		return "", fmt.Errorf("caCert source must set secretRef or configMapRef")
+	}
+}
+
+// resolveClusterCACert is the cluster-scoped variant of resolveCACert.
+func resolveClusterCACert(ctx context.Context, c client.Client, src *keycloakv1beta1.ClusterCACertSource) (string, error) {
+	switch {
+	case src.SecretRef != nil:
+		key := src.SecretRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		secret := &corev1.Secret{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.SecretRef.Name, Namespace: src.SecretRef.Namespace}, secret); err != nil {
+			return "", fmt.Errorf("failed to get caCert secret: %w", err)
+		}
+		data, ok := secret.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in secret %s/%s", key, src.SecretRef.Namespace, src.SecretRef.Name)
+		}
+		return string(data), nil
+	case src.ConfigMapRef != nil:
+		key := src.ConfigMapRef.Key
+		if key == "" {
+			key = "ca.crt"
+		}
+		cm := &corev1.ConfigMap{}
+		if err := c.Get(ctx, types.NamespacedName{Name: src.ConfigMapRef.Name, Namespace: src.ConfigMapRef.Namespace}, cm); err != nil {
+			return "", fmt.Errorf("failed to get caCert configmap: %w", err)
+		}
+		data, ok := cm.Data[key]
+		if !ok {
+			return "", fmt.Errorf("caCert key %q not found in configmap %s/%s", key, src.ConfigMapRef.Namespace, src.ConfigMapRef.Name)
+		}
+		return data, nil
+	default:
+		return "", fmt.Errorf("caCert source must set secretRef or configMapRef")
+	}
 }
 
 // resolveClusterClientCredentials is the cluster-scoped variant of

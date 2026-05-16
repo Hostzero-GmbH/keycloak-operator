@@ -5,6 +5,8 @@ package keycloak
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -25,6 +27,9 @@ type Client struct {
 	clientID     string
 	clientSecret string
 
+	caCert             string
+	insecureSkipVerify bool
+
 	httpClient  *resty.Client
 	token       *TokenResponse
 	tokenExpiry time.Time
@@ -40,6 +45,12 @@ type Config struct {
 	Password     string
 	ClientID     string // optional, for client credentials
 	ClientSecret string // optional, for client credentials
+
+	// CACert is a PEM-encoded CA bundle used to verify the Keycloak server
+	// certificate. Ignored when InsecureSkipVerify is true.
+	CACert string
+	// InsecureSkipVerify disables TLS verification. Do not use in production.
+	InsecureSkipVerify bool
 }
 
 // TokenResponse represents an OAuth2 token response
@@ -61,16 +72,41 @@ func NewClient(cfg Config, log logr.Logger) *Client {
 		SetTimeout(30 * time.Second).
 		SetRetryCount(0) // We handle retries ourselves
 
-	return &Client{
-		baseURL:      strings.TrimSuffix(cfg.BaseURL, "/"),
-		realm:        cfg.Realm,
-		username:     cfg.Username,
-		password:     cfg.Password,
-		clientID:     cfg.ClientID,
-		clientSecret: cfg.ClientSecret,
-		httpClient:   httpClient,
-		log:          log.WithName("keycloak-client"),
+	if tlsCfg, ok := buildTLSConfig(cfg, log); ok {
+		httpClient.SetTLSClientConfig(tlsCfg)
 	}
+
+	return &Client{
+		baseURL:            strings.TrimSuffix(cfg.BaseURL, "/"),
+		realm:              cfg.Realm,
+		username:           cfg.Username,
+		password:           cfg.Password,
+		clientID:           cfg.ClientID,
+		clientSecret:       cfg.ClientSecret,
+		caCert:             cfg.CACert,
+		insecureSkipVerify: cfg.InsecureSkipVerify,
+		httpClient:         httpClient,
+		log:                log.WithName("keycloak-client"),
+	}
+}
+
+// buildTLSConfig returns a *tls.Config when the cfg requests TLS customisation,
+// or (nil, false) when the resty defaults are appropriate. An unparseable
+// CACert is logged and dropped rather than failing client construction; the
+// next HTTPS call will surface the verification error.
+func buildTLSConfig(cfg Config, log logr.Logger) (*tls.Config, bool) {
+	if cfg.InsecureSkipVerify {
+		return &tls.Config{InsecureSkipVerify: true}, true //nolint:gosec // opt-in via spec.tls.insecureSkipVerify
+	}
+	if cfg.CACert == "" {
+		return nil, false
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM([]byte(cfg.CACert)) {
+		log.WithName("keycloak-client").Info("failed to parse CACert as PEM; falling back to system roots")
+		return nil, false
+	}
+	return &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}, true
 }
 
 // getToken gets a valid token, refreshing if necessary
@@ -1903,7 +1939,9 @@ func (m *ClientManager) configChanged(client *Client, cfg Config) bool {
 		client.password != cfg.Password ||
 		client.realm != cfg.Realm ||
 		client.clientID != cfg.ClientID ||
-		client.clientSecret != cfg.ClientSecret
+		client.clientSecret != cfg.ClientSecret ||
+		client.caCert != cfg.CACert ||
+		client.insecureSkipVerify != cfg.InsecureSkipVerify
 }
 
 // RemoveClient removes a client from the manager

@@ -361,6 +361,197 @@ func TestGetKeycloakConfigFromClusterInstance_ClientCredentials(t *testing.T) {
 	}
 }
 
+const testCAPEM = "-----BEGIN CERTIFICATE-----\nfake-ca-bytes\n-----END CERTIFICATE-----\n"
+
+func mkConfigMap(name, namespace string, data map[string]string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Data:       data,
+	}
+}
+
+func TestGetKeycloakConfigFromInstance_TLS_CACertFromSecret(t *testing.T) {
+	adminSecret := mkSecret("admin", "kc", map[string]string{"username": "u", "password": "p"})
+	caSecret := mkSecret("ca", "kc", map[string]string{"ca.crt": testCAPEM})
+	instance := &keycloakv1beta1.KeycloakInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "kci", Namespace: "kc"},
+		Spec: keycloakv1beta1.KeycloakInstanceSpec{
+			BaseUrl: "https://kc",
+			Auth: keycloakv1beta1.AuthSpec{
+				PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+					SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{Name: "admin"},
+				},
+			},
+			TLS: &keycloakv1beta1.TLSSpec{
+				CACert: &keycloakv1beta1.CACertSource{
+					SecretRef: &keycloakv1beta1.CACertSecretRefSpec{Name: "ca"},
+				},
+			},
+		},
+	}
+	cfg, err := GetKeycloakConfigFromInstance(context.Background(), newAuthTestClient(t, adminSecret, caSecret, instance), instance)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CACert != testCAPEM {
+		t.Errorf("CACert: got %q want %q", cfg.CACert, testCAPEM)
+	}
+	if cfg.InsecureSkipVerify {
+		t.Error("InsecureSkipVerify should default to false")
+	}
+}
+
+func TestGetKeycloakConfigFromInstance_TLS_CACertFromConfigMap(t *testing.T) {
+	adminSecret := mkSecret("admin", "kc", map[string]string{"username": "u", "password": "p"})
+	caCM := mkConfigMap("ca", "kc", map[string]string{"ca.crt": testCAPEM})
+	instance := &keycloakv1beta1.KeycloakInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "kci", Namespace: "kc"},
+		Spec: keycloakv1beta1.KeycloakInstanceSpec{
+			Auth: keycloakv1beta1.AuthSpec{
+				PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+					SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{Name: "admin"},
+				},
+			},
+			TLS: &keycloakv1beta1.TLSSpec{
+				CACert: &keycloakv1beta1.CACertSource{
+					ConfigMapRef: &keycloakv1beta1.CACertConfigMapRefSpec{Name: "ca"},
+				},
+			},
+		},
+	}
+	cfg, err := GetKeycloakConfigFromInstance(context.Background(), newAuthTestClient(t, adminSecret, caCM, instance), instance)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CACert != testCAPEM {
+		t.Errorf("CACert: got %q want %q", cfg.CACert, testCAPEM)
+	}
+}
+
+func TestGetKeycloakConfigFromInstance_TLS_InsecureSkipVerify(t *testing.T) {
+	adminSecret := mkSecret("admin", "kc", map[string]string{"username": "u", "password": "p"})
+	instance := &keycloakv1beta1.KeycloakInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "kci", Namespace: "kc"},
+		Spec: keycloakv1beta1.KeycloakInstanceSpec{
+			Auth: keycloakv1beta1.AuthSpec{
+				PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+					SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{Name: "admin"},
+				},
+			},
+			TLS: &keycloakv1beta1.TLSSpec{InsecureSkipVerify: true},
+		},
+	}
+	cfg, err := GetKeycloakConfigFromInstance(context.Background(), newAuthTestClient(t, adminSecret, instance), instance)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.InsecureSkipVerify {
+		t.Error("InsecureSkipVerify should be true")
+	}
+}
+
+func TestGetKeycloakConfigFromInstance_TLS_CACertMissingSource(t *testing.T) {
+	adminSecret := mkSecret("admin", "kc", map[string]string{"username": "u", "password": "p"})
+	instance := &keycloakv1beta1.KeycloakInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "kci", Namespace: "kc"},
+		Spec: keycloakv1beta1.KeycloakInstanceSpec{
+			Auth: keycloakv1beta1.AuthSpec{
+				PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+					SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{Name: "admin"},
+				},
+			},
+			TLS: &keycloakv1beta1.TLSSpec{
+				CACert: &keycloakv1beta1.CACertSource{
+					SecretRef: &keycloakv1beta1.CACertSecretRefSpec{Name: "missing"},
+				},
+			},
+		},
+	}
+	_, err := GetKeycloakConfigFromInstance(context.Background(), newAuthTestClient(t, adminSecret, instance), instance)
+	if err == nil || !strings.Contains(err.Error(), "caCert secret") {
+		t.Fatalf("expected caCert secret error, got %v", err)
+	}
+}
+
+func TestGetKeycloakConfigFromInstance_TLS_CACertMissingKey(t *testing.T) {
+	adminSecret := mkSecret("admin", "kc", map[string]string{"username": "u", "password": "p"})
+	caSecret := mkSecret("ca", "kc", map[string]string{"other": testCAPEM})
+	instance := &keycloakv1beta1.KeycloakInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "kci", Namespace: "kc"},
+		Spec: keycloakv1beta1.KeycloakInstanceSpec{
+			Auth: keycloakv1beta1.AuthSpec{
+				PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+					SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{Name: "admin"},
+				},
+			},
+			TLS: &keycloakv1beta1.TLSSpec{
+				CACert: &keycloakv1beta1.CACertSource{
+					SecretRef: &keycloakv1beta1.CACertSecretRefSpec{Name: "ca"},
+				},
+			},
+		},
+	}
+	_, err := GetKeycloakConfigFromInstance(context.Background(), newAuthTestClient(t, adminSecret, caSecret, instance), instance)
+	if err == nil || !strings.Contains(err.Error(), "caCert key") {
+		t.Fatalf("expected caCert key error, got %v", err)
+	}
+}
+
+func TestGetKeycloakConfigFromClusterInstance_TLS_CACertFromConfigMap(t *testing.T) {
+	adminSecret := mkSecret("admin", "secrets", map[string]string{"username": "u", "password": "p"})
+	caCM := mkConfigMap("ca", "secrets", map[string]string{"ca.crt": testCAPEM})
+	instance := &keycloakv1beta1.ClusterKeycloakInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "ckci"},
+		Spec: keycloakv1beta1.ClusterKeycloakInstanceSpec{
+			Auth: keycloakv1beta1.ClusterAuthSpec{
+				PasswordGrant: &keycloakv1beta1.ClusterPasswordGrantSpec{
+					SecretRef: keycloakv1beta1.ClusterPasswordGrantSecretRefSpec{
+						Name: "admin", Namespace: "secrets",
+					},
+				},
+			},
+			TLS: &keycloakv1beta1.ClusterTLSSpec{
+				CACert: &keycloakv1beta1.ClusterCACertSource{
+					ConfigMapRef: &keycloakv1beta1.ClusterCACertConfigMapRefSpec{
+						Name: "ca", Namespace: "secrets",
+					},
+				},
+			},
+		},
+	}
+	cfg, err := GetKeycloakConfigFromClusterInstance(context.Background(), newAuthTestClient(t, adminSecret, caCM, instance), instance)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CACert != testCAPEM {
+		t.Errorf("CACert: got %q want %q", cfg.CACert, testCAPEM)
+	}
+}
+
+func TestGetKeycloakConfigFromClusterInstance_TLS_InsecureSkipVerify(t *testing.T) {
+	adminSecret := mkSecret("admin", "secrets", map[string]string{"username": "u", "password": "p"})
+	instance := &keycloakv1beta1.ClusterKeycloakInstance{
+		ObjectMeta: metav1.ObjectMeta{Name: "ckci"},
+		Spec: keycloakv1beta1.ClusterKeycloakInstanceSpec{
+			Auth: keycloakv1beta1.ClusterAuthSpec{
+				PasswordGrant: &keycloakv1beta1.ClusterPasswordGrantSpec{
+					SecretRef: keycloakv1beta1.ClusterPasswordGrantSecretRefSpec{
+						Name: "admin", Namespace: "secrets",
+					},
+				},
+			},
+			TLS: &keycloakv1beta1.ClusterTLSSpec{InsecureSkipVerify: true},
+		},
+	}
+	cfg, err := GetKeycloakConfigFromClusterInstance(context.Background(), newAuthTestClient(t, adminSecret, instance), instance)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.InsecureSkipVerify {
+		t.Error("InsecureSkipVerify should be true")
+	}
+}
+
 func TestGetKeycloakConfigFromClusterInstance_ClientCredentials_InlineIDOverrides(t *testing.T) {
 	secret := mkSecret("svc", "secrets", map[string]string{"client-secret": "topsecret"})
 	instance := &keycloakv1beta1.ClusterKeycloakInstance{

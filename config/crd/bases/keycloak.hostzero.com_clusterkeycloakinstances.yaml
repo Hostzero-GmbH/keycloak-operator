@@ -140,6 +140,53 @@ spec:
               realm:
                 description: Realm is the admin realm (defaults to "master")
                 type: string
+              tls:
+                description: TLS configures how the operator verifies the Keycloak
+                  server certificate.
+                properties:
+                  caCert:
+                    description: |-
+                      ClusterCACertSource references a Secret or ConfigMap key containing a
+                      PEM-encoded CA bundle. Exactly one of secretRef or configMapRef must be set.
+                    properties:
+                      configMapRef:
+                        description: ClusterCACertConfigMapRefSpec is the cluster-scoped
+                          variant; namespace required.
+                        properties:
+                          key:
+                            default: ca.crt
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      secretRef:
+                        description: ClusterCACertSecretRefSpec is the cluster-scoped
+                          variant; namespace required.
+                        properties:
+                          key:
+                            default: ca.crt
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: exactly one of caCert.secretRef or caCert.configMapRef
+                        must be set
+                      rule: has(self.secretRef) != has(self.configMapRef)
+                  insecureSkipVerify:
+                    type: boolean
+                type: object
               token:
                 description: Token contains optional token caching configuration
                 properties:

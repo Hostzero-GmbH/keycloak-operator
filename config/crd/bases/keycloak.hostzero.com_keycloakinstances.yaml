@@ -144,6 +144,59 @@ spec:
               realm:
                 description: Realm is the admin realm (defaults to "master")
                 type: string
+              tls:
+                description: TLS configures how the operator verifies the Keycloak
+                  server certificate.
+                properties:
+                  caCert:
+                    description: |-
+                      CACert references a Secret or ConfigMap holding a PEM-encoded CA bundle
+                      used to verify the Keycloak server certificate.
+                    properties:
+                      configMapRef:
+                        description: |-
+                          CACertConfigMapRefSpec references a ConfigMap key holding a PEM-encoded CA
+                          bundle (e.g. kube-root-ca.crt or a cert-manager CA bundle).
+                        properties:
+                          key:
+                            default: ca.crt
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            description: Namespace defaults to the KeycloakInstance
+                              namespace when unset.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      secretRef:
+                        description: CACertSecretRefSpec references a Secret key holding
+                          a PEM-encoded CA bundle.
+                        properties:
+                          key:
+                            default: ca.crt
+                            type: string
+                          name:
+                            type: string
+                          namespace:
+                            description: Namespace defaults to the KeycloakInstance
+                              namespace when unset.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: exactly one of caCert.secretRef or caCert.configMapRef
+                        must be set
+                      rule: has(self.secretRef) != has(self.configMapRef)
+                  insecureSkipVerify:
+                    description: |-
+                      InsecureSkipVerify disables TLS certificate verification. Do not enable
+                      in production.
+                    type: boolean
+                type: object
               token:
                 description: Token contains optional token caching configuration
                 properties:

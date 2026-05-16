@@ -23,3 +23,21 @@ spec:
     clientCredentials:
       secretRef:
         name: keycloak-operator-client
+---
+# Sample KeycloakInstance against an HTTPS Keycloak with a custom CA bundle.
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakInstance
+metadata:
+  name: keycloak-instance-tls
+  namespace: default
+spec:
+  baseUrl: https://keycloak.example.com
+  auth:
+    passwordGrant:
+      secretRef:
+        name: keycloak-admin
+  tls:
+    caCert:
+      configMapRef:
+        name: keycloak-ca
+        # key defaults to "ca.crt"

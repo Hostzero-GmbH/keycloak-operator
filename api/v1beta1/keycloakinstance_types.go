@@ -19,9 +19,68 @@ type KeycloakInstanceSpec struct {
 	// +optional
 	Realm *string `json:"realm,omitempty"`
 
+	// TLS configures how the operator verifies the Keycloak server certificate.
+	// +optional
+	TLS *TLSSpec `json:"tls,omitempty"`
+
 	// Token contains optional token caching configuration
 	// +optional
 	Token *TokenSpec `json:"token,omitempty"`
+}
+
+// TLSSpec configures TLS verification for the Keycloak HTTPS endpoint.
+// Setting insecureSkipVerify disables certificate validation entirely, in
+// which case caCert is ignored.
+type TLSSpec struct {
+	// CACert references a Secret or ConfigMap holding a PEM-encoded CA bundle
+	// used to verify the Keycloak server certificate.
+	// +optional
+	CACert *CACertSource `json:"caCert,omitempty"`
+
+	// InsecureSkipVerify disables TLS certificate verification. Do not enable
+	// in production.
+	// +optional
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+}
+
+// CACertSource references a Secret or ConfigMap key containing a PEM-encoded
+// CA bundle. Exactly one of secretRef or configMapRef must be set.
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) != has(self.configMapRef)",message="exactly one of caCert.secretRef or caCert.configMapRef must be set"
+type CACertSource struct {
+	// +optional
+	SecretRef *CACertSecretRefSpec `json:"secretRef,omitempty"`
+
+	// +optional
+	ConfigMapRef *CACertConfigMapRefSpec `json:"configMapRef,omitempty"`
+}
+
+// CACertSecretRefSpec references a Secret key holding a PEM-encoded CA bundle.
+type CACertSecretRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace defaults to the KeycloakInstance namespace when unset.
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// CACertConfigMapRefSpec references a ConfigMap key holding a PEM-encoded CA
+// bundle (e.g. kube-root-ca.crt or a cert-manager CA bundle).
+type CACertConfigMapRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Namespace defaults to the KeycloakInstance namespace when unset.
+	// +optional
+	Namespace *string `json:"namespace,omitempty"`
+
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
 }
 
 // AuthSpec defines the authentication configuration for connecting to Keycloak.

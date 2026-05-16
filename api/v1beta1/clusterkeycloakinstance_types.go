@@ -21,9 +21,60 @@ type ClusterKeycloakInstanceSpec struct {
 	// +optional
 	Realm *string `json:"realm,omitempty"`
 
+	// TLS configures how the operator verifies the Keycloak server certificate.
+	// +optional
+	TLS *ClusterTLSSpec `json:"tls,omitempty"`
+
 	// Token contains optional token caching configuration
 	// +optional
 	Token *TokenSpec `json:"token,omitempty"`
+}
+
+// ClusterTLSSpec is the cluster-scoped equivalent of TLSSpec; namespace is
+// required on all references.
+type ClusterTLSSpec struct {
+	// +optional
+	CACert *ClusterCACertSource `json:"caCert,omitempty"`
+
+	// +optional
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+}
+
+// ClusterCACertSource references a Secret or ConfigMap key containing a
+// PEM-encoded CA bundle. Exactly one of secretRef or configMapRef must be set.
+// +kubebuilder:validation:XValidation:rule="has(self.secretRef) != has(self.configMapRef)",message="exactly one of caCert.secretRef or caCert.configMapRef must be set"
+type ClusterCACertSource struct {
+	// +optional
+	SecretRef *ClusterCACertSecretRefSpec `json:"secretRef,omitempty"`
+
+	// +optional
+	ConfigMapRef *ClusterCACertConfigMapRefSpec `json:"configMapRef,omitempty"`
+}
+
+// ClusterCACertSecretRefSpec is the cluster-scoped variant; namespace required.
+type ClusterCACertSecretRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
+
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
+}
+
+// ClusterCACertConfigMapRefSpec is the cluster-scoped variant; namespace required.
+type ClusterCACertConfigMapRefSpec struct {
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
+
+	// +kubebuilder:default="ca.crt"
+	// +optional
+	Key string `json:"key,omitempty"`
 }
 
 // ClusterAuthSpec is the cluster-scoped equivalent of AuthSpec.

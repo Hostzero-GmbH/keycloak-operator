@@ -39,12 +39,40 @@ spec:
         clientIdKey: client-id
         clientSecretKey: client-secret
 
+  # Optional: TLS verification for the Keycloak HTTPS endpoint
+  tls:
+    # Reference a PEM-encoded CA bundle from a Secret or ConfigMap
+    caCert:
+      # Use either secretRef OR configMapRef (mutually exclusive)
+      secretRef:
+        name: keycloak-ca
+        # Optional: defaults to the KeycloakInstance namespace
+        namespace: keycloak-operator
+        # Optional: key inside the secret (default: ca.crt)
+        key: ca.crt
+      # configMapRef:
+      #   name: keycloak-ca
+      #   key: ca.crt
+    # Disable TLS verification entirely. Do not use in production.
+    insecureSkipVerify: false
+
   # Optional: token caching configuration
   token:
     secretName: keycloak-token-cache
     tokenKey: token
     expiresKey: expires
 ```
+
+## TLS
+
+`spec.tls` is optional. When omitted, the operator uses the system CA pool to
+verify the Keycloak server certificate.
+
+- `tls.caCert` references a PEM-encoded CA bundle from either a `Secret` or a
+  `ConfigMap`. Exactly one of `secretRef` / `configMapRef` may be set; setting
+  both is rejected by admission. The default key is `ca.crt`.
+- `tls.insecureSkipVerify: true` disables certificate verification. When set,
+  `caCert` is ignored.
 
 ## Authentication
 

@@ -48,6 +48,25 @@ always live in a Secret; `username` / `clientId` may be inlined.
 The only difference: `secretRef.namespace` is **required** because the resource
 is cluster-scoped.
 
+## TLS
+
+`spec.tls` mirrors the namespaced `KeycloakInstance.spec.tls` shape, with one
+difference: every `namespace` field is **required**.
+
+```yaml
+spec:
+  tls:
+    caCert:
+      configMapRef:
+        name: keycloak-ca
+        namespace: keycloak-system
+        # key defaults to "ca.crt"
+    # insecureSkipVerify: true  # disables verification, ignores caCert
+```
+
+Exactly one of `caCert.secretRef` / `caCert.configMapRef` may be set; setting
+both is rejected by admission.
+
 ## Spec
 
 | Field | Type | Description | Required |
@@ -65,6 +84,8 @@ is cluster-scoped.
 | `auth.clientCredentials.secretRef.clientIdKey` | string | Secret key for the client id | No (default `client-id`) |
 | `auth.clientCredentials.secretRef.clientSecretKey` | string | Secret key for the client secret | No (default `client-secret`) |
 | `realm` | string | Admin realm name | No (default `master`) |
+| `tls.caCert.secretRef` / `tls.caCert.configMapRef` | object | PEM-encoded CA bundle source (exactly one) | No |
+| `tls.insecureSkipVerify` | bool | Disable TLS verification (overrides `caCert`) | No (default `false`) |
 | `token.*` | object | Token cache configuration | No |
 
 ## Comparison with KeycloakInstance
