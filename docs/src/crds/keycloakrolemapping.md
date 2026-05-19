@@ -125,21 +125,42 @@ spec:
 
 **Using `roleRef`:**
 1. The operator looks up the referenced `KeycloakRole` resource
-2. It retrieves the Keycloak role ID from the role's status
-3. This is the recommended approach for roles managed by the operator
+2. It reads `status.roleName` from that resource (which may differ from the CR name)
+3. If the referenced `KeycloakRole` has its own `spec.clientRef`, the mapping is automatically scoped to that client and the client's UUID is resolved from the `KeycloakClient`'s status
+4. The referenced role (and the client it points at, if any) must be Ready; otherwise the mapping requeues
+5. This is the recommended approach for roles managed by the operator
 
 **Using `role.name`:**
 1. The operator queries Keycloak for a role with the given name
 2. This is useful for built-in roles like `offline_access`
 
+### Cross-Namespace References
+
+`subject.userRef`, `subject.groupRef`, `roleRef`, and `role.clientRef` all accept an optional `namespace` field. When set, the operator resolves the reference in that namespace instead of the mapping's own namespace. The same applies to the `clientRef` on a referenced `KeycloakRole`, so the role, its client, and the subject may each live in different namespaces.
+
+```yaml
+spec:
+  subject:
+    userRef:
+      name: my-user
+      namespace: users
+  roleRef:
+    name: my-role
+    namespace: roles
+```
+
 ### Mapping Types
 
-| Subject | Role Type | Result |
-|---------|-----------|--------|
-| userRef | realm role (no clientRef) | User realm role mapping |
-| userRef | client role (role.clientRef set) | User client role mapping |
-| groupRef | realm role (no clientRef) | Group realm role mapping |
-| groupRef | client role (role.clientRef set) | Group client role mapping |
+| Subject | Role source | Result |
+|---------|-------------|--------|
+| userRef | inline `role` without `clientRef`/`clientId` | User realm role mapping |
+| userRef | inline `role` with `clientRef` or `clientId` | User client role mapping |
+| userRef | `roleRef` to a `KeycloakRole` without `clientRef` | User realm role mapping |
+| userRef | `roleRef` to a `KeycloakRole` with `clientRef` | User client role mapping |
+| groupRef | inline `role` without `clientRef`/`clientId` | Group realm role mapping |
+| groupRef | inline `role` with `clientRef` or `clientId` | Group client role mapping |
+| groupRef | `roleRef` to a `KeycloakRole` without `clientRef` | Group realm role mapping |
+| groupRef | `roleRef` to a `KeycloakRole` with `clientRef` | Group client role mapping |
 
 ### Cleanup
 
