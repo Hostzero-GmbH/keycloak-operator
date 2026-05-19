@@ -260,8 +260,32 @@ func (r *KeycloakRoleMappingReconciler) resolveRole(ctx context.Context, mapping
 		return roleName, "realm", "", nil
 	}
 
-	// RoleRef - not implemented yet, would need a KeycloakRole CRD
-	return "", "", "", fmt.Errorf("roleRef not yet supported")
+	role, err := r.getRole(ctx, mapping)
+	if err != nil {
+		return "", "", "", err
+	}
+	if !role.Status.Ready || role.Status.RoleName == "" {
+		return "", "", "", fmt.Errorf("role %s is not ready", role.Name)
+	}
+
+	roleName := role.Status.RoleName
+
+	if role.Spec.ClientRef != nil {
+		namespace := role.Namespace
+		if role.Spec.ClientRef.Namespace != nil {
+			namespace = *role.Spec.ClientRef.Namespace
+		}
+		client := &keycloakv1beta1.KeycloakClient{}
+		if err := r.Get(ctx, types.NamespacedName{Name: role.Spec.ClientRef.Name, Namespace: namespace}, client); err != nil {
+			return roleName, "client", "", fmt.Errorf("failed to get client %s/%s: %w", namespace, role.Spec.ClientRef.Name, err)
+		}
+		if !client.Status.Ready || client.Status.ClientUUID == "" {
+			return roleName, "client", "", fmt.Errorf("client %s is not ready", client.Name)
+		}
+		return roleName, "client", client.Status.ClientUUID, nil
+	}
+
+	return roleName, "realm", "", nil
 }
 
 func (r *KeycloakRoleMappingReconciler) getUser(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping) (*keycloakv1beta1.KeycloakUser, error) {
@@ -290,6 +314,20 @@ func (r *KeycloakRoleMappingReconciler) getGroup(ctx context.Context, mapping *k
 		return nil, fmt.Errorf("failed to get group %s/%s: %w", namespace, ref.Name, err)
 	}
 	return group, nil
+}
+
+func (r *KeycloakRoleMappingReconciler) getRole(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping) (*keycloakv1beta1.KeycloakRole, error) {
+	ref := mapping.Spec.RoleRef
+	namespace := mapping.Namespace
+	if ref.Namespace != nil {
+		namespace = *ref.Namespace
+	}
+
+	role := &keycloakv1beta1.KeycloakRole{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, role); err != nil {
+		return nil, fmt.Errorf("failed to get role %s/%s: %w", namespace, ref.Name, err)
+	}
+	return role, nil
 }
 
 func (r *KeycloakRoleMappingReconciler) getClient(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping, ref *keycloakv1beta1.ResourceRef) (*keycloakv1beta1.KeycloakClient, error) {
