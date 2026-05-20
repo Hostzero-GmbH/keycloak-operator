@@ -1,3 +1,9 @@
+# Sample KeycloakIdentityProvider manifests:
+# 1. Google IdP with sensitive config in a Secret (configSecretRef).
+# 2. Plain OIDC identity provider.
+# 3. Token-Exchange "trusted issuer": only listed clients may exchange a token
+#    using this IdP as subject_issuer (RFC 8693).
+---
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakIdentityProvider
 metadata:
@@ -17,3 +23,66 @@ spec:
     addReadTokenRoleOnCreate: false
     config:
       syncMode: IMPORT
+---
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakIdentityProvider
+metadata:
+  name: example-oidc-idp
+  namespace: default
+spec:
+  realmRef:
+    name: example-realm
+  definition:
+    alias: example-oidc-idp
+    displayName: "Example OIDC Provider"
+    providerId: oidc
+    enabled: true
+    trustEmail: false
+    storeToken: false
+    firstBrokerLoginFlowAlias: "first broker login"
+    config:
+      clientId: "client-id-at-upstream"
+      clientSecret: "client-secret-at-upstream"
+      authorizationUrl: "https://idp.example.com/oauth/authorize"
+      tokenUrl: "https://idp.example.com/oauth/token"
+      userInfoUrl: "https://idp.example.com/oauth/userinfo"
+      defaultScope: "openid profile email"
+---
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakIdentityProvider
+metadata:
+  name: example-trusted-issuer
+  namespace: default
+spec:
+  realmRef:
+    name: example-realm
+  definition:
+    alias: example-trusted-issuer
+    displayName: "External JWT Issuer"
+    providerId: oidc
+    enabled: true
+    storeToken: false
+    trustEmail: false
+    firstBrokerLoginFlowAlias: "first broker login"
+    config:
+      issuer: "https://issuer.example.com"
+      jwksUrl: "https://issuer.example.com/.well-known/jwks.json"
+      useJwksUrl: "true"
+      validateSignature: "true"
+      # Hidden from the login page — this IdP is only used as a Token Exchange
+      # subject_issuer, not for browser-driven SSO.
+      hideOnLoginPage: "true"
+      # Dummy values: never invoked because hideOnLoginPage=true and Keycloak
+      # only validates inbound JWTs as subject_token.
+      clientAuthMethod: "client_secret_post"
+      clientId: "unused"
+      clientSecret: "unused"
+      authorizationUrl: "https://issuer.example.com/oauth/authorize"
+      tokenUrl: "https://issuer.example.com/oauth/token"
+  # Restrict who may exchange tokens with this IdP as subject_issuer. The
+  # operator enables fine-grained-authz on the IdP and binds a Client-type
+  # policy listing exactly these clients (other clients trying TE → 403).
+  tokenExchange:
+    allowedClients:
+      - example-backend-client
+      - example-app-client
