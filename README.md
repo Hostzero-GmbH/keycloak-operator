@@ -16,6 +16,7 @@ A Kubernetes operator for managing Keycloak resources declaratively. It uses the
 - Full Keycloak API support via `definition` fields
 - Automatic client secret synchronization to Kubernetes Secrets
 - Hierarchical resource management (Instance → Realm → Clients/Users)
+- GitOps-friendly: optionally keep Keycloak objects when CRs are deleted — see [Preserving resources on deletion](https://keycloak-operator.hostzero.com/crds.html#preserving-resources-on-deletion)
 - Helm chart for easy deployment
 - High availability with leader election
 
