@@ -183,13 +183,9 @@ func (r *KeycloakProtocolMapperReconciler) getKeycloakClientAndParent(ctx contex
 }
 
 func (r *KeycloakProtocolMapperReconciler) getFromClient(ctx context.Context, mapper *keycloakv1beta1.KeycloakProtocolMapper) (*keycloak.Client, string, string, string, error) {
-	clientNamespace := mapper.Namespace
-	if mapper.Spec.ClientRef.Namespace != nil {
-		clientNamespace = *mapper.Spec.ClientRef.Namespace
-	}
 	clientName := types.NamespacedName{
 		Name:      mapper.Spec.ClientRef.Name,
-		Namespace: clientNamespace,
+		Namespace: mapper.Namespace,
 	}
 
 	kcClient := &keycloakv1beta1.KeycloakClient{}
@@ -215,13 +211,9 @@ func (r *KeycloakProtocolMapperReconciler) getFromClient(ctx context.Context, ma
 }
 
 func (r *KeycloakProtocolMapperReconciler) getFromClientScope(ctx context.Context, mapper *keycloakv1beta1.KeycloakProtocolMapper) (*keycloak.Client, string, string, string, error) {
-	scopeNamespace := mapper.Namespace
-	if mapper.Spec.ClientScopeRef.Namespace != nil {
-		scopeNamespace = *mapper.Spec.ClientScopeRef.Namespace
-	}
 	scopeName := types.NamespacedName{
 		Name:      mapper.Spec.ClientScopeRef.Name,
-		Namespace: scopeNamespace,
+		Namespace: mapper.Namespace,
 	}
 
 	scope := &keycloakv1beta1.KeycloakClientScope{}
@@ -259,13 +251,9 @@ func (r *KeycloakProtocolMapperReconciler) getKeycloakClientAndRealmFromClient(c
 		return nil, "", fmt.Errorf("client has no realmRef or clusterRealmRef")
 	}
 
-	realmNamespace := kcClient.Namespace
-	if kcClient.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *kcClient.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      kcClient.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: kcClient.Namespace,
 	}
 
 	realm := &keycloakv1beta1.KeycloakRealm{}
@@ -303,13 +291,9 @@ func (r *KeycloakProtocolMapperReconciler) getKeycloakClientAndRealmFromScope(ct
 		return nil, "", fmt.Errorf("scope has no realmRef or clusterRealmRef")
 	}
 
-	realmNamespace := scope.Namespace
-	if scope.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *scope.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      scope.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: scope.Namespace,
 	}
 
 	realm := &keycloakv1beta1.KeycloakRealm{}

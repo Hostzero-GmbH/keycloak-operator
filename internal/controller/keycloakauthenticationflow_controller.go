@@ -855,13 +855,9 @@ func (r *KeycloakAuthenticationFlowReconciler) getKeycloakClientAndRealm(ctx con
 		return nil, "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
 	}
 
-	realmNamespace := flow.Namespace
-	if flow.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *flow.Spec.RealmRef.Namespace
-	}
 	realmKey := types.NamespacedName{
 		Name:      flow.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: flow.Namespace,
 	}
 
 	realm := &keycloakv1beta1.KeycloakRealm{}
@@ -885,13 +881,9 @@ func (r *KeycloakAuthenticationFlowReconciler) getKeycloakClientAndRealm(ctx con
 		return nil, "", fmt.Errorf("realm %s has no instanceRef", realmKey)
 	}
 
-	instanceNamespace := realm.Namespace
-	if realm.Spec.InstanceRef.Namespace != nil {
-		instanceNamespace = *realm.Spec.InstanceRef.Namespace
-	}
 	instanceKey := types.NamespacedName{
 		Name:      realm.Spec.InstanceRef.Name,
-		Namespace: instanceNamespace,
+		Namespace: realm.Namespace,
 	}
 
 	instance := &keycloakv1beta1.KeycloakInstance{}

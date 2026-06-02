@@ -172,7 +172,7 @@ func TestParentDeletionWithChildren(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",
 					"enabled": true

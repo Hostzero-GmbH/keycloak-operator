@@ -134,21 +134,6 @@ spec:
 1. The operator queries Keycloak for a role with the given name
 2. This is useful for built-in roles like `offline_access`
 
-### Cross-Namespace References
-
-`subject.userRef`, `subject.groupRef`, `roleRef`, and `role.clientRef` all accept an optional `namespace` field. When set, the operator resolves the reference in that namespace instead of the mapping's own namespace. The same applies to the `clientRef` on a referenced `KeycloakRole`, so the role, its client, and the subject may each live in different namespaces.
-
-```yaml
-spec:
-  subject:
-    userRef:
-      name: my-user
-      namespace: users
-  roleRef:
-    name: my-role
-    namespace: roles
-```
-
 ### Mapping Types
 
 | Subject | Role source | Result |

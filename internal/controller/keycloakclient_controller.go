@@ -242,15 +242,11 @@ func (r *KeycloakClientReconciler) getKeycloakClientAndRealm(ctx context.Context
 	}
 
 	// Get the realm reference
-	realmNamespace := kcClient.Namespace
-	if kcClient.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *kcClient.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      kcClient.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: kcClient.Namespace,
 	}
-	realmRef.RealmRef = fmt.Sprintf("%s/%s", realmNamespace, kcClient.Spec.RealmRef.Name)
+	realmRef.RealmRef = fmt.Sprintf("%s/%s", kcClient.Namespace, kcClient.Spec.RealmRef.Name)
 
 	// Get the KeycloakRealm
 	realm := &keycloakv1beta1.KeycloakRealm{}

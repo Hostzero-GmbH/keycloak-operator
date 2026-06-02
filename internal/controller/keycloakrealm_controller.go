@@ -221,17 +221,13 @@ func (r *KeycloakRealmReconciler) getKeycloakClient(ctx context.Context, realm *
 	}
 
 	if realm.Spec.InstanceRef != nil {
-		instanceNamespace := realm.Namespace
-		if realm.Spec.InstanceRef.Namespace != nil {
-			instanceNamespace = *realm.Spec.InstanceRef.Namespace
-		}
 		instanceName := types.NamespacedName{
 			Name:      realm.Spec.InstanceRef.Name,
-			Namespace: instanceNamespace,
+			Namespace: realm.Namespace,
 		}
 
 		instanceRef := &keycloakv1beta1.InstanceRef{
-			InstanceRef: fmt.Sprintf("%s/%s", instanceNamespace, realm.Spec.InstanceRef.Name),
+			InstanceRef: fmt.Sprintf("%s/%s", realm.Namespace, realm.Spec.InstanceRef.Name),
 		}
 
 		instance := &keycloakv1beta1.KeycloakInstance{}
@@ -422,14 +418,10 @@ func (r *KeycloakRealmReconciler) findRealmsForAuthenticationFlow(ctx context.Co
 	if !ok || flow.Spec.RealmRef == nil {
 		return nil
 	}
-	ns := flow.Namespace
-	if flow.Spec.RealmRef.Namespace != nil {
-		ns = *flow.Spec.RealmRef.Namespace
-	}
 	return []reconcile.Request{{
 		NamespacedName: types.NamespacedName{
 			Name:      flow.Spec.RealmRef.Name,
-			Namespace: ns,
+			Namespace: flow.Namespace,
 		},
 	}}
 }

@@ -183,13 +183,9 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealm(ctx context.Context, 
 	}
 
 	// Get the realm reference
-	realmNamespace := user.Namespace
-	if user.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *user.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      user.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: user.Namespace,
 	}
 
 	// Get the KeycloakRealm
@@ -368,13 +364,9 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealmFromClient(ctx context
 	}
 
 	// Get the KeycloakClient
-	clientNamespace := user.Namespace
-	if user.Spec.ClientRef.Namespace != nil {
-		clientNamespace = *user.Spec.ClientRef.Namespace
-	}
 	clientName := types.NamespacedName{
 		Name:      user.Spec.ClientRef.Name,
-		Namespace: clientNamespace,
+		Namespace: user.Namespace,
 	}
 
 	kcClient := &keycloakv1beta1.KeycloakClient{}
@@ -399,13 +391,9 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealmFromClient(ctx context
 		kc, realmName, err = r.getKeycloakClientFromClusterRealm(ctx, kcClient.Spec.ClusterRealmRef.Name)
 	} else if kcClient.Spec.RealmRef != nil {
 		// Get the realm
-		realmNamespace := kcClient.Namespace
-		if kcClient.Spec.RealmRef.Namespace != nil {
-			realmNamespace = *kcClient.Spec.RealmRef.Namespace
-		}
 		realmKey := types.NamespacedName{
 			Name:      kcClient.Spec.RealmRef.Name,
-			Namespace: realmNamespace,
+			Namespace: kcClient.Namespace,
 		}
 
 		realm := &keycloakv1beta1.KeycloakRealm{}

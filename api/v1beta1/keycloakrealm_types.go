@@ -5,15 +5,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// ResourceRef is a reference to another resource
+// ResourceRef is a reference to another resource in the same namespace.
 type ResourceRef struct {
 	// Name of the resource
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-
-	// Namespace of the resource (optional, defaults to the same namespace)
-	// +optional
-	Namespace *string `json:"namespace,omitempty"`
 }
 
 // ClusterResourceRef is a reference to a cluster-scoped resource

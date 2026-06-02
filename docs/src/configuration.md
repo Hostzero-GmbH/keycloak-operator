@@ -47,20 +47,22 @@ including the `clientCredentials` (OAuth2 service-account) variant.
 
 ## Resource References
 
-Resources reference their parent using `*Ref` fields:
+Resources reference their parent using `*Ref` fields. All namespaced references
+are **same-namespace only** - every `*Ref` field resolves in the referring
+resource's own namespace. For cross-namespace sharing, use the cluster-scoped
+`ClusterKeycloakRealm` / `ClusterKeycloakInstance` (via `clusterRealmRef` /
+`clusterInstanceRef`).
 
 ```yaml
-# Realm references an Instance
+# Realm references an Instance (same namespace)
 spec:
   instanceRef:
     name: my-keycloak
-    namespace: default  # Optional
 
-# Client references a Realm
+# Client references a Realm (same namespace)
 spec:
   realmRef:
     name: my-realm
-    namespace: default  # Optional
 ```
 
 ## See Also

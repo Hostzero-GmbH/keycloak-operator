@@ -190,7 +190,7 @@ func TestDriftSkip(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef:   &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef:   &keycloakv1beta1.ResourceRef{Name: instanceName},
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{Name: smtpSecret.Name},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",

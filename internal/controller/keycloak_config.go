@@ -458,13 +458,9 @@ func GetKeycloakClientFromRealmInstance(ctx context.Context, c client.Client, cl
 	}
 
 	if realm.Spec.InstanceRef != nil {
-		instanceNamespace := realm.Namespace
-		if realm.Spec.InstanceRef.Namespace != nil {
-			instanceNamespace = *realm.Spec.InstanceRef.Namespace
-		}
 		instanceName := types.NamespacedName{
 			Name:      realm.Spec.InstanceRef.Name,
-			Namespace: instanceNamespace,
+			Namespace: realm.Namespace,
 		}
 		instance := &keycloakv1beta1.KeycloakInstance{}
 		if err := c.Get(ctx, instanceName, instance); err != nil {
@@ -579,13 +575,9 @@ func GetKeycloakClientAndRealmForIDP(ctx context.Context, c client.Client, clien
 		return nil, "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
 	}
 
-	realmNamespace := idp.Namespace
-	if idp.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *idp.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      idp.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: idp.Namespace,
 	}
 
 	realm := &keycloakv1beta1.KeycloakRealm{}

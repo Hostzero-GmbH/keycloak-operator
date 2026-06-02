@@ -109,13 +109,9 @@ func (r *KeycloakGroupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	var parentGroupID string
 	if group.Spec.ParentGroupRef != nil {
 		parentGroup := &keycloakv1beta1.KeycloakGroup{}
-		parentNamespace := group.Namespace
-		if group.Spec.ParentGroupRef.Namespace != nil {
-			parentNamespace = *group.Spec.ParentGroupRef.Namespace
-		}
 		parentName := types.NamespacedName{
 			Name:      group.Spec.ParentGroupRef.Name,
-			Namespace: parentNamespace,
+			Namespace: group.Namespace,
 		}
 		if err := r.Get(ctx, parentName, parentGroup); err != nil {
 			return r.updateStatus(ctx, group, false, "ParentNotReady", fmt.Sprintf("Failed to get parent group: %v", err), "")
@@ -210,13 +206,9 @@ func (r *KeycloakGroupReconciler) getKeycloakClientAndRealm(ctx context.Context,
 		return nil, "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
 	}
 
-	realmNamespace := group.Namespace
-	if group.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *group.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      group.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: group.Namespace,
 	}
 
 	// Get the KeycloakRealm

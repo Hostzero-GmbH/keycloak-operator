@@ -308,13 +308,9 @@ func (r *KeycloakRoleReconciler) getKeycloakClientAndRealm(ctx context.Context, 
 		return nil, "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
 	}
 
-	realmNamespace := role.Namespace
-	if role.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *role.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      role.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: role.Namespace,
 	}
 
 	// Get the KeycloakRealm
@@ -426,13 +422,9 @@ func (r *KeycloakRoleReconciler) getClientUUID(ctx context.Context, role *keyclo
 		return "", fmt.Errorf("clientRef is required for client roles")
 	}
 
-	clientNamespace := role.Namespace
-	if role.Spec.ClientRef.Namespace != nil {
-		clientNamespace = *role.Spec.ClientRef.Namespace
-	}
 	clientName := types.NamespacedName{
 		Name:      role.Spec.ClientRef.Name,
-		Namespace: clientNamespace,
+		Namespace: role.Namespace,
 	}
 
 	kcClient := &keycloakv1beta1.KeycloakClient{}

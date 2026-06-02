@@ -165,17 +165,12 @@ func (r *KeycloakUserCredentialReconciler) Reconcile(ctx context.Context, req ct
 }
 
 func (r *KeycloakUserCredentialReconciler) getReferencedUser(ctx context.Context, cred *keycloakv1beta1.KeycloakUserCredential) (*keycloakv1beta1.KeycloakUser, error) {
-	userNamespace := cred.Namespace
-	if cred.Spec.UserRef.Namespace != nil {
-		userNamespace = *cred.Spec.UserRef.Namespace
-	}
-
 	user := &keycloakv1beta1.KeycloakUser{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      cred.Spec.UserRef.Name,
-		Namespace: userNamespace,
+		Namespace: cred.Namespace,
 	}, user); err != nil {
-		return nil, fmt.Errorf("failed to get KeycloakUser %s/%s: %w", userNamespace, cred.Spec.UserRef.Name, err)
+		return nil, fmt.Errorf("failed to get KeycloakUser %s/%s: %w", cred.Namespace, cred.Spec.UserRef.Name, err)
 	}
 
 	return user, nil
@@ -193,15 +188,10 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClient(ctx context.Context
 	}
 
 	// Get the realm reference
-	realmNamespace := user.Namespace
-	if user.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *user.Spec.RealmRef.Namespace
-	}
-
 	realm := &keycloakv1beta1.KeycloakRealm{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      user.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: user.Namespace,
 	}, realm); err != nil {
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm: %w", err)
 	}

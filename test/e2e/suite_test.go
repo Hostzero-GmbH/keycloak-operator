@@ -268,7 +268,7 @@ func createTestRealm(t *testing.T, instanceName, instanceNS, suffix string) stri
 			Namespace: testNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakRealmSpec{
-			InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+			InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 			Definition: rawJSON(fmt.Sprintf(`{
 				"realm": "%s",
 				"enabled": true
@@ -304,7 +304,7 @@ func createTestRealmWithOrganizations(t *testing.T, instanceName, instanceNS, su
 			Namespace: testNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakRealmSpec{
-			InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+			InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 			Definition: rawJSON(fmt.Sprintf(`{
 				"realm": "%s",
 				"enabled": true,

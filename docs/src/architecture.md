@@ -151,6 +151,30 @@ KeycloakInstance (connection to Keycloak)
 
 Controllers resolve parent references and wait for parents to be ready before proceeding.
 
+## Tenancy and Namespace Boundaries
+
+The operator treats the namespace as a hard tenancy boundary. **All** namespaced
+resource references (`realmRef`, `instanceRef`, `clientRef`, `clientScopeRef`,
+`userRef`, `roleRef`, `groupRef`, `parentGroupRef`, `identityProviderRef`)
+resolve in the referring resource's own namespace only — the `namespace` field
+has been removed from `ResourceRef`. This means every child resource (clients,
+users, groups, roles, …) must live in the same namespace as the realm it belongs
+to.
+
+The two valid deployment patterns are:
+
+1. **Namespaced realm** — `KeycloakInstance` + `KeycloakRealm` + all child CRDs
+   in the same namespace. Namespace `A` cannot reach a realm in namespace `B`.
+
+2. **Cluster realm** — `ClusterKeycloakInstance` / `ClusterKeycloakRealm`
+   (cluster-scoped) referenced via `clusterInstanceRef` / `clusterRealmRef` from
+   child CRDs in any namespace. Use this for cross-namespace or cluster-wide sharing.
+
+Every namespaced CRD that targets a realm supports both modes. The three CRDs
+without a direct realm reference (`KeycloakProtocolMapper`,
+`KeycloakUserCredential`, `KeycloakRoleMapping`) inherit the realm transitively
+from the resource they reference, and that resource must also be in the same namespace.
+
 ## Finalizers
 
 The operator uses finalizers to ensure proper cleanup:

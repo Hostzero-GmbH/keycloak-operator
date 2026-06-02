@@ -186,7 +186,7 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 		realm := &keycloakv1beta1.KeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{Name: customRealmName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",
 					"enabled": true,
@@ -251,7 +251,7 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 		realm := &keycloakv1beta1.KeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{Name: customRealmName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",
 					"enabled": true,
@@ -478,7 +478,7 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 		realm := &keycloakv1beta1.KeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{Name: customRealmName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",
 					"enabled": true,

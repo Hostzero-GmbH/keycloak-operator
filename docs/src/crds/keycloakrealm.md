@@ -15,7 +15,6 @@ spec:
   # Option 1: Reference to a namespaced KeycloakInstance
   instanceRef:
     name: my-keycloak
-    namespace: default  # Optional
   
   # Option 2: Reference to a ClusterKeycloakInstance
   # clusterInstanceRef:

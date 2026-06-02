@@ -271,13 +271,9 @@ func (r *KeycloakRoleMappingReconciler) resolveRole(ctx context.Context, mapping
 	roleName := role.Status.RoleName
 
 	if role.Spec.ClientRef != nil {
-		namespace := role.Namespace
-		if role.Spec.ClientRef.Namespace != nil {
-			namespace = *role.Spec.ClientRef.Namespace
-		}
 		client := &keycloakv1beta1.KeycloakClient{}
-		if err := r.Get(ctx, types.NamespacedName{Name: role.Spec.ClientRef.Name, Namespace: namespace}, client); err != nil {
-			return roleName, "client", "", fmt.Errorf("failed to get client %s/%s: %w", namespace, role.Spec.ClientRef.Name, err)
+		if err := r.Get(ctx, types.NamespacedName{Name: role.Spec.ClientRef.Name, Namespace: role.Namespace}, client); err != nil {
+			return roleName, "client", "", fmt.Errorf("failed to get client %s/%s: %w", role.Namespace, role.Spec.ClientRef.Name, err)
 		}
 		if !client.Status.Ready || client.Status.ClientUUID == "" {
 			return roleName, "client", "", fmt.Errorf("client %s is not ready", client.Name)
@@ -290,55 +286,35 @@ func (r *KeycloakRoleMappingReconciler) resolveRole(ctx context.Context, mapping
 
 func (r *KeycloakRoleMappingReconciler) getUser(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping) (*keycloakv1beta1.KeycloakUser, error) {
 	ref := mapping.Spec.Subject.UserRef
-	namespace := mapping.Namespace
-	if ref.Namespace != nil {
-		namespace = *ref.Namespace
-	}
-
 	user := &keycloakv1beta1.KeycloakUser{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, user); err != nil {
-		return nil, fmt.Errorf("failed to get user %s/%s: %w", namespace, ref.Name, err)
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: mapping.Namespace}, user); err != nil {
+		return nil, fmt.Errorf("failed to get user %s/%s: %w", mapping.Namespace, ref.Name, err)
 	}
 	return user, nil
 }
 
 func (r *KeycloakRoleMappingReconciler) getGroup(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping) (*keycloakv1beta1.KeycloakGroup, error) {
 	ref := mapping.Spec.Subject.GroupRef
-	namespace := mapping.Namespace
-	if ref.Namespace != nil {
-		namespace = *ref.Namespace
-	}
-
 	group := &keycloakv1beta1.KeycloakGroup{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, group); err != nil {
-		return nil, fmt.Errorf("failed to get group %s/%s: %w", namespace, ref.Name, err)
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: mapping.Namespace}, group); err != nil {
+		return nil, fmt.Errorf("failed to get group %s/%s: %w", mapping.Namespace, ref.Name, err)
 	}
 	return group, nil
 }
 
 func (r *KeycloakRoleMappingReconciler) getRole(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping) (*keycloakv1beta1.KeycloakRole, error) {
 	ref := mapping.Spec.RoleRef
-	namespace := mapping.Namespace
-	if ref.Namespace != nil {
-		namespace = *ref.Namespace
-	}
-
 	role := &keycloakv1beta1.KeycloakRole{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, role); err != nil {
-		return nil, fmt.Errorf("failed to get role %s/%s: %w", namespace, ref.Name, err)
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: mapping.Namespace}, role); err != nil {
+		return nil, fmt.Errorf("failed to get role %s/%s: %w", mapping.Namespace, ref.Name, err)
 	}
 	return role, nil
 }
 
 func (r *KeycloakRoleMappingReconciler) getClient(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping, ref *keycloakv1beta1.ResourceRef) (*keycloakv1beta1.KeycloakClient, error) {
-	namespace := mapping.Namespace
-	if ref.Namespace != nil {
-		namespace = *ref.Namespace
-	}
-
 	client := &keycloakv1beta1.KeycloakClient{}
-	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: namespace}, client); err != nil {
-		return nil, fmt.Errorf("failed to get client %s/%s: %w", namespace, ref.Name, err)
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: mapping.Namespace}, client); err != nil {
+		return nil, fmt.Errorf("failed to get client %s/%s: %w", mapping.Namespace, ref.Name, err)
 	}
 	return client, nil
 }
@@ -355,13 +331,8 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromUser(ctx context.Co
 	}
 
 	// Get the realm
-	realmNamespace := user.Namespace
-	if user.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *user.Spec.RealmRef.Namespace
-	}
-
 	realm := &keycloakv1beta1.KeycloakRealm{}
-	if err := r.Get(ctx, types.NamespacedName{Name: user.Spec.RealmRef.Name, Namespace: realmNamespace}, realm); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: user.Spec.RealmRef.Name, Namespace: user.Namespace}, realm); err != nil {
 		return nil, "", err
 	}
 
@@ -396,13 +367,8 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromGroup(ctx context.C
 		return nil, "", fmt.Errorf("group %s has no realmRef or clusterRealmRef", group.Name)
 	}
 
-	realmNamespace := group.Namespace
-	if group.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *group.Spec.RealmRef.Namespace
-	}
-
 	realm := &keycloakv1beta1.KeycloakRealm{}
-	if err := r.Get(ctx, types.NamespacedName{Name: group.Spec.RealmRef.Name, Namespace: realmNamespace}, realm); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: group.Spec.RealmRef.Name, Namespace: group.Namespace}, realm); err != nil {
 		return nil, "", err
 	}
 

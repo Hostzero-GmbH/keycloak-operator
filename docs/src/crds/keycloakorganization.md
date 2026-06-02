@@ -15,7 +15,6 @@ spec:
   # One of realmRef or clusterRealmRef must be specified
   realmRef:
     name: my-realm
-    namespace: default  # Optional
   
   # Required: Organization definition (Keycloak OrganizationRepresentation)
   definition:

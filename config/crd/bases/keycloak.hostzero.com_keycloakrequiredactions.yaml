@@ -84,10 +84,6 @@ spec:
                   name:
                     description: Name of the resource
                     type: string
-                  namespace:
-                    description: Namespace of the resource (optional, defaults to
-                      the same namespace)
-                    type: string
                 required:
                 - name
                 type: object

@@ -15,7 +15,6 @@ spec:
   # Option 1: Reference to a KeycloakRealm (for regular realm users)
   realmRef:
     name: my-realm
-    namespace: default  # Optional
   
   # Option 2: Reference to a ClusterKeycloakRealm (for cluster-scoped realms)
   # clusterRealmRef:
@@ -24,7 +23,6 @@ spec:
   # Option 3: Reference to a KeycloakClient (for service account users)
   # clientRef:
   #   name: my-client
-  #   namespace: default  # Optional
   
   # User definition (Keycloak UserRepresentation)
   # Note: For service account users (clientRef), definition is optional

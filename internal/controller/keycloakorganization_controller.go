@@ -197,13 +197,9 @@ func (r *KeycloakOrganizationReconciler) getKeycloakClientRealmAndVersion(ctx co
 	}
 
 	// Get the realm reference
-	realmNamespace := org.Namespace
-	if org.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *org.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      org.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: org.Namespace,
 	}
 
 	// Get the KeycloakRealm

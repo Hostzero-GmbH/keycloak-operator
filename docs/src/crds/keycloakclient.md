@@ -15,7 +15,6 @@ spec:
   # Option 1: Reference to a namespaced KeycloakRealm
   realmRef:
     name: my-realm
-    namespace: default  # Optional
   
   # Option 2: Reference to a ClusterKeycloakRealm
   # clusterRealmRef:

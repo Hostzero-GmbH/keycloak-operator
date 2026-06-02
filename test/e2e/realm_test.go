@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
@@ -19,7 +21,7 @@ import (
 func TestKeycloakRealmE2E(t *testing.T) {
 	skipIfNoCluster(t)
 
-	instanceName, instanceNS := getOrCreateInstance(t)
+	instanceName, _ := getOrCreateInstance(t)
 
 	t.Run("BasicRealm", func(t *testing.T) {
 		// Create realm with unique name to avoid conflicts
@@ -31,7 +33,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",
 					"displayName": "Test Realm",
@@ -61,7 +63,6 @@ func TestKeycloakRealmE2E(t *testing.T) {
 
 	t.Run("InvalidInstanceRef", func(t *testing.T) {
 		realmName := fmt.Sprintf("realm-invalid-ref-%d", time.Now().UnixNano())
-		nonExistentNS := "non-existent-ns"
 
 		realm := &keycloakv1beta1.KeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{
@@ -69,7 +70,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: "non-existent-instance", Namespace: &nonExistentNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: "non-existent-instance"},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",
 					"enabled": true
@@ -102,7 +103,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				// Valid JSON but with conflicting/problematic realm config
 				Definition: rawJSON(`{"realm": "", "enabled": true}`),
 			},
@@ -150,7 +151,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name: realmName + "-smtp",
 				},
@@ -229,7 +230,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name:        realmName + "-smtp",
 					UserKey:     "smtp-username",
@@ -289,7 +290,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name: "nonexistent-smtp-secret",
 				},
@@ -341,7 +342,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name: realmName + "-smtp",
 				},
@@ -502,7 +503,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName, Namespace: &instanceNS},
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				Definition: rawJSON(fmt.Sprintf(`{
 					"realm": "%s",
 					"enabled": true
@@ -559,4 +560,99 @@ func TestKeycloakRealmE2E(t *testing.T) {
 		require.NoError(t, err, "Realm was not recreated in Keycloak after deletion")
 		t.Log("Realm was successfully reconciled (recreated) after manual deletion")
 	})
+}
+
+// TestSameNamespaceRefEnforcement verifies that a namespace set on instanceRef or
+// realmRef is pruned by the CRD schema and the operator resolves in the CR's own namespace.
+func TestSameNamespaceRefEnforcement(t *testing.T) {
+	skipIfNoCluster(t)
+	instanceName, instanceNS := getOrCreateInstance(t)
+
+	t.Run("InstanceRefNamespacePruned", func(t *testing.T) {
+		realmName := fmt.Sprintf("same-ns-inst-%d", time.Now().UnixNano())
+		obj := newUnstructured("KeycloakRealm", realmName, map[string]interface{}{
+			"instanceRef": map[string]interface{}{
+				"name":      instanceName,
+				"namespace": "non-existent-namespace",
+			},
+			"definition": map[string]interface{}{
+				"realm":   realmName,
+				"enabled": true,
+			},
+		})
+
+		require.NoError(t, k8sClient.Create(ctx, obj))
+		t.Cleanup(func() { k8sClient.Delete(ctx, obj) })
+
+		requireRefNamespacePruned(t, "KeycloakRealm", realmName, "instanceRef")
+
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			current := &keycloakv1beta1.KeycloakRealm{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: realmName, Namespace: testNamespace}, current); err != nil {
+				return false, nil
+			}
+			return current.Status.Ready, nil
+		})
+		require.NoError(t, err, "KeycloakRealm should resolve its instance in its own namespace and become ready")
+	})
+
+	t.Run("RealmRefNamespacePruned", func(t *testing.T) {
+		realmName := createTestRealm(t, instanceName, instanceNS, "same-ns-realmref")
+
+		clientName := fmt.Sprintf("same-ns-client-%d", time.Now().UnixNano())
+		obj := newUnstructured("KeycloakClient", clientName, map[string]interface{}{
+			"realmRef": map[string]interface{}{
+				"name":      realmName,
+				"namespace": "non-existent-namespace",
+			},
+			"definition": map[string]interface{}{
+				"clientId":     clientName,
+				"enabled":      true,
+				"publicClient": true,
+			},
+		})
+
+		require.NoError(t, k8sClient.Create(ctx, obj))
+		t.Cleanup(func() { k8sClient.Delete(ctx, obj) })
+
+		requireRefNamespacePruned(t, "KeycloakClient", clientName, "realmRef")
+
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			current := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clientName, Namespace: testNamespace}, current); err != nil {
+				return false, nil
+			}
+			return current.Status.Ready, nil
+		})
+		require.NoError(t, err, "KeycloakClient should resolve its realm in its own namespace and become ready")
+	})
+}
+
+// newUnstructured builds a CR in testNamespace, used to submit a ref namespace
+// that the Go ResourceRef type no longer allows.
+func newUnstructured(kind, name string, spec map[string]interface{}) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "keycloak.hostzero.com/v1beta1",
+			"kind":       kind,
+			"metadata": map[string]interface{}{
+				"name":      name,
+				"namespace": testNamespace,
+			},
+			"spec": spec,
+		},
+	}
+	obj.SetGroupVersionKind(schema.GroupVersionKind{Group: "keycloak.hostzero.com", Version: "v1beta1", Kind: kind})
+	return obj
+}
+
+// requireRefNamespacePruned asserts the named spec ref has no namespace field after a round-trip.
+func requireRefNamespacePruned(t *testing.T, kind, name, refField string) {
+	t.Helper()
+	stored := &unstructured.Unstructured{}
+	stored.SetGroupVersionKind(schema.GroupVersionKind{Group: "keycloak.hostzero.com", Version: "v1beta1", Kind: kind})
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, stored))
+	ref, _, _ := unstructured.NestedMap(stored.Object, "spec", refField)
+	_, hasNamespace := ref["namespace"]
+	require.False(t, hasNamespace, "spec.%s.namespace should be pruned by the CRD schema", refField)
 }

@@ -176,13 +176,9 @@ func identityProviderMapperDrifted(desired json.RawMessage, current *keycloak.Id
 // it is Ready, and resolves the Keycloak admin client, realm name, and IdP
 // alias used to address mappers under that IdP.
 func (r *KeycloakIdentityProviderMapperReconciler) getKeycloakClientAndParent(ctx context.Context, mapper *keycloakv1beta1.KeycloakIdentityProviderMapper) (*keycloak.Client, string, string, error) {
-	idpNamespace := mapper.Namespace
-	if mapper.Spec.IdentityProviderRef.Namespace != nil {
-		idpNamespace = *mapper.Spec.IdentityProviderRef.Namespace
-	}
 	idpKey := types.NamespacedName{
 		Name:      mapper.Spec.IdentityProviderRef.Name,
-		Namespace: idpNamespace,
+		Namespace: mapper.Namespace,
 	}
 
 	idp := &keycloakv1beta1.KeycloakIdentityProvider{}
@@ -311,11 +307,7 @@ func (r *KeycloakIdentityProviderMapperReconciler) findMappersForIdentityProvide
 
 	var requests []reconcile.Request
 	for _, m := range mapperList.Items {
-		idpNamespace := m.Namespace
-		if m.Spec.IdentityProviderRef.Namespace != nil {
-			idpNamespace = *m.Spec.IdentityProviderRef.Namespace
-		}
-		if m.Spec.IdentityProviderRef.Name == idp.Name && idpNamespace == idp.Namespace {
+		if m.Spec.IdentityProviderRef.Name == idp.Name && m.Namespace == idp.Namespace {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      m.Name,

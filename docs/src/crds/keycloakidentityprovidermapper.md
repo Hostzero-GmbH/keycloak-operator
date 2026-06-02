@@ -97,7 +97,6 @@ spec:
 | Field | Description |
 |-------|-------------|
 | `identityProviderRef.name` | Name of the parent `KeycloakIdentityProvider` CR (required) |
-| `identityProviderRef.namespace` | Optional, defaults to the mapper's namespace |
 
 The mapper inherits its realm and Keycloak instance from the referenced `KeycloakIdentityProvider`. The mapper's reconciler waits for the parent IdP to reach `Ready` before creating the mapper, and is automatically requeued when the parent transitions to `Ready`.
 

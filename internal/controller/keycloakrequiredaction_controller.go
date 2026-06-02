@@ -172,13 +172,9 @@ func (r *KeycloakRequiredActionReconciler) getKeycloakClientAndRealm(ctx context
 		return nil, "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
 	}
 
-	realmNamespace := ra.Namespace
-	if ra.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *ra.Spec.RealmRef.Namespace
-	}
 	realmKey := types.NamespacedName{
 		Name:      ra.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: ra.Namespace,
 	}
 
 	realm := &keycloakv1beta1.KeycloakRealm{}

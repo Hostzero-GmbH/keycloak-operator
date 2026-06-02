@@ -163,13 +163,9 @@ func (r *KeycloakComponentReconciler) getKeycloakClientAndRealm(ctx context.Cont
 		return nil, "", "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
 	}
 
-	realmNamespace := component.Namespace
-	if component.Spec.RealmRef.Namespace != nil {
-		realmNamespace = *component.Spec.RealmRef.Namespace
-	}
 	realmName := types.NamespacedName{
 		Name:      component.Spec.RealmRef.Name,
-		Namespace: realmNamespace,
+		Namespace: component.Namespace,
 	}
 
 	// Get the KeycloakRealm

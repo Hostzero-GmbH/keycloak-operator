@@ -15,7 +15,6 @@ spec:
   # Option 1: Reference to a namespaced KeycloakRealm
   realmRef:
     name: my-realm
-    namespace: default  # Optional, defaults to same namespace
   
   # Option 2: Reference to a ClusterKeycloakRealm
   clusterRealmRef:
@@ -24,7 +23,6 @@ spec:
   # Optional: Reference to parent group (for nested groups)
   parentGroupRef:
     name: parent-group
-    namespace: default  # Optional, defaults to same namespace
   
   # Required: Group definition
   definition:
