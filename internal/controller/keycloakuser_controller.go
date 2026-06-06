@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	stderrors "errors"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -94,10 +96,8 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.updateStatus(ctx, user, false, "RealmNotReady", err.Error(), "", false, "")
 	}
 
-	// Parse user definition to extract username
-	var userDef struct {
-		Username string `json:"username"`
-	}
+	// Parse user definition to extract all fields
+	var userDef keycloakv1beta1.UserDefinition
 	if err := json.Unmarshal(user.Spec.Definition.Raw, &userDef); err != nil {
 		RecordError(controllerName, "invalid_definition")
 		return r.updateStatus(ctx, user, false, "InvalidDefinition", fmt.Sprintf("Failed to parse user definition: %v", err), "", false, "")
@@ -136,13 +136,14 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		definition = mergeIDIntoDefinition(definition, existingUser.ID)
 
 		// Fetch current state for drift detection
+		// Exclude role/group fields — they are reconciled separately via dedicated endpoints
 		currentRaw, fetchErr := kc.GetUserRaw(ctx, realmName, userID)
 
 		needsUpdate := true
 		if fetchErr != nil {
 			log.Error(fetchErr, "failed to fetch current user state, falling through to update")
 		} else if currentRaw != nil {
-			needsUpdate = !definitionsMatch(definition, currentRaw)
+			needsUpdate = !definitionsMatchStrict(definition, currentRaw, "id", "createdTimestamp", "access", "federatedIdentities", "origins", "credentials", "realmRoles", "clientRoles", "groups")
 		}
 
 		if needsUpdate {
@@ -155,6 +156,38 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		} else {
 			log.V(1).Info("user already in sync, skipping update", "username", username)
 		}
+	}
+
+	// Reconcile realm roles via dedicated role-mapping endpoints
+	// nil = field omitted, don't manage; non-nil even if empty = reconcile to that set
+	var roleGroupErrors []error
+	if userDef.RealmRoles != nil {
+		if err := r.reconcileUserRealmRoles(ctx, kc, realmName, userID, userDef.RealmRoles); err != nil {
+			log.Error(err, "failed to reconcile realm roles", "username", username)
+			roleGroupErrors = append(roleGroupErrors, fmt.Errorf("realm roles: %w", err))
+		}
+	}
+
+	// Reconcile client roles via dedicated role-mapping endpoints
+	if userDef.ClientRoles != nil {
+		if err := r.reconcileUserClientRoles(ctx, kc, realmName, userID, userDef.ClientRoles); err != nil {
+			log.Error(err, "failed to reconcile client roles", "username", username)
+			roleGroupErrors = append(roleGroupErrors, fmt.Errorf("client roles: %w", err))
+		}
+	}
+
+	// Reconcile group memberships via dedicated group membership endpoints
+	if userDef.Groups != nil {
+		if err := r.reconcileUserGroups(ctx, kc, realmName, userID, userDef.Groups); err != nil {
+			log.Error(err, "failed to reconcile groups", "username", username)
+			roleGroupErrors = append(roleGroupErrors, fmt.Errorf("groups: %w", err))
+		}
+	}
+
+	if len(roleGroupErrors) > 0 {
+		RecordError(controllerName, "role_group_reconcile_error")
+		return r.updateStatus(ctx, user, false, "RoleGroupReconcileError",
+			fmt.Sprintf("Failed to reconcile roles/groups: %v", stderrors.Join(roleGroupErrors...)), userID, false, "")
 	}
 
 	// Handle initial password if specified
@@ -312,6 +345,255 @@ func (r *KeycloakUserReconciler) deleteUser(ctx context.Context, user *keycloakv
 	return kc.DeleteUser(ctx, realmName, user.Status.UserID)
 }
 
+func (r *KeycloakUserReconciler) reconcileUserRealmRoles(ctx context.Context, kc *keycloak.Client, realmName, userID string, roles []string) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("reconciling realm roles", "userID", userID, "count", len(roles))
+
+	allRealmRoles, err := kc.GetRealmRoles(ctx, realmName)
+	if err != nil {
+		return fmt.Errorf("failed to list realm roles: %w", err)
+	}
+	roleByName := make(map[string]keycloak.RoleRepresentation)
+	for _, rr := range allRealmRoles {
+		if rr.Name != nil {
+			roleByName[*rr.Name] = rr
+		}
+	}
+
+	existing, err := kc.GetUserRealmRoleMappings(ctx, realmName, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing realm role mappings: %w", err)
+	}
+	existingNames := make(map[string]bool)
+	for _, r := range existing {
+		if r.Name != nil {
+			existingNames[*r.Name] = true
+		}
+	}
+
+	want := make(map[string]bool)
+	for _, role := range roles {
+		want[role] = true
+	}
+
+	var toAdd, toRemove []keycloak.RoleRepresentation
+	for _, name := range roles {
+		if !existingNames[name] {
+			if rr, ok := roleByName[name]; ok {
+				toAdd = append(toAdd, rr)
+			} else {
+				log.Info("realm role not found, skipping", "role", name)
+			}
+		}
+	}
+	for _, r := range existing {
+		if r.Name != nil && !want[*r.Name] {
+			toRemove = append(toRemove, r)
+		}
+	}
+
+	if len(toAdd) > 0 {
+		if err := kc.AddRealmRolesToUser(ctx, realmName, userID, toAdd); err != nil {
+			return fmt.Errorf("failed to add realm roles: %w", err)
+		}
+		log.V(1).Info("added realm roles", "count", len(toAdd))
+	}
+	if len(toRemove) > 0 {
+		if err := kc.DeleteRealmRolesFromUser(ctx, realmName, userID, toRemove); err != nil {
+			return fmt.Errorf("failed to remove realm roles: %w", err)
+		}
+		log.V(1).Info("removed realm roles", "count", len(toRemove))
+	}
+
+	return nil
+}
+
+func (r *KeycloakUserReconciler) reconcileUserClientRoles(ctx context.Context, kc *keycloak.Client, realmName, userID string, clientRoles map[string][]string) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("reconciling client roles", "userID", userID, "clients", len(clientRoles))
+
+	// Resolve all wanted clients and collect their UUIDs
+	type wantedClient struct {
+		uuid  string
+		roles []string
+	}
+	wanted := make(map[string]*wantedClient)
+	wantedUUIDs := make(map[string]bool)
+	var resolveErrs []error
+
+	for clientID, roles := range clientRoles {
+		clientRep, err := kc.GetClientByClientID(ctx, realmName, clientID)
+		if err != nil {
+			log.Error(err, "failed to resolve client, skipping roles", "clientID", clientID)
+			resolveErrs = append(resolveErrs, fmt.Errorf("resolve client %s: %w", clientID, err))
+			continue
+		}
+		if clientRep.ID == nil {
+			log.Info("client has nil ID, skipping roles", "clientID", clientID)
+			resolveErrs = append(resolveErrs, fmt.Errorf("client %s has nil ID", clientID))
+			continue
+		}
+		wanted[clientID] = &wantedClient{uuid: *clientRep.ID, roles: roles}
+		wantedUUIDs[*clientRep.ID] = true
+	}
+
+	// Reconcile roles per wanted client (handles both add and remove within each client)
+	var reconcileErrs []error
+	for _, wc := range wanted {
+		allClientRoles, err := kc.GetClientRoles(ctx, realmName, wc.uuid)
+		if err != nil {
+			log.Error(err, "failed to list client roles, skipping", "client", wc.uuid)
+			reconcileErrs = append(reconcileErrs, fmt.Errorf("list roles for client %s: %w", wc.uuid, err))
+			continue
+		}
+		roleByName := make(map[string]keycloak.RoleRepresentation)
+		for _, cr := range allClientRoles {
+			if cr.Name != nil {
+				roleByName[*cr.Name] = cr
+			}
+		}
+
+		existing, err := kc.GetUserClientRoleMappings(ctx, realmName, userID, wc.uuid)
+		if err != nil {
+			log.Error(err, "failed to get existing client role mappings, skipping", "client", wc.uuid)
+			reconcileErrs = append(reconcileErrs, fmt.Errorf("get role mappings for client %s: %w", wc.uuid, err))
+			continue
+		}
+
+		existingNames := make(map[string]bool)
+		for _, r := range existing {
+			if r.Name != nil {
+				existingNames[*r.Name] = true
+			}
+		}
+
+		want := make(map[string]bool)
+		for _, role := range wc.roles {
+			want[role] = true
+		}
+
+		var toAdd, toRemove []keycloak.RoleRepresentation
+		for _, name := range wc.roles {
+			if !existingNames[name] {
+				if cr, ok := roleByName[name]; ok {
+					toAdd = append(toAdd, cr)
+				} else {
+					log.Info("client role not found in realm, skipping", "role", name)
+				}
+			}
+		}
+		for _, r := range existing {
+			if r.Name != nil && !want[*r.Name] {
+				toRemove = append(toRemove, r)
+			}
+		}
+
+		if len(toAdd) > 0 {
+			if err := kc.AddClientRolesToUser(ctx, realmName, wc.uuid, userID, toAdd); err != nil {
+				log.Error(err, "failed to add client roles", "client", wc.uuid)
+				reconcileErrs = append(reconcileErrs, fmt.Errorf("add roles to client %s: %w", wc.uuid, err))
+				continue
+			}
+			log.V(1).Info("added client roles", "count", len(toAdd))
+		}
+		if len(toRemove) > 0 {
+			if err := kc.DeleteClientRolesFromUser(ctx, realmName, wc.uuid, userID, toRemove); err != nil {
+				log.Error(err, "failed to remove client roles", "client", wc.uuid)
+				reconcileErrs = append(reconcileErrs, fmt.Errorf("remove roles from client %s: %w", wc.uuid, err))
+				continue
+			}
+			log.V(1).Info("removed client roles", "count", len(toRemove))
+		}
+	}
+
+	// Clean up stale client roles: users may have role mappings on clients
+	// that are no longer in the wanted set (client key removed from spec).
+	// Use the composite /role-mappings endpoint to get ALL client role mappings
+	// in a single API call, avoiding the N+1 problem of iterating every realm client.
+	composite, compErr := kc.GetUserRoleMappingsComposite(ctx, realmName, userID)
+	if compErr != nil {
+		reconcileErrs = append(reconcileErrs, fmt.Errorf("stale cleanup composite: %w", compErr))
+	} else {
+		for clientUUID, entry := range composite.ClientMappings {
+			if wantedUUIDs[clientUUID] {
+				continue
+			}
+			if len(entry.Mappings) == 0 {
+				continue
+			}
+			if err := kc.DeleteClientRolesFromUser(ctx, realmName, clientUUID, userID, entry.Mappings); err != nil {
+				log.Error(err, "failed to clean up stale client roles", "clientUUID", clientUUID)
+				reconcileErrs = append(reconcileErrs, fmt.Errorf("stale cleanup for client %s: %w", clientUUID, err))
+				continue
+			}
+			log.V(1).Info("cleaned up stale client roles", "count", len(entry.Mappings), "client", entry.Client)
+		}
+	}
+
+	return stderrors.Join(append(resolveErrs, reconcileErrs...)...)
+}
+
+func (r *KeycloakUserReconciler) reconcileUserGroups(ctx context.Context, kc *keycloak.Client, realmName, userID string, groups []string) error {
+	log := log.FromContext(ctx)
+	log.V(1).Info("reconciling groups", "userID", userID, "count", len(groups))
+
+	existingGroups, err := kc.GetUserGroups(ctx, realmName, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing user groups: %w", err)
+	}
+
+	existingByName := make(map[string]string)
+	for _, g := range existingGroups {
+		if g.Name != nil && g.ID != nil {
+			existingByName[*g.Name] = *g.ID
+		}
+	}
+
+	allGroups, err := kc.GetGroups(ctx, realmName, nil)
+	if err != nil {
+		return fmt.Errorf("failed to list realm groups: %w", err)
+	}
+
+	groupByName := make(map[string]string)
+	for _, g := range allGroups {
+		if g.Name != nil && g.ID != nil {
+			groupByName[*g.Name] = *g.ID
+		}
+	}
+
+	want := make(map[string]bool)
+	for _, name := range groups {
+		want[name] = true
+	}
+
+	for _, name := range groups {
+		if _, joined := existingByName[name]; !joined {
+			groupID, found := groupByName[name]
+			if !found {
+				log.Info("group not found in realm, skipping", "group", name)
+				continue
+			}
+			if err := kc.AddUserToGroup(ctx, realmName, userID, groupID); err != nil {
+				log.Error(err, "failed to add user to group", "group", name)
+				continue
+			}
+			log.V(1).Info("added to group", "group", name)
+		}
+	}
+
+	for name, groupID := range existingByName {
+		if !want[name] {
+			if err := kc.RemoveUserFromGroup(ctx, realmName, userID, groupID); err != nil {
+				log.Error(err, "failed to remove user from group", "group", name)
+				continue
+			}
+			log.V(1).Info("removed from group", "group", name)
+		}
+	}
+
+	return nil
+}
+
 func (r *KeycloakUserReconciler) reconcileServiceAccountUser(ctx context.Context, user *keycloakv1beta1.KeycloakUser) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	controllerName := "KeycloakUser"
@@ -345,12 +627,61 @@ func (r *KeycloakUserReconciler) reconcileServiceAccountUser(ctx context.Context
 		definition = mergeIDIntoDefinition(definition, serviceAccountUser.ID)
 		definition = setFieldInDefinition(definition, "username", *serviceAccountUser.Username)
 
-		log.Info("updating service account user", "userID", userID, "realm", realmName)
-		if err := kc.UpdateUser(ctx, realmName, userID, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, user, false, "UpdateFailed", fmt.Sprintf("Failed to update service account user: %v", err), userID, true, clientUUID)
+		// Parse UserDefinition for role/group fields
+		var userDef keycloakv1beta1.UserDefinition
+		parseErr := json.Unmarshal(user.Spec.Definition.Raw, &userDef)
+		if parseErr != nil {
+			log.Error(parseErr, "failed to parse user definition for role/group reconciliation")
 		}
-		log.Info("service account user updated successfully", "userID", userID)
+
+		// Check for drift before updating
+		// Exclude role/group fields — they are reconciled separately via dedicated endpoints
+		currentRaw, fetchErr := kc.GetUserRaw(ctx, realmName, userID)
+		needsUpdate := true
+		if fetchErr != nil {
+			log.Error(fetchErr, "failed to fetch current service account user state, falling through to update")
+		} else if currentRaw != nil {
+			needsUpdate = !definitionsMatchStrict(definition, currentRaw, "id", "createdTimestamp", "access", "federatedIdentities", "origins", "credentials", "realmRoles", "clientRoles", "groups")
+		}
+
+		if needsUpdate {
+			log.Info("updating service account user", "userID", userID, "realm", realmName)
+			if err := kc.UpdateUser(ctx, realmName, userID, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, user, false, "UpdateFailed", fmt.Sprintf("Failed to update service account user: %v", err), userID, true, clientUUID)
+			}
+			log.Info("service account user updated successfully", "userID", userID)
+		} else {
+			log.V(1).Info("service account user already in sync, skipping update", "userID", userID)
+		}
+
+		// Reconcile realm roles via dedicated endpoints
+		var saRoleGroupErrors []error
+		if parseErr == nil {
+			if userDef.RealmRoles != nil {
+				if err := r.reconcileUserRealmRoles(ctx, kc, realmName, userID, userDef.RealmRoles); err != nil {
+					log.Error(err, "failed to reconcile realm roles for service account", "userID", userID)
+					saRoleGroupErrors = append(saRoleGroupErrors, fmt.Errorf("realm roles: %w", err))
+				}
+			}
+			if userDef.ClientRoles != nil {
+				if err := r.reconcileUserClientRoles(ctx, kc, realmName, userID, userDef.ClientRoles); err != nil {
+					log.Error(err, "failed to reconcile client roles for service account", "userID", userID)
+					saRoleGroupErrors = append(saRoleGroupErrors, fmt.Errorf("client roles: %w", err))
+				}
+			}
+			if userDef.Groups != nil {
+				if err := r.reconcileUserGroups(ctx, kc, realmName, userID, userDef.Groups); err != nil {
+					log.Error(err, "failed to reconcile groups for service account", "userID", userID)
+					saRoleGroupErrors = append(saRoleGroupErrors, fmt.Errorf("groups: %w", err))
+				}
+			}
+		}
+		if len(saRoleGroupErrors) > 0 {
+			RecordError(controllerName, "role_group_reconcile_error")
+			return r.updateStatus(ctx, user, false, "RoleGroupReconcileError",
+				fmt.Sprintf("Failed to reconcile roles/groups: %v", stderrors.Join(saRoleGroupErrors...)), userID, true, clientUUID)
+		}
 	}
 
 	// Update status

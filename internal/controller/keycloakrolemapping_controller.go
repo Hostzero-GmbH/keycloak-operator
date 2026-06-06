@@ -58,9 +58,9 @@ func (r *KeycloakRoleMappingReconciler) Reconcile(ctx context.Context, req ctrl.
 	}()
 
 	// Validate spec
-	if mapping.Spec.Subject.UserRef == nil && mapping.Spec.Subject.GroupRef == nil {
+	if mapping.Spec.Subject.UserRef == nil && mapping.Spec.Subject.GroupRef == nil && mapping.Spec.Subject.ServiceAccountRef == nil {
 		RecordError(controllerName, "invalid_definition")
-		return r.updateStatus(ctx, mapping, false, "InvalidSpec", "Either userRef or groupRef must be specified", "", "", "", "")
+		return r.updateStatus(ctx, mapping, false, "InvalidSpec", "Either userRef, groupRef, or serviceAccountRef must be specified", "", "", "", "")
 	}
 	if mapping.Spec.Role == nil && mapping.Spec.RoleRef == nil {
 		RecordError(controllerName, "invalid_definition")
@@ -222,6 +222,24 @@ func (r *KeycloakRoleMappingReconciler) resolveSubject(ctx context.Context, mapp
 		return "group", group.Status.GroupID, realmName, kc, nil
 	}
 
+	if mapping.Spec.Subject.ServiceAccountRef != nil {
+		client, kc, realmName, err := r.resolveServiceAccountSubject(ctx, mapping)
+		if err != nil {
+			return "user", "", "", nil, err
+		}
+
+		// Look up the service account user ID from Keycloak
+		saUser, err := kc.GetClientServiceAccount(ctx, realmName, client.Status.ClientUUID)
+		if err != nil {
+			return "user", "", "", nil, fmt.Errorf("failed to get service account for client %s: %w", client.Name, err)
+		}
+		if saUser.ID == nil || *saUser.ID == "" {
+			return "user", "", "", nil, fmt.Errorf("service account user ID is empty for client %s", client.Name)
+		}
+
+		return "user", *saUser.ID, realmName, kc, nil
+	}
+
 	return "", "", "", nil, fmt.Errorf("no subject specified")
 }
 
@@ -377,6 +395,57 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromGroup(ctx context.C
 	}
 
 	// Get realm name from definition
+	var realmDef struct {
+		Realm string `json:"realm"`
+	}
+	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
+		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
+	}
+
+	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return kc, realmDef.Realm, nil
+}
+
+func (r *KeycloakRoleMappingReconciler) resolveServiceAccountSubject(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping) (*keycloakv1beta1.KeycloakClient, *keycloak.Client, string, error) {
+	ref := mapping.Spec.Subject.ServiceAccountRef
+	client := &keycloakv1beta1.KeycloakClient{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: mapping.Namespace}, client); err != nil {
+		return nil, nil, "", fmt.Errorf("failed to get client %s/%s: %w", mapping.Namespace, ref.Name, err)
+	}
+	if !client.Status.Ready || client.Status.ClientUUID == "" {
+		return nil, nil, "", fmt.Errorf("client %s is not ready", client.Name)
+	}
+
+	kc, realmName, err := r.getKeycloakRealmFromClient(ctx, client)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	return client, kc, realmName, nil
+}
+
+func (r *KeycloakRoleMappingReconciler) getKeycloakRealmFromClient(ctx context.Context, client *keycloakv1beta1.KeycloakClient) (*keycloak.Client, string, error) {
+	if client.Spec.ClusterRealmRef != nil {
+		return r.getKeycloakClientFromClusterRealm(ctx, client.Spec.ClusterRealmRef.Name)
+	}
+
+	if client.Spec.RealmRef == nil {
+		return nil, "", fmt.Errorf("client %s has no realmRef or clusterRealmRef", client.Name)
+	}
+
+	realm := &keycloakv1beta1.KeycloakRealm{}
+	if err := r.Get(ctx, types.NamespacedName{Name: client.Spec.RealmRef.Name, Namespace: client.Namespace}, realm); err != nil {
+		return nil, "", err
+	}
+
+	if !realm.Status.Ready {
+		return nil, "", fmt.Errorf("realm %s is not ready", realm.Name)
+	}
+
 	var realmDef struct {
 		Realm string `json:"realm"`
 	}
@@ -577,6 +646,10 @@ func (r *KeycloakRoleMappingReconciler) SetupWithManager(mgr ctrl.Manager) error
 			&keycloakv1beta1.KeycloakGroup{},
 			handler.EnqueueRequestsFromMapFunc(r.findRoleMappingsForGroup),
 		).
+		Watches(
+			&keycloakv1beta1.KeycloakClient{},
+			handler.EnqueueRequestsFromMapFunc(r.findRoleMappingsForServiceAccountClient),
+		).
 		Complete(r)
 }
 
@@ -613,6 +686,29 @@ func (r *KeycloakRoleMappingReconciler) findRoleMappingsForGroup(ctx context.Con
 	var requests []reconcile.Request
 	for _, mapping := range mappings.Items {
 		if mapping.Spec.Subject.GroupRef != nil && mapping.Spec.Subject.GroupRef.Name == group.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      mapping.Name,
+					Namespace: mapping.Namespace,
+				},
+			})
+		}
+	}
+	return requests
+}
+
+// findRoleMappingsForServiceAccountClient returns reconcile requests for all role mappings
+// referencing the given KeycloakClient as a service account subject
+func (r *KeycloakRoleMappingReconciler) findRoleMappingsForServiceAccountClient(ctx context.Context, obj client.Object) []reconcile.Request {
+	kcClient := obj.(*keycloakv1beta1.KeycloakClient)
+	var mappings keycloakv1beta1.KeycloakRoleMappingList
+	if err := r.List(ctx, &mappings, client.InNamespace(kcClient.Namespace)); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, mapping := range mappings.Items {
+		if mapping.Spec.Subject.ServiceAccountRef != nil && mapping.Spec.Subject.ServiceAccountRef.Name == kcClient.Name {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      mapping.Name,

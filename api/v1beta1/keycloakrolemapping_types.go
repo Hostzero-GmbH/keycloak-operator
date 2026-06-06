@@ -30,6 +30,12 @@ type RoleMappingSubject struct {
 	// GroupRef references a KeycloakGroup
 	// +optional
 	GroupRef *ResourceRef `json:"groupRef,omitempty"`
+
+	// ServiceAccountRef references a KeycloakClient to assign roles to its
+	// auto-created service account user. This avoids needing an intermediate
+	// KeycloakUser CR for clients with serviceAccountsEnabled: true.
+	// +optional
+	ServiceAccountRef *ResourceRef `json:"serviceAccountRef,omitempty"`
 }
 
 // RoleDefinition defines a role inline
@@ -142,6 +148,11 @@ func (r *KeycloakRoleMapping) IsUserMapping() bool {
 // IsGroupMapping returns true if this maps to a group
 func (r *KeycloakRoleMapping) IsGroupMapping() bool {
 	return r.Spec.Subject.GroupRef != nil
+}
+
+// IsServiceAccountMapping returns true if this maps to a service account
+func (r *KeycloakRoleMapping) IsServiceAccountMapping() bool {
+	return r.Spec.Subject.ServiceAccountRef != nil
 }
 
 // IsClientRole returns true if this is a client-level role

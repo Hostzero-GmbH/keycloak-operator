@@ -755,6 +755,58 @@ func definitionsMatch(desired, current json.RawMessage) bool {
 	return true
 }
 
+// definitionsMatchStrict is a bidirectional comparison: it checks that every field
+// in desired matches current (same as definitionsMatch) AND that every field in
+// current that is NOT in desired is a known Keycloak-only system field. If an
+// unknown field exists in current but is absent from desired, it returns false
+// so the caller triggers a PUT to remove it.
+// This is used for resource types (like KeycloakUser) where the CRD is the
+// authoritative desired state and fields removed from spec.definition should
+// be cleared in Keycloak.
+func definitionsMatchStrict(desired, current json.RawMessage, ignoreFields ...string) bool {
+	var desiredMap, currentMap map[string]interface{}
+	if err := json.Unmarshal(desired, &desiredMap); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(current, &currentMap); err != nil {
+		return false
+	}
+
+	ignore := make(map[string]bool, len(ignoreFields))
+	for _, f := range ignoreFields {
+		ignore[f] = true
+	}
+
+	for key, desiredVal := range desiredMap {
+		if key == "defaultClientScopes" || key == "optionalClientScopes" {
+			continue
+		}
+		currentVal, exists := currentMap[key]
+		if !exists {
+			return false
+		}
+		if !valuesMatch(desiredVal, currentVal) {
+			return false
+		}
+	}
+
+	// Reverse check: every field in current must be either in desired or in the
+	// ignore list. This catches fields the user removed from the CRD.
+	for key := range currentMap {
+		if key == "defaultClientScopes" || key == "optionalClientScopes" {
+			continue
+		}
+		if ignore[key] {
+			continue
+		}
+		if _, exists := desiredMap[key]; !exists {
+			return false
+		}
+	}
+
+	return true
+}
+
 // valuesMatch compares two values, treating JSON arrays as unordered sets of strings
 // when all elements are strings. This prevents false diffs caused by Keycloak returning
 // array fields like defaultClientScopes in non-deterministic order.
