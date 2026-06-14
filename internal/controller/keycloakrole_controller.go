@@ -96,10 +96,11 @@ func (r *KeycloakRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.updateStatus(ctx, role, false, "InvalidDefinition", fmt.Sprintf("Failed to parse role definition: %v", err), "", "", false, "")
 	}
 
-	// Ensure name is set
-	roleName := roleDef.Name
-	if roleName == "" {
-		roleName = role.Name
+	// Resolve the role name with precedence spec.name > definition.name >
+	// metadata.name.
+	roleName, mismatch := resolveIdentifier(role.Spec.Name, roleDef.Name, role.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "name", roleName, roleDef.Name)
 	}
 
 	definition := setFieldInDefinition(role.Spec.Definition.Raw, "name", roleName)

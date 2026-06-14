@@ -96,14 +96,17 @@ func (r *KeycloakGroupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.updateStatus(ctx, group, false, "InvalidDefinition", fmt.Sprintf("Failed to parse group definition: %v", err), "")
 	}
 
-	// Ensure name is set
-	if groupDef.Name == "" {
-		// Default to metadata.name
-		groupDef.Name = group.Name
+	// Resolve the group name with precedence spec.name > definition.name >
+	// metadata.name.
+	groupName, mismatch := resolveIdentifier(group.Spec.Name, groupDef.Name, group.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "name", groupName, groupDef.Name)
 	}
+	groupDef.Name = groupName
+	group.Status.GroupName = groupName
 
 	// Prepare definition JSON with name set
-	definition := setFieldInDefinition(group.Spec.Definition.Raw, "name", groupDef.Name)
+	definition := setFieldInDefinition(group.Spec.Definition.Raw, "name", groupName)
 
 	// Check for parent group
 	var parentGroupID string

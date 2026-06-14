@@ -1,5 +1,7 @@
 # KeycloakUser
 
+> **Identifier field:** Set the identifier as the first-class `spec.username` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakUser` represents a user within a Keycloak realm, or a service account user associated with a client.
 
 ## Specification

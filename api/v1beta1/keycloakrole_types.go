@@ -22,7 +22,16 @@ type KeycloakRoleSpec struct {
 	// +optional
 	ClientRef *ResourceRef `json:"clientRef,omitempty"`
 
-	// Definition contains the Keycloak RoleRepresentation
+	// Name is the role name in Keycloak (defaults to metadata.name).
+	// This is the recommended way to set the role name and takes precedence
+	// over any name supplied inside spec.definition.
+	// +optional
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak RoleRepresentation.
+	// Deprecated: setting the identifier (name) inside definition is deprecated;
+	// use the first-class spec.name field instead. A name inside definition is
+	// still honored in this release but will be rejected in a future release.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

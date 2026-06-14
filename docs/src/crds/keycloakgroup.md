@@ -1,5 +1,7 @@
 # KeycloakGroup
 
+> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakGroup` represents a group within a Keycloak realm.
 
 ## Specification

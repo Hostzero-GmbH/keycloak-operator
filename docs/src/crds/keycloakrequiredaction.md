@@ -1,5 +1,7 @@
 # KeycloakRequiredAction
 
+> **Identifier field:** Set the identifier as the first-class `spec.alias` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakRequiredAction` manages a required action provider within a Keycloak realm. Required actions are steps that users must complete (e.g. update password, configure OTP, verify email) and can be enabled, disabled, or set as default for new users.
 
 Changes to `requiredActions` in `KeycloakRealm.spec.definition` only take effect on initial realm import. This CRD uses the dedicated required action API endpoints to allow changes after realm creation.

@@ -94,24 +94,37 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.updateStatus(ctx, user, false, "RealmNotReady", err.Error(), "", false, "")
 	}
 
-	// Parse user definition to extract username
+	// Parse the username from definition (if present), then resolve with
+	// precedence spec.username > definition.username > metadata.name and inject
+	// the resolved username into the definition. The metadata.name fallback is
+	// permanent, so a username is always derivable even when neither
+	// spec.username nor definition.username is set.
 	var userDef struct {
 		Username string `json:"username"`
 	}
-	if err := json.Unmarshal(user.Spec.Definition.Raw, &userDef); err != nil {
-		RecordError(controllerName, "invalid_definition")
-		return r.updateStatus(ctx, user, false, "InvalidDefinition", fmt.Sprintf("Failed to parse user definition: %v", err), "", false, "")
+	var rawDef []byte
+	if user.Spec.Definition != nil {
+		rawDef = user.Spec.Definition.Raw
+	}
+	if len(rawDef) > 0 {
+		if err := json.Unmarshal(rawDef, &userDef); err != nil {
+			RecordError(controllerName, "invalid_definition")
+			return r.updateStatus(ctx, user, false, "InvalidDefinition", fmt.Sprintf("Failed to parse user definition: %v", err), "", false, "")
+		}
 	}
 
-	// Ensure username is set
-	username := userDef.Username
-	if username == "" {
-		RecordError(controllerName, "invalid_definition")
-		return r.updateStatus(ctx, user, false, "InvalidDefinition", "Username is required in definition", "", false, "")
+	username, mismatch := resolveIdentifier(user.Spec.Username, userDef.Username, user.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "username", username, userDef.Username)
 	}
+	user.Status.Username = username
 
-	// Prepare definition
-	definition := user.Spec.Definition.Raw
+	// Prepare definition, injecting the resolved username.
+	definition := rawDef
+	if len(definition) == 0 {
+		definition = []byte("{}")
+	}
+	definition = setFieldInDefinition(definition, "username", username)
 
 	// Check if user exists by username
 	existingUsers, err := kc.GetUsers(ctx, realmName, map[string]string{

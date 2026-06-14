@@ -1,5 +1,7 @@
 # KeycloakOrganization
 
+> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakOrganization` represents an organization within a Keycloak realm.
 
 > **Note:** Organizations require **Keycloak 26.0.0 or later**. Attempting to use this resource with earlier Keycloak versions will result in an error.

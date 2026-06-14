@@ -25,7 +25,17 @@ type KeycloakUserSpec struct {
 	// +optional
 	ClientRef *ResourceRef `json:"clientRef,omitempty"`
 
-	// Definition contains the Keycloak UserRepresentation
+	// Username is the username in Keycloak (defaults to metadata.name).
+	// This is the recommended way to set the username and takes precedence over
+	// any username supplied inside spec.definition.
+	// +optional
+	Username *string `json:"username,omitempty"`
+
+	// Definition contains the Keycloak UserRepresentation.
+	// Deprecated: setting the identifier (username) inside definition is
+	// deprecated; use the first-class spec.username field instead. A username
+	// inside definition is still honored in this release but will be rejected in
+	// a future release.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`
@@ -156,6 +166,10 @@ type KeycloakUserStatus struct {
 	// +optional
 	UserID string `json:"userID,omitempty"`
 
+	// Username is the resolved username in Keycloak
+	// +optional
+	Username string `json:"username,omitempty"`
+
 	// IsServiceAccount indicates if this user is a service account for a client
 	// +optional
 	IsServiceAccount bool `json:"isServiceAccount,omitempty"`
@@ -184,6 +198,7 @@ type KeycloakUserStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the user is ready"
+// +kubebuilder:printcolumn:name="Username",type=string,JSONPath=`.status.username`,description="Username in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcu,categories={keycloak,all}

@@ -17,7 +17,16 @@ type KeycloakRequiredActionSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// Definition contains the Keycloak RequiredActionProviderRepresentation
+	// Alias is the required action alias in Keycloak (defaults to metadata.name).
+	// This is the recommended way to set the alias and takes precedence over any
+	// alias supplied inside spec.definition.
+	// +optional
+	Alias *string `json:"alias,omitempty"`
+
+	// Definition contains the Keycloak RequiredActionProviderRepresentation.
+	// Deprecated: setting the identifier (alias) inside definition is deprecated;
+	// use the first-class spec.alias field instead. An alias inside definition is
+	// still honored in this release but will be rejected in a future release.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

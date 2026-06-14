@@ -98,10 +98,13 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.updateStatus(ctx, component, false, "InvalidDefinition", fmt.Sprintf("Failed to parse component definition: %v", err), "", "", "")
 	}
 
-	// Ensure name is set
-	if componentDef.Name == "" {
-		componentDef.Name = component.Name
+	// Resolve the component name with precedence spec.name > definition.name >
+	// metadata.name. The providerType remains sourced from definition.
+	componentName, mismatch := resolveIdentifier(component.Spec.Name, componentDef.Name, component.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "name", componentName, componentDef.Name)
 	}
+	componentDef.Name = componentName
 
 	// Prepare definition JSON with name set
 	definition := setFieldInDefinition(component.Spec.Definition.Raw, "name", componentDef.Name)

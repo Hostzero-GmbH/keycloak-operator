@@ -107,10 +107,16 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 		return r.updateStatus(ctx, org, false, "InvalidDefinition", fmt.Sprintf("Failed to parse organization definition: %v", err), "")
 	}
 
-	// Ensure name is set
-	if orgDef.Name == "" {
-		orgDef.Name = org.Name
+	// Resolve the organization name with precedence spec.name > definition.name >
+	// metadata.name. NOTE: organizations use a typed-struct round-trip, so any
+	// definition field not present on keycloak.OrganizationRepresentation is
+	// dropped before send. This is a known passthrough limitation.
+	orgName, mismatch := resolveIdentifier(org.Spec.Name, orgDef.Name, org.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "name", orgName, orgDef.Name)
 	}
+	orgDef.Name = orgName
+	org.Status.OrganizationName = orgName
 
 	// Check if organization exists by name
 	existingOrgs, err := kc.GetOrganizations(ctx, realmName)

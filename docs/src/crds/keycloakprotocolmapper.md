@@ -1,5 +1,7 @@
 # KeycloakProtocolMapper
 
+> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakProtocolMapper` defines how user attributes, roles, and other data are mapped into tokens. Protocol mappers can be attached to either clients or client scopes.
 
 ## Specification

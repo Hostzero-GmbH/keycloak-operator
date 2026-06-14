@@ -1,5 +1,7 @@
 # KeycloakClient
 
+> **Identifier field:** Set the identifier as the first-class `spec.clientId` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakClient` represents an OAuth2/OIDC client within a Keycloak realm.
 
 ## Specification

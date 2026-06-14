@@ -106,16 +106,14 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// Set clientId from spec or use the one in definition
-	if kcClient.Spec.ClientId != nil && *kcClient.Spec.ClientId != "" {
-		clientDef.ClientID = *kcClient.Spec.ClientId
+	// Resolve the clientId with precedence spec.clientId > definition.clientId >
+	// metadata.name. The metadata.name fallback is permanent.
+	resolvedClientID, mismatch := resolveIdentifier(kcClient.Spec.ClientId, clientDef.ClientID, kcClient.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "clientId", resolvedClientID, clientDef.ClientID)
 	}
-
-	// Ensure clientId is set
-	if clientDef.ClientID == "" {
-		// Default to metadata.name
-		clientDef.ClientID = kcClient.Name
-	}
+	clientDef.ClientID = resolvedClientID
+	kcClient.Status.ClientID = resolvedClientID
 
 	// Prepare definition JSON with clientId set
 	var definition []byte
@@ -436,22 +434,17 @@ func (r *KeycloakClientReconciler) syncClientSecret(ctx context.Context, kcClien
 		return fmt.Errorf("failed to get client secret: %w", err)
 	}
 
-	// Get clientId from spec or definition
-	var clientId string
-	if kcClient.Spec.ClientId != nil && *kcClient.Spec.ClientId != "" {
-		clientId = *kcClient.Spec.ClientId
-	} else if kcClient.Spec.Definition != nil {
-		var clientDef struct {
-			ClientID string `json:"clientId"`
-		}
+	// Resolve the clientId with precedence spec.clientId > definition.clientId >
+	// metadata.name.
+	var clientDef struct {
+		ClientID string `json:"clientId"`
+	}
+	if kcClient.Spec.Definition != nil && len(kcClient.Spec.Definition.Raw) > 0 {
 		if err := json.Unmarshal(kcClient.Spec.Definition.Raw, &clientDef); err != nil {
 			return fmt.Errorf("failed to parse client definition: %w", err)
 		}
-		clientId = clientDef.ClientID
 	}
-	if clientId == "" {
-		clientId = kcClient.Name
-	}
+	clientId, _ := resolveIdentifier(kcClient.Spec.ClientId, clientDef.ClientID, kcClient.Name)
 
 	// Determine secret keys
 	clientIdKey := "client-id"
@@ -617,22 +610,17 @@ func (r *KeycloakClientReconciler) deleteClient(ctx context.Context, kcClient *k
 		return err
 	}
 
-	// Get clientId from spec or definition
-	var clientId string
-	if kcClient.Spec.ClientId != nil && *kcClient.Spec.ClientId != "" {
-		clientId = *kcClient.Spec.ClientId
-	} else if kcClient.Spec.Definition != nil {
-		var clientDef struct {
-			ClientID string `json:"clientId"`
-		}
+	// Resolve the clientId with precedence spec.clientId > definition.clientId >
+	// metadata.name.
+	var clientDef struct {
+		ClientID string `json:"clientId"`
+	}
+	if kcClient.Spec.Definition != nil && len(kcClient.Spec.Definition.Raw) > 0 {
 		if err := json.Unmarshal(kcClient.Spec.Definition.Raw, &clientDef); err != nil {
 			return fmt.Errorf("failed to parse client definition: %w", err)
 		}
-		clientId = clientDef.ClientID
 	}
-	if clientId == "" {
-		clientId = kcClient.Name
-	}
+	clientId, _ := resolveIdentifier(kcClient.Spec.ClientId, clientDef.ClientID, kcClient.Name)
 
 	// Find client by clientId
 	existingClient, err := kc.GetClientByClientID(ctx, realmName, clientId)

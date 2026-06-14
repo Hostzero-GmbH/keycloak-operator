@@ -17,7 +17,16 @@ type KeycloakClientScopeSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// Definition contains the Keycloak ClientScopeRepresentation
+	// Name is the client scope name in Keycloak (defaults to metadata.name).
+	// This is the recommended way to set the client scope name and takes
+	// precedence over any name supplied inside spec.definition.
+	// +optional
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak ClientScopeRepresentation.
+	// Deprecated: setting the identifier (name) inside definition is deprecated;
+	// use the first-class spec.name field instead. A name inside definition is
+	// still honored in this release but will be rejected in a future release.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -40,6 +49,10 @@ type KeycloakClientScopeStatus struct {
 	// +optional
 	ResourcePath string `json:"resourcePath,omitempty"`
 
+	// ClientScopeName is the resolved client scope name in Keycloak
+	// +optional
+	ClientScopeName string `json:"clientScopeName,omitempty"`
+
 	// Instance contains the resolved instance reference
 	// +optional
 	Instance *InstanceRef `json:"instance,omitempty"`
@@ -56,6 +69,7 @@ type KeycloakClientScopeStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the client scope is ready"
+// +kubebuilder:printcolumn:name="Name",type=string,JSONPath=`.status.clientScopeName`,description="Client scope name in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kccs,categories={keycloak,all}

@@ -61,6 +61,12 @@ spec:
           spec:
             description: KeycloakRequiredActionSpec defines the desired state of KeycloakRequiredAction
             properties:
+              alias:
+                description: |-
+                  Alias is the required action alias in Keycloak (defaults to metadata.name).
+                  This is the recommended way to set the alias and takes precedence over any
+                  alias supplied inside spec.definition.
+                type: string
               clusterRealmRef:
                 description: |-
                   ClusterRealmRef is a reference to a ClusterKeycloakRealm
@@ -73,7 +79,11 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak RequiredActionProviderRepresentation
+                description: |-
+                  Definition contains the Keycloak RequiredActionProviderRepresentation.
+                  Deprecated: setting the identifier (alias) inside definition is deprecated;
+                  use the first-class spec.alias field instead. An alias inside definition is
+                  still honored in this release but will be rejected in a future release.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:

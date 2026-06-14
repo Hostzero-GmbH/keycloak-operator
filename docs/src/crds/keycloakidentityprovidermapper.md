@@ -1,5 +1,7 @@
 # KeycloakIdentityProviderMapper
 
+> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakIdentityProviderMapper` declaratively manages a mapper attached to a `KeycloakIdentityProvider`. Identity provider mappers transform claims, attributes, or roles produced by an external identity provider as users authenticate through it.
 
 This CRD exists because Keycloak's `PUT /admin/realms/{realm}` endpoint silently ignores `identityProviderMappers` (mappers can only be imported with realm creation), and the `IdentityProviderRepresentation` itself has no `mappers` field. The dedicated mapper sub-resource at `/admin/realms/{realm}/identity-provider/instances/{alias}/mappers` is the only API path that allows updating mappers on existing realms (such as the master realm).

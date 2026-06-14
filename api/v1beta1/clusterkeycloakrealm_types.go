@@ -6,6 +6,7 @@ import (
 )
 
 // ClusterKeycloakRealmSpec defines the desired state of ClusterKeycloakRealm
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.realmName) || self.realmName == oldSelf.realmName",message="spec.realmName is immutable once set"
 type ClusterKeycloakRealmSpec struct {
 	// InstanceRef is a reference to a namespaced KeycloakInstance
 	// One of instanceRef or clusterInstanceRef must be specified
@@ -17,7 +18,10 @@ type ClusterKeycloakRealmSpec struct {
 	// +optional
 	ClusterInstanceRef *ClusterResourceRef `json:"clusterInstanceRef,omitempty"`
 
-	// RealmName is the name of the realm in Keycloak (defaults to metadata.name)
+	// RealmName is the name of the realm in Keycloak (defaults to metadata.name).
+	// This is the recommended way to set the realm name and takes precedence
+	// over any realm key supplied inside spec.definition. It is immutable once
+	// set: a realm rename in Keycloak is destructive and would orphan the realm.
 	// +optional
 	RealmName *string `json:"realmName,omitempty"`
 
@@ -27,7 +31,11 @@ type ClusterKeycloakRealmSpec struct {
 	// +optional
 	SmtpSecretRef *ClusterSmtpSecretRefSpec `json:"smtpSecretRef,omitempty"`
 
-	// Definition contains the Keycloak RealmRepresentation
+	// Definition contains the Keycloak RealmRepresentation.
+	// Deprecated: setting the identifier (realm) inside definition is deprecated;
+	// use the first-class spec.realmName field instead. A realm key inside
+	// definition is still honored in this release but will be rejected in a
+	// future release.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -102,14 +110,6 @@ type ClusterKeycloakRealmList struct {
 
 func init() {
 	SchemeBuilder.Register(&ClusterKeycloakRealm{}, &ClusterKeycloakRealmList{})
-}
-
-// GetRealmName returns the realm name to use in Keycloak
-func (r *ClusterKeycloakRealm) GetRealmName() string {
-	if r.Spec.RealmName != nil {
-		return *r.Spec.RealmName
-	}
-	return r.Name
 }
 
 // UsesClusterInstance returns true if this realm references a ClusterKeycloakInstance

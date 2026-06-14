@@ -91,9 +91,11 @@ func (r *KeycloakIdentityProviderMapperReconciler) Reconcile(ctx context.Context
 		return r.updateStatus(ctx, mapper, false, "InvalidDefinition", fmt.Sprintf("Failed to parse mapper definition: %v", err), "", "", alias)
 	}
 
-	mapperName := mapperDef.Name
-	if mapperName == "" {
-		mapperName = mapper.Name
+	// Resolve the mapper name with precedence spec.name > definition.name >
+	// metadata.name.
+	mapperName, mismatch := resolveIdentifier(mapper.Spec.Name, mapperDef.Name, mapper.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "name", mapperName, mapperDef.Name)
 	}
 
 	definition := setFieldInDefinition(mapper.Spec.Definition.Raw, "name", mapperName)

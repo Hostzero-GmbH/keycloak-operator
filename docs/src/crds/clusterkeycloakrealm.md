@@ -1,5 +1,9 @@
 # ClusterKeycloakRealm
 
+> **Identifier field:** Set the identifier as the first-class `spec.realmName` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
+> **`spec.realmName` is immutable once set.** A realm rename in Keycloak is destructive and would orphan the realm, so the value is locked after the first time it is set (the one-time migration from unset to a value is permitted).
+
 The `ClusterKeycloakRealm` resource defines a Keycloak realm at the **cluster level**, making it accessible to resources in any namespace.
 
 ## Overview

@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Identity provider alias in Keycloak
+      jsonPath: .status.alias
+      name: Alias
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -58,6 +62,12 @@ spec:
             description: KeycloakIdentityProviderSpec defines the desired state of
               KeycloakIdentityProvider
             properties:
+              alias:
+                description: |-
+                  Alias is the identity provider alias in Keycloak (defaults to metadata.name).
+                  This is the recommended way to set the alias and takes precedence over any
+                  alias supplied inside spec.definition.
+                type: string
               clusterRealmRef:
                 description: |-
                   ClusterRealmRef is a reference to a ClusterKeycloakRealm
@@ -84,7 +94,11 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak IdentityProviderRepresentation
+                description: |-
+                  Definition contains the Keycloak IdentityProviderRepresentation.
+                  Deprecated: setting the identifier (alias) inside definition is deprecated;
+                  use the first-class spec.alias field instead. An alias inside definition is
+                  still honored in this release but will be rejected in a future release.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:
@@ -129,6 +143,9 @@ spec:
             description: KeycloakIdentityProviderStatus defines the observed state
               of KeycloakIdentityProvider
             properties:
+              alias:
+                description: Alias is the resolved identity provider alias in Keycloak
+                type: string
               conditions:
                 description: Conditions represent the latest available observations
                 items:

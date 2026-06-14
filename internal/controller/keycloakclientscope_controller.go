@@ -96,11 +96,14 @@ func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.
 		return r.updateStatus(ctx, clientScope, false, "InvalidDefinition", fmt.Sprintf("Failed to parse client scope definition: %v", err), "")
 	}
 
-	// Ensure name is set
-	if scopeDef.Name == "" {
-		// Default to metadata.name
-		scopeDef.Name = clientScope.Name
+	// Resolve the client scope name with precedence spec.name > definition.name >
+	// metadata.name.
+	scopeName, mismatch := resolveIdentifier(clientScope.Spec.Name, scopeDef.Name, clientScope.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "name", scopeName, scopeDef.Name)
 	}
+	scopeDef.Name = scopeName
+	clientScope.Status.ClientScopeName = scopeName
 
 	// Prepare definition JSON with name set
 	definition := setFieldInDefinition(clientScope.Spec.Definition.Raw, "name", scopeDef.Name)
@@ -271,17 +274,19 @@ func (r *KeycloakClientScopeReconciler) deleteClientScope(ctx context.Context, c
 		return err
 	}
 
-	// Get scope ID from resource path or find by name
+	// Get scope ID from resource path or find by name, using the same resolution
+	// precedence as the create/update path (spec.name > definition.name >
+	// metadata.name) so deletion targets the synchronized scope.
 	var scopeDef struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal(clientScope.Spec.Definition.Raw, &scopeDef); err != nil {
-		return fmt.Errorf("failed to parse client scope definition: %w", err)
+	if len(clientScope.Spec.Definition.Raw) > 0 {
+		if err := json.Unmarshal(clientScope.Spec.Definition.Raw, &scopeDef); err != nil {
+			return fmt.Errorf("failed to parse client scope definition: %w", err)
+		}
 	}
 
-	if scopeDef.Name == "" {
-		scopeDef.Name = clientScope.Name
-	}
+	scopeDef.Name, _ = resolveIdentifier(clientScope.Spec.Name, scopeDef.Name, clientScope.Name)
 
 	// Find scope by name
 	scopes, err := kc.GetClientScopes(ctx, realmName)

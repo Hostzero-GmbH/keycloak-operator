@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Client scope name in Keycloak
+      jsonPath: .status.clientScopeName
+      name: Name
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -68,9 +72,19 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak ClientScopeRepresentation
+                description: |-
+                  Definition contains the Keycloak ClientScopeRepresentation.
+                  Deprecated: setting the identifier (name) inside definition is deprecated;
+                  use the first-class spec.name field instead. A name inside definition is
+                  still honored in this release but will be rejected in a future release.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              name:
+                description: |-
+                  Name is the client scope name in Keycloak (defaults to metadata.name).
+                  This is the recommended way to set the client scope name and takes
+                  precedence over any name supplied inside spec.definition.
+                type: string
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm
@@ -88,6 +102,10 @@ spec:
           status:
             description: KeycloakClientScopeStatus defines the observed state of KeycloakClientScope
             properties:
+              clientScopeName:
+                description: ClientScopeName is the resolved client scope name in
+                  Keycloak
+                type: string
               conditions:
                 description: Conditions represent the latest available observations
                 items:

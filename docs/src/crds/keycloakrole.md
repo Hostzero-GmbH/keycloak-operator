@@ -1,5 +1,7 @@
 # KeycloakRole
 
+> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+
 A `KeycloakRole` manages Keycloak roles. Roles can be either realm-level (shared across all clients) or client-level (specific to a single client).
 
 ## Specification

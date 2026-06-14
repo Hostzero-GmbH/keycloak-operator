@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Client ID in Keycloak
+      jsonPath: .status.clientID
+      name: ClientId
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -57,7 +61,10 @@ spec:
             description: KeycloakClientSpec defines the desired state of KeycloakClient
             properties:
               clientId:
-                description: ClientId is the client ID in Keycloak (defaults to metadata.name)
+                description: |-
+                  ClientId is the client ID in Keycloak (defaults to metadata.name).
+                  This is the recommended way to set the client identifier and takes
+                  precedence over any clientId supplied inside spec.definition.
                 type: string
               clientSecretRef:
                 description: |-
@@ -103,7 +110,12 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak ClientRepresentation
+                description: |-
+                  Definition contains the Keycloak ClientRepresentation.
+                  Deprecated: setting the identifier (clientId) inside definition is
+                  deprecated; use the first-class spec.clientId field instead. A clientId
+                  inside definition is still honored in this release but will be rejected
+                  in a future release.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:
@@ -121,6 +133,9 @@ spec:
           status:
             description: KeycloakClientStatus defines the observed state of KeycloakClient
             properties:
+              clientID:
+                description: ClientID is the resolved client ID (clientId) in Keycloak
+                type: string
               clientUUID:
                 description: ClientUUID is the Keycloak internal ID
                 type: string

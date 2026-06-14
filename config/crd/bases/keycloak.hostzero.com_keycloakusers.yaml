@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Username in Keycloak
+      jsonPath: .status.username
+      name: Username
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -81,7 +85,12 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak UserRepresentation
+                description: |-
+                  Definition contains the Keycloak UserRepresentation.
+                  Deprecated: setting the identifier (username) inside definition is
+                  deprecated; use the first-class spec.username field instead. A username
+                  inside definition is still honored in this release but will be rejected in
+                  a future release.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               initialPassword:
@@ -132,6 +141,12 @@ spec:
                 required:
                 - secretName
                 type: object
+              username:
+                description: |-
+                  Username is the username in Keycloak (defaults to metadata.name).
+                  This is the recommended way to set the username and takes precedence over
+                  any username supplied inside spec.definition.
+                type: string
             type: object
           status:
             description: KeycloakUserStatus defines the observed state of KeycloakUser
@@ -240,6 +255,9 @@ spec:
                 type: string
               userID:
                 description: UserID is the Keycloak internal user ID
+                type: string
+              username:
+                description: Username is the resolved username in Keycloak
                 type: string
             required:
             - ready

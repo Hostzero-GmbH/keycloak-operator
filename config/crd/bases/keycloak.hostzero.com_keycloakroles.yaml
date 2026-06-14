@@ -83,9 +83,19 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak RoleRepresentation
+                description: |-
+                  Definition contains the Keycloak RoleRepresentation.
+                  Deprecated: setting the identifier (name) inside definition is deprecated;
+                  use the first-class spec.name field instead. A name inside definition is
+                  still honored in this release but will be rejected in a future release.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              name:
+                description: |-
+                  Name is the role name in Keycloak (defaults to metadata.name).
+                  This is the recommended way to set the role name and takes precedence
+                  over any name supplied inside spec.definition.
+                type: string
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm

@@ -20,6 +20,7 @@ type ClusterResourceRef struct {
 }
 
 // KeycloakRealmSpec defines the desired state of KeycloakRealm
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.realmName) || self.realmName == oldSelf.realmName",message="spec.realmName is immutable once set"
 type KeycloakRealmSpec struct {
 	// InstanceRef is a reference to a KeycloakInstance
 	// One of instanceRef or clusterInstanceRef must be specified
@@ -31,7 +32,10 @@ type KeycloakRealmSpec struct {
 	// +optional
 	ClusterInstanceRef *ClusterResourceRef `json:"clusterInstanceRef,omitempty"`
 
-	// RealmName is the name of the realm in Keycloak (defaults to metadata.name)
+	// RealmName is the name of the realm in Keycloak (defaults to metadata.name).
+	// This is the recommended way to set the realm name and takes precedence
+	// over any realm key supplied inside spec.definition. It is immutable once
+	// set: a realm rename in Keycloak is destructive and would orphan the realm.
 	// +optional
 	RealmName *string `json:"realmName,omitempty"`
 
@@ -42,7 +46,11 @@ type KeycloakRealmSpec struct {
 	// +optional
 	SmtpSecretRef *SmtpSecretRefSpec `json:"smtpSecretRef,omitempty"`
 
-	// Definition contains the Keycloak RealmRepresentation
+	// Definition contains the Keycloak RealmRepresentation.
+	// Deprecated: setting the identifier (realm) inside definition is deprecated;
+	// use the first-class spec.realmName field instead. A realm key inside
+	// definition is still honored in this release but will be rejected in a
+	// future release.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -201,6 +209,10 @@ type KeycloakRealmStatus struct {
 	// +optional
 	ResourcePath string `json:"resourcePath,omitempty"`
 
+	// RealmName is the resolved realm name in Keycloak
+	// +optional
+	RealmName string `json:"realmName,omitempty"`
+
 	// Instance contains the resolved instance reference
 	// +optional
 	Instance *InstanceRef `json:"instance,omitempty"`
@@ -235,6 +247,7 @@ type RealmRef struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the realm is ready"
+// +kubebuilder:printcolumn:name="Realm",type=string,JSONPath=`.status.realmName`,description="Realm name in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcrm,categories={keycloak,all}
@@ -274,12 +287,4 @@ func (r *KeycloakRealm) GetClusterInstanceRef() *ClusterResourceRef {
 // UsesClusterInstance returns true if this realm references a ClusterKeycloakInstance
 func (r *KeycloakRealm) UsesClusterInstance() bool {
 	return r.Spec.ClusterInstanceRef != nil
-}
-
-// GetRealmName returns the realm name to use in Keycloak
-func (r *KeycloakRealm) GetRealmName() string {
-	if r.Spec.RealmName != nil {
-		return *r.Spec.RealmName
-	}
-	return r.Name
 }

@@ -94,9 +94,11 @@ func (r *KeycloakRequiredActionReconciler) Reconcile(ctx context.Context, req ct
 		return r.updateStatus(ctx, ra, false, "InvalidDefinition", fmt.Sprintf("Failed to parse definition: %v", err), "")
 	}
 
-	alias := raDef.Alias
-	if alias == "" {
-		alias = ra.Name
+	// Resolve the alias with precedence spec.alias > definition.alias >
+	// metadata.name.
+	alias, mismatch := resolveIdentifier(ra.Spec.Alias, raDef.Alias, ra.Name)
+	if mismatch {
+		warnIdentifierMismatch(ctx, "alias", alias, raDef.Alias)
 	}
 
 	definition := setFieldInDefinition(ra.Spec.Definition.Raw, "alias", alias)
@@ -148,18 +150,19 @@ func (r *KeycloakRequiredActionReconciler) deleteRequiredAction(ctx context.Cont
 		return err
 	}
 
+	// Resolve the alias using the same precedence as the create/update path
+	// (spec.alias > definition.alias > metadata.name) so deletion targets the
+	// synchronized required action.
 	var raDef struct {
 		Alias string `json:"alias"`
 	}
-	if err := json.Unmarshal(ra.Spec.Definition.Raw, &raDef); err != nil {
-		return fmt.Errorf("failed to parse definition: %w", err)
+	if len(ra.Spec.Definition.Raw) > 0 {
+		if err := json.Unmarshal(ra.Spec.Definition.Raw, &raDef); err != nil {
+			return fmt.Errorf("failed to parse definition: %w", err)
+		}
 	}
 
-	alias := raDef.Alias
-	if alias == "" {
-		alias = ra.Name
-	}
-
+	alias, _ := resolveIdentifier(ra.Spec.Alias, raDef.Alias, ra.Name)
 	return kc.DeleteRequiredAction(ctx, realmName, alias)
 }
 
