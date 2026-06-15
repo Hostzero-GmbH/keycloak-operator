@@ -163,6 +163,10 @@ kubectl get kcorg
 - **Keycloak 26.0.0+**: Organizations are a feature introduced in Keycloak 26. The operator will report an error if you try to create an organization on an older Keycloak version.
 - **Organizations must be enabled**: The organization feature must be enabled in the realm settings.
 
+## Reconciliation
+
+Reconciliation is idempotent. On each periodic resync the operator fetches the current organization from Keycloak and compares it against the spec; the update PUT is skipped when they already match, so an unchanged organization does not generate redundant writes or log noise. `domains[].verified` is set by Keycloak on read and is ignored in the comparison, so leaving it unset (or out of sync with the server) does not trigger a perpetual update loop.
+
 ## Notes
 
 - Organizations are immutable by ID - once created, the `id` field cannot be changed

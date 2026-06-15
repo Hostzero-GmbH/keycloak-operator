@@ -232,6 +232,70 @@ func TestDriftSkip(t *testing.T) {
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: realm.Name, Namespace: realm.Namespace}, final))
 		require.True(t, final.Status.Ready, "realm should remain Ready after skipped reconcile")
 	})
+
+	t.Run("KeycloakOrganization_DomainsVerifiedNoLoop", func(t *testing.T) {
+		// Organizations require Keycloak 26+; skip on older instances.
+		instance := &keycloakv1beta1.KeycloakInstance{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: instanceName, Namespace: testNamespace}, instance))
+		if instance.Status.Version == "" || instance.Status.Version[0:2] < "26" {
+			t.Skip("Organizations require Keycloak 26.0.0 or later")
+		}
+
+		realmName := createTestRealmWithOrganizations(t, instanceName, "drift-org")
+
+		orgName := fmt.Sprintf("drift-org-%d", time.Now().UnixNano())
+		// The spec omits domains[].verified. Keycloak sets it on read, which is
+		// the exact case organizationDefinitionsMatch strips so a naive
+		// byte-compare doesn't fire drift and PUT every reconcile.
+		orgDef := rawJSON(fmt.Sprintf(`{
+			"name": "%s",
+			"alias": "%s",
+			"enabled": true,
+			"domains": [{"name": "%s.example.com"}]
+		}`, orgName, orgName, orgName))
+
+		org := &keycloakv1beta1.KeycloakOrganization{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orgName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: orgDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, org))
+		t.Cleanup(func() { k8sClient.Delete(ctx, org) })
+
+		waitForOrganizationReady(t, org.Name, org.Namespace)
+
+		// Confirm Keycloak echoes domains[].verified on read — that's what
+		// drives the stripping branch in organizationDefinitionsMatch. If
+		// Keycloak stops doing this, fail fast rather than silently.
+		ready := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, ready))
+		kc := getInternalKeycloakClient(t)
+		raw, err := kc.GetOrganizationRaw(ctx, realmName, ready.Status.OrganizationID)
+		require.NoError(t, err)
+		var orgMap map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &orgMap))
+		domains, _ := orgMap["domains"].([]interface{})
+		require.NotEmpty(t, domains, "domains missing on organization read-back")
+		firstDomain, _ := domains[0].(map[string]interface{})
+		require.NotNil(t, firstDomain, "domain entry not an object on read-back")
+		require.Contains(t, firstDomain, "verified",
+			"Keycloak no longer echoes domains[].verified; organizationDefinitionsMatch may need revisiting")
+
+		// Force a reconcile and assert the controller logs the skip line.
+		since := time.Now().UTC()
+		bumpReconcile(t, ready)
+
+		assertSkipLogged(t, since, "organization already in sync, skipping update", "name", orgName)
+
+		final := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, final))
+		require.True(t, final.Status.Ready, "organization should remain Ready after skipped reconcile")
+	})
 }
 
 // bumpReconcile patches an annotation onto the given object to force the
@@ -358,4 +422,17 @@ func waitForRealmReady(t *testing.T, name, namespace string) {
 		return updated.Status.Ready, nil
 	})
 	require.NoError(t, err, "KeycloakRealm %s/%s did not become ready", namespace, name)
+}
+
+// waitForOrganizationReady waits for a KeycloakOrganization to reach Ready status.
+func waitForOrganizationReady(t *testing.T, name, namespace string) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		updated := &keycloakv1beta1.KeycloakOrganization{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, updated); err != nil {
+			return false, nil
+		}
+		return updated.Status.Ready, nil
+	})
+	require.NoError(t, err, "KeycloakOrganization %s/%s did not become ready", namespace, name)
 }
