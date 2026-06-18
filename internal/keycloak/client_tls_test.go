@@ -140,6 +140,28 @@ func TestClient_HTTPSInsecureSkipVerify(t *testing.T) {
 	}
 }
 
+func TestClientManager_ConfigChanged_NormalizesDefaults(t *testing.T) {
+	mgr := NewClientManager(testr.New(t))
+	base := Config{BaseURL: "https://kc/", Username: "u", Password: "p"}
+	c := mgr.GetOrCreateClient("kc/i", base)
+
+	if mgr.configChanged(c, base) {
+		t.Fatal("identical config should not be detected as changed")
+	}
+
+	withoutTrailingSlash := base
+	withoutTrailingSlash.BaseURL = "https://kc"
+	if mgr.configChanged(c, withoutTrailingSlash) {
+		t.Fatal("trailing-slash equivalent BaseURL should not be detected as changed")
+	}
+
+	withExplicitDefaultRealm := base
+	withExplicitDefaultRealm.Realm = "master"
+	if mgr.configChanged(c, withExplicitDefaultRealm) {
+		t.Fatal("explicit default realm should not be detected as changed")
+	}
+}
+
 func TestClientManager_ConfigChanged_TLSFields(t *testing.T) {
 	mgr := NewClientManager(testr.New(t))
 	base := Config{BaseURL: "https://kc", Username: "u", Password: "p", Realm: "master"}

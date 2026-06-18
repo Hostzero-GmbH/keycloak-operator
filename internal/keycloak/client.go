@@ -64,9 +64,7 @@ type TokenResponse struct {
 
 // NewClient creates a new Keycloak client
 func NewClient(cfg Config, log logr.Logger) *Client {
-	if cfg.Realm == "" {
-		cfg.Realm = "master"
-	}
+	cfg = normalizeConfig(cfg)
 
 	httpClient := resty.New().
 		SetTimeout(30 * time.Second).
@@ -77,7 +75,7 @@ func NewClient(cfg Config, log logr.Logger) *Client {
 	}
 
 	return &Client{
-		baseURL:            strings.TrimSuffix(cfg.BaseURL, "/"),
+		baseURL:            cfg.BaseURL,
 		realm:              cfg.Realm,
 		username:           cfg.Username,
 		password:           cfg.Password,
@@ -88,6 +86,14 @@ func NewClient(cfg Config, log logr.Logger) *Client {
 		httpClient:         httpClient,
 		log:                log.WithName("keycloak-client"),
 	}
+}
+
+func normalizeConfig(cfg Config) Config {
+	cfg.BaseURL = strings.TrimSuffix(cfg.BaseURL, "/")
+	if cfg.Realm == "" {
+		cfg.Realm = "master"
+	}
+	return cfg
 }
 
 // buildTLSConfig returns a *tls.Config when the cfg requests TLS customisation,
@@ -2131,6 +2137,7 @@ func (m *ClientManager) GetOrCreateClient(instanceName string, cfg Config) *Clie
 
 // configChanged checks if the config has changed from what's in the existing client
 func (m *ClientManager) configChanged(client *Client, cfg Config) bool {
+	cfg = normalizeConfig(cfg)
 	return client.baseURL != cfg.BaseURL ||
 		client.username != cfg.Username ||
 		client.password != cfg.Password ||

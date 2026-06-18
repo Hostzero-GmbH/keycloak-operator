@@ -63,6 +63,7 @@ type KeycloakInstanceReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile handles KeycloakInstance reconciliation
 func (r *KeycloakInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
