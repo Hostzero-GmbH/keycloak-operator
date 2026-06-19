@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakClientScopeSpec defines the desired state of KeycloakClientScope
+// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
 type KeycloakClientScopeSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified

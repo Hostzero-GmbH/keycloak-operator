@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakRoleSpec defines the desired state of KeycloakRole
+// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
 type KeycloakRoleSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified

@@ -5,6 +5,7 @@ import (
 )
 
 // KeycloakRoleMappingSpec defines the desired state of KeycloakRoleMapping
+// +kubebuilder:validation:XValidation:rule="has(self.role) != has(self.roleRef)",message="exactly one of role or roleRef must be set"
 type KeycloakRoleMappingSpec struct {
 	// Subject defines who the role is assigned to (user or group)
 	// +kubebuilder:validation:Required
@@ -22,6 +23,7 @@ type KeycloakRoleMappingSpec struct {
 }
 
 // RoleMappingSubject defines the target of the role mapping
+// +kubebuilder:validation:XValidation:rule="has(self.userRef) != has(self.groupRef)",message="exactly one of userRef or groupRef must be set"
 type RoleMappingSubject struct {
 	// UserRef references a KeycloakUser
 	// +optional
@@ -33,6 +35,7 @@ type RoleMappingSubject struct {
 }
 
 // RoleDefinition defines a role inline
+// +kubebuilder:validation:XValidation:rule="!(has(self.clientRef) && has(self.clientId))",message="at most one of clientRef or clientId may be set"
 type RoleDefinition struct {
 	// Name is the role name
 	// +kubebuilder:validation:Required
