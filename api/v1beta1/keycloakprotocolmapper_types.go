@@ -17,16 +17,13 @@ type KeycloakProtocolMapperSpec struct {
 	// +optional
 	ClientScopeRef *ResourceRef `json:"clientScopeRef,omitempty"`
 
-	// Name is the protocol mapper name in Keycloak (defaults to metadata.name).
-	// This is the recommended way to set the mapper name and takes precedence
-	// over any name supplied inside spec.definition.
-	// +optional
+	// Name is the protocol mapper name in Keycloak.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	Name *string `json:"name,omitempty"`
 
-	// Definition contains the Keycloak ProtocolMapperRepresentation.
-	// Deprecated: setting the identifier (name) inside definition is deprecated;
-	// use the first-class spec.name field instead. A name inside definition is
-	// still honored in this release but will be rejected in a future release.
+	// Definition contains the Keycloak ProtocolMapperRepresentation. Set the
+	// mapper name via spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

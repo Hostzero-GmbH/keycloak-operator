@@ -9,77 +9,72 @@ func TestResolveIdentifier(t *testing.T) {
 		name         string
 		specVal      *string
 		defVal       string
-		metaName     string
 		wantResolved string
-		wantMismatch bool
+		wantErr      bool
 	}{
 		{
-			name:         "spec only",
+			name:         "spec set, no in-definition value",
 			specVal:      strptr("from-spec"),
 			defVal:       "",
-			metaName:     "meta",
 			wantResolved: "from-spec",
-			wantMismatch: false,
+			wantErr:      false,
 		},
 		{
-			name:         "definition only falls through",
-			specVal:      nil,
-			defVal:       "from-def",
-			metaName:     "meta",
-			wantResolved: "from-def",
-			wantMismatch: false,
+			name:    "spec unset is rejected (required)",
+			specVal: nil,
+			defVal:  "",
+			wantErr: true,
 		},
 		{
-			name:         "metadata.name fallback when neither set",
-			specVal:      nil,
-			defVal:       "",
-			metaName:     "meta",
-			wantResolved: "meta",
-			wantMismatch: false,
+			name:    "empty spec pointer is rejected",
+			specVal: strptr(""),
+			defVal:  "",
+			wantErr: true,
 		},
 		{
-			name:         "spec wins over definition when both set and agree",
-			specVal:      strptr("same"),
-			defVal:       "same",
-			metaName:     "meta",
-			wantResolved: "same",
-			wantMismatch: false,
+			name:    "in-definition identifier is rejected even without a spec value",
+			specVal: nil,
+			defVal:  "from-def",
+			wantErr: true,
 		},
 		{
-			name:         "mismatch: spec wins, mismatch reported",
-			specVal:      strptr("from-spec"),
-			defVal:       "from-def",
-			metaName:     "meta",
-			wantResolved: "from-spec",
-			wantMismatch: true,
+			name:    "in-definition identifier is rejected even when it matches spec",
+			specVal: strptr("same"),
+			defVal:  "same",
+			wantErr: true,
 		},
 		{
-			name:         "empty spec pointer falls through to definition",
-			specVal:      strptr(""),
-			defVal:       "from-def",
-			metaName:     "meta",
-			wantResolved: "from-def",
-			wantMismatch: false,
-		},
-		{
-			name:         "empty spec pointer falls through to metadata.name",
-			specVal:      strptr(""),
-			defVal:       "",
-			metaName:     "meta",
-			wantResolved: "meta",
-			wantMismatch: false,
+			name:    "in-definition identifier is rejected when it differs from spec",
+			specVal: strptr("from-spec"),
+			defVal:  "from-def",
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resolved, mismatch := resolveIdentifier(tt.specVal, tt.defVal, tt.metaName)
+			resolved, err := resolveIdentifier("name", tt.specVal, tt.defVal)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got resolved=%q, nil error", resolved)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			if resolved != tt.wantResolved {
 				t.Errorf("resolved = %q, want %q", resolved, tt.wantResolved)
 			}
-			if mismatch != tt.wantMismatch {
-				t.Errorf("mismatch = %v, want %v", mismatch, tt.wantMismatch)
-			}
 		})
+	}
+}
+
+func TestIdentifierValue(t *testing.T) {
+	if got := identifierValue(nil); got != "" {
+		t.Errorf("identifierValue(nil) = %q, want empty", got)
+	}
+	if got := identifierValue(strptr("x")); got != "x" {
+		t.Errorf("identifierValue(\"x\") = %q, want \"x\"", got)
 	}
 }

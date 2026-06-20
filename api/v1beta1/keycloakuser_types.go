@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakUserSpec defines the desired state of KeycloakUser
+// +kubebuilder:validation:XValidation:rule="has(self.clientRef) || (has(self.username) && size(self.username) > 0)",message="spec.username is required unless spec.clientRef is set (service account user)"
 type KeycloakUserSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef, clusterRealmRef, or clientRef must be specified
@@ -25,17 +26,15 @@ type KeycloakUserSpec struct {
 	// +optional
 	ClientRef *ResourceRef `json:"clientRef,omitempty"`
 
-	// Username is the username in Keycloak (defaults to metadata.name).
-	// This is the recommended way to set the username and takes precedence over
-	// any username supplied inside spec.definition.
+	// Username is the username in Keycloak. Required for regular realm users;
+	// omit it for service account users, which are identified by clientRef and
+	// whose username is derived by Keycloak.
+	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Username *string `json:"username,omitempty"`
 
-	// Definition contains the Keycloak UserRepresentation.
-	// Deprecated: setting the identifier (username) inside definition is
-	// deprecated; use the first-class spec.username field instead. A username
-	// inside definition is still honored in this release but will be rejected in
-	// a future release.
+	// Definition contains the Keycloak UserRepresentation. Set the username via
+	// spec.username.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`

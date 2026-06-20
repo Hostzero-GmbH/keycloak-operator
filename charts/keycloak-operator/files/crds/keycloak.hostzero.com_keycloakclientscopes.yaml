@@ -73,17 +73,13 @@ spec:
                 type: object
               definition:
                 description: |-
-                  Definition contains the Keycloak ClientScopeRepresentation.
-                  Deprecated: setting the identifier (name) inside definition is deprecated;
-                  use the first-class spec.name field instead. A name inside definition is
-                  still honored in this release but will be rejected in a future release.
+                  Definition contains the Keycloak ClientScopeRepresentation. Set the client
+                  scope name via spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               name:
-                description: |-
-                  Name is the client scope name in Keycloak (defaults to metadata.name).
-                  This is the recommended way to set the client scope name and takes
-                  precedence over any name supplied inside spec.definition.
+                description: Name is the client scope name in Keycloak.
+                minLength: 1
                 type: string
               realmRef:
                 description: |-
@@ -98,6 +94,7 @@ spec:
                 type: object
             required:
             - definition
+            - name
             type: object
           status:
             description: KeycloakClientScopeStatus defines the observed state of KeycloakClientScope

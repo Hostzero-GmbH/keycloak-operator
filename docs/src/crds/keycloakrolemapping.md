@@ -168,8 +168,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
-  definition:
-    name: admins
+  name: admins
+  definition: {}
 ---
 # Create a role
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -179,8 +179,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: admin
   definition:
-    name: admin
     description: Full admin access
 ---
 # Map role to group

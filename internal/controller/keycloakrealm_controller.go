@@ -95,10 +95,8 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.updateStatus(ctx, realm, false, "InstanceNotReady", err.Error(), instanceRef)
 	}
 
-	// Resolve the realm name with precedence spec.realmName > definition.realm >
-	// metadata.name. The metadata.name fallback is permanent, so the name is
-	// always derivable. This fixes the historical "Realm name is required in
-	// definition" failure when only spec.realmName was set.
+	// Resolve the realm name from spec.realmName. realmDef.Realm is parsed only
+	// so resolveIdentifier can reject a realm key set in definition.
 	var realmDef struct {
 		Realm string `json:"realm"`
 	}
@@ -109,9 +107,10 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	realmName, mismatch := resolveIdentifier(realm.Spec.RealmName, realmDef.Realm, realm.Name)
-	if mismatch {
-		warnIdentifierMismatch(ctx, "realmName", realmName, realmDef.Realm)
+	realmName, err := resolveIdentifier("realmName", realm.Spec.RealmName, realmDef.Realm)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, realm, false, InvalidIdentifierReason, err.Error(), instanceRef)
 	}
 	realm.Status.RealmName = realmName
 
@@ -271,19 +270,9 @@ func (r *KeycloakRealmReconciler) deleteRealm(ctx context.Context, realm *keyclo
 		return err
 	}
 
-	// Resolve the realm name using the same precedence as the create/update path
-	// (spec.realmName > definition.realm > metadata.name) so deletion never
-	// targets a different realm than the one that was synchronized.
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if len(realm.Spec.Definition.Raw) > 0 {
-		if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-			return fmt.Errorf("failed to parse realm definition: %w", err)
-		}
-	}
-
-	realmName, _ := resolveIdentifier(realm.Spec.RealmName, realmDef.Realm, realm.Name)
+	// Use spec.realmName so deletion never targets a different realm than the one
+	// that was synchronized.
+	realmName := identifierValue(realm.Spec.RealmName)
 	return kc.DeleteRealm(ctx, realmName)
 }
 

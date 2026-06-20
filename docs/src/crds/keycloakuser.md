@@ -1,6 +1,6 @@
 # KeycloakUser
 
-> **Identifier field:** Set the identifier as the first-class `spec.username` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+> **Identifier field:** Set the username in the `spec.username` field, not inside `spec.definition`. Required for regular users; omit it for service account users, which are identified by `clientRef`.
 
 A `KeycloakUser` represents a user within a Keycloak realm, or a service account user associated with a client.
 
@@ -28,8 +28,8 @@ spec:
   
   # User definition (Keycloak UserRepresentation)
   # Note: For service account users (clientRef), definition is optional
+  username: johndoe
   definition:
-    username: johndoe
     email: john.doe@example.com
     firstName: John
     lastName: Doe
@@ -81,8 +81,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: admin
   definition:
-    username: admin
     email: admin@example.com
     firstName: Admin
     lastName: User
@@ -114,8 +114,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: johndoe
   definition:
-    username: johndoe
     email: john.doe@example.com
     firstName: John
     lastName: Doe
@@ -135,8 +135,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: jsmith
   definition:
-    username: jsmith
     email: jsmith@company.com
     firstName: Jane
     lastName: Smith
@@ -160,8 +160,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: developer1
   definition:
-    username: developer1
     email: dev@example.com
     enabled: true
     groups:

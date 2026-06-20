@@ -6,8 +6,8 @@ metadata:
 spec:
   clientRef:
     name: example-client
+  name: groups
   definition:
-    name: groups
     protocol: openid-connect
     protocolMapper: oidc-group-membership-mapper
     config:

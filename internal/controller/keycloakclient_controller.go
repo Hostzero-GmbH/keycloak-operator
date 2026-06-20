@@ -106,11 +106,11 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	// Resolve the clientId with precedence spec.clientId > definition.clientId >
-	// metadata.name. The metadata.name fallback is permanent.
-	resolvedClientID, mismatch := resolveIdentifier(kcClient.Spec.ClientId, clientDef.ClientID, kcClient.Name)
-	if mismatch {
-		warnIdentifierMismatch(ctx, "clientId", resolvedClientID, clientDef.ClientID)
+	// Resolve the clientId from spec.clientId.
+	resolvedClientID, err := resolveIdentifier("clientId", kcClient.Spec.ClientId, clientDef.ClientID)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, kcClient, false, InvalidIdentifierReason, err.Error(), "", instanceRef, realmRef)
 	}
 	clientDef.ClientID = resolvedClientID
 	kcClient.Status.ClientID = resolvedClientID
@@ -257,21 +257,15 @@ func (r *KeycloakClientReconciler) getKeycloakClientAndRealm(ctx context.Context
 		return nil, "", instanceRef, realmRef, fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 
-	// Get realm name from definition
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return nil, "", instanceRef, realmRef, fmt.Errorf("failed to parse realm definition: %w", err)
-	}
-
 	// Get Keycloak client from realm's instance
 	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", instanceRef, realmRef, err
 	}
 
-	return kc, realmDef.Realm, instanceRef, realmRef, nil
+	// The realm name is the referenced realm's resolved identifier (spec.realmName,
+	// surfaced via status); it is never read from the realm's definition.
+	return kc, realm.Status.RealmName, instanceRef, realmRef, nil
 }
 
 func (r *KeycloakClientReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, *keycloakv1beta1.InstanceRef, error) {
@@ -289,15 +283,6 @@ func (r *KeycloakClientReconciler) getKeycloakClientFromClusterRealm(ctx context
 
 	// Get realm name
 	realmName := clusterRealm.Status.RealmName
-	if realmName == "" {
-		var realmDef struct {
-			Realm string `json:"realm"`
-		}
-		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
-			return nil, "", instanceRef, fmt.Errorf("failed to parse cluster realm definition: %w", err)
-		}
-		realmName = realmDef.Realm
-	}
 
 	// Get Keycloak client from cluster instance
 	if clusterRealm.Spec.ClusterInstanceRef != nil {
@@ -434,17 +419,8 @@ func (r *KeycloakClientReconciler) syncClientSecret(ctx context.Context, kcClien
 		return fmt.Errorf("failed to get client secret: %w", err)
 	}
 
-	// Resolve the clientId with precedence spec.clientId > definition.clientId >
-	// metadata.name.
-	var clientDef struct {
-		ClientID string `json:"clientId"`
-	}
-	if kcClient.Spec.Definition != nil && len(kcClient.Spec.Definition.Raw) > 0 {
-		if err := json.Unmarshal(kcClient.Spec.Definition.Raw, &clientDef); err != nil {
-			return fmt.Errorf("failed to parse client definition: %w", err)
-		}
-	}
-	clientId, _ := resolveIdentifier(kcClient.Spec.ClientId, clientDef.ClientID, kcClient.Name)
+	// Use the clientId from spec.clientId.
+	clientId := identifierValue(kcClient.Spec.ClientId)
 
 	// Determine secret keys
 	clientIdKey := "client-id"
@@ -610,17 +586,8 @@ func (r *KeycloakClientReconciler) deleteClient(ctx context.Context, kcClient *k
 		return err
 	}
 
-	// Resolve the clientId with precedence spec.clientId > definition.clientId >
-	// metadata.name.
-	var clientDef struct {
-		ClientID string `json:"clientId"`
-	}
-	if kcClient.Spec.Definition != nil && len(kcClient.Spec.Definition.Raw) > 0 {
-		if err := json.Unmarshal(kcClient.Spec.Definition.Raw, &clientDef); err != nil {
-			return fmt.Errorf("failed to parse client definition: %w", err)
-		}
-	}
-	clientId, _ := resolveIdentifier(kcClient.Spec.ClientId, clientDef.ClientID, kcClient.Name)
+	// Use the clientId from spec.clientId.
+	clientId := identifierValue(kcClient.Spec.ClientId)
 
 	// Find client by clientId
 	existingClient, err := kc.GetClientByClientID(ctx, realmName, clientId)

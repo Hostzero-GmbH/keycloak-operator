@@ -1,6 +1,6 @@
 # KeycloakClientScope
 
-> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+> **Identifier field:** Set the client scope name in the `spec.name` field, not inside `spec.definition`. It is required.
 
 A `KeycloakClientScope` represents a client scope within a Keycloak realm.
 
@@ -23,8 +23,8 @@ spec:
     name: my-cluster-realm
   
   # Required: Client scope definition
+  name: my-scope
   definition:
-    name: my-scope
     protocol: openid-connect
     # ... any other properties
 ```
@@ -59,8 +59,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: profile-extended
   definition:
-    name: profile-extended
     description: Extended profile information
     protocol: openid-connect
 ```
@@ -75,8 +75,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: department
   definition:
-    name: department
     description: Department information
     protocol: openid-connect
     protocolMappers:

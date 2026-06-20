@@ -91,11 +91,11 @@ func (r *KeycloakIdentityProviderMapperReconciler) Reconcile(ctx context.Context
 		return r.updateStatus(ctx, mapper, false, "InvalidDefinition", fmt.Sprintf("Failed to parse mapper definition: %v", err), "", "", alias)
 	}
 
-	// Resolve the mapper name with precedence spec.name > definition.name >
-	// metadata.name.
-	mapperName, mismatch := resolveIdentifier(mapper.Spec.Name, mapperDef.Name, mapper.Name)
-	if mismatch {
-		warnIdentifierMismatch(ctx, "name", mapperName, mapperDef.Name)
+	// Resolve the mapper name from spec.name.
+	mapperName, err := resolveIdentifier("name", mapper.Spec.Name, mapperDef.Name)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, mapper, false, InvalidIdentifierReason, err.Error(), "", "", alias)
 	}
 
 	definition := setFieldInDefinition(mapper.Spec.Definition.Raw, "name", mapperName)
@@ -192,10 +192,7 @@ func (r *KeycloakIdentityProviderMapperReconciler) getKeycloakClientAndParent(ct
 		return nil, "", "", fmt.Errorf("KeycloakIdentityProvider %s is not ready", idpKey)
 	}
 
-	alias, err := identityProviderAlias(idp)
-	if err != nil {
-		return nil, "", "", err
-	}
+	alias := identityProviderAlias(idp)
 
 	kc, realmName, err := GetKeycloakClientAndRealmForIDP(ctx, r.Client, r.ClientManager, idp)
 	if err != nil {
@@ -205,23 +202,11 @@ func (r *KeycloakIdentityProviderMapperReconciler) getKeycloakClientAndParent(ct
 	return kc, realmName, alias, nil
 }
 
-// identityProviderAlias extracts the Keycloak alias for the given
-// KeycloakIdentityProvider, following the same fallback as the IdP controller:
-// the alias from spec.definition, falling back to the CR's metadata.name.
-func identityProviderAlias(idp *keycloakv1beta1.KeycloakIdentityProvider) (string, error) {
-	var idpDef struct {
-		Alias string `json:"alias"`
-	}
-	if len(idp.Spec.Definition.Raw) > 0 {
-		if err := json.Unmarshal(idp.Spec.Definition.Raw, &idpDef); err != nil {
-			return "", fmt.Errorf("failed to parse identity provider definition: %w", err)
-		}
-	}
-	alias := idpDef.Alias
-	if alias == "" {
-		alias = idp.Name
-	}
-	return alias, nil
+// identityProviderAlias returns the Keycloak alias of the parent
+// KeycloakIdentityProvider from its spec.alias field. The parent IdP controller
+// requires spec.alias, so it is always populated for a ready parent.
+func identityProviderAlias(idp *keycloakv1beta1.KeycloakIdentityProvider) string {
+	return identifierValue(idp.Spec.Alias)
 }
 
 func (r *KeycloakIdentityProviderMapperReconciler) deleteMapper(ctx context.Context, mapper *keycloakv1beta1.KeycloakIdentityProviderMapper) error {

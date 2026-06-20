@@ -1,6 +1,6 @@
 # KeycloakOrganization
 
-> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+> **Identifier field:** Set the organization name in the `spec.name` field, not inside `spec.definition`. It is required.
 
 A `KeycloakOrganization` represents an organization within a Keycloak realm.
 
@@ -19,8 +19,8 @@ spec:
     name: my-realm
   
   # Required: Organization definition (Keycloak OrganizationRepresentation)
+  name: ACME Corporation
   definition:
-    name: ACME Corporation
     alias: acme
     description: ACME Corp organization
     enabled: true
@@ -63,8 +63,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: My Organization
   definition:
-    name: My Organization
     enabled: true
 ```
 
@@ -80,8 +80,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: Example Organization
   definition:
-    name: Example Organization
     alias: example
     description: An example organization with verified domains
     enabled: true
@@ -102,8 +102,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: Enterprise Organization
   definition:
-    name: Enterprise Organization
     alias: enterprise
     enabled: true
     attributes:
@@ -125,8 +125,8 @@ metadata:
 spec:
   clusterRealmRef:
     name: shared-realm
+  name: Global Organization
   definition:
-    name: Global Organization
     enabled: true
 ```
 

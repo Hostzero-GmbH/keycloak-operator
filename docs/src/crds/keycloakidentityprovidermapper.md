@@ -1,6 +1,6 @@
 # KeycloakIdentityProviderMapper
 
-> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+> **Identifier field:** Set the mapper name in the `spec.name` field, not inside `spec.definition`. It is required.
 
 A `KeycloakIdentityProviderMapper` declaratively manages a mapper attached to a `KeycloakIdentityProvider`. Identity provider mappers transform claims, attributes, or roles produced by an external identity provider as users authenticate through it.
 
@@ -22,8 +22,8 @@ spec:
   # Required: mapper definition (Keycloak IdentityProviderMapperRepresentation).
   # `identityProviderAlias` is auto-injected from the parent IdP and does not
   # need to be set here.
+  name: my-mapper
   definition:
-    name: my-mapper
     identityProviderMapper: oidc-role-idp-mapper
     config:
       syncMode: FORCE
@@ -64,8 +64,8 @@ metadata:
 spec:
   identityProviderRef:
     name: oidc
+  name: mdm-support-role-mapper
   definition:
-    name: mdm-support-role-mapper
     identityProviderMapper: oidc-role-idp-mapper
     config:
       syncMode: FORCE
@@ -85,8 +85,8 @@ metadata:
 spec:
   identityProviderRef:
     name: oidc
+  name: source-attribute
   definition:
-    name: source-attribute
     identityProviderMapper: hardcoded-attribute-idp-mapper
     config:
       syncMode: INHERIT
@@ -108,7 +108,7 @@ The `definition` field accepts any valid Keycloak [IdentityProviderMapperReprese
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | Mapper name (defaults to `metadata.name` if omitted) |
+| `name` | string | Mapper name; set via spec.name (required, not in definition) |
 | `identityProviderMapper` | string | Mapper type (see below) |
 | `identityProviderAlias` | string | Auto-injected from the parent IdP; setting it manually is overridden |
 | `config` | object | Mapper-specific configuration (all values are strings) |

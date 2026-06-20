@@ -17,16 +17,13 @@ type KeycloakClientScopeSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// Name is the client scope name in Keycloak (defaults to metadata.name).
-	// This is the recommended way to set the client scope name and takes
-	// precedence over any name supplied inside spec.definition.
-	// +optional
+	// Name is the client scope name in Keycloak.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	Name *string `json:"name,omitempty"`
 
-	// Definition contains the Keycloak ClientScopeRepresentation.
-	// Deprecated: setting the identifier (name) inside definition is deprecated;
-	// use the first-class spec.name field instead. A name inside definition is
-	// still honored in this release but will be rejected in a future release.
+	// Definition contains the Keycloak ClientScopeRepresentation. Set the client
+	// scope name via spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

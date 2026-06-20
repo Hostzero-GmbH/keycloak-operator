@@ -1,46 +1,37 @@
 package controller
 
-import (
-	"context"
+import "fmt"
 
-	"sigs.k8s.io/controller-runtime/pkg/log"
-)
+// InvalidIdentifierReason is the status/condition reason used when a CR's
+// resource identifier cannot be resolved from its spec field.
+const InvalidIdentifierReason = "InvalidIdentifier"
 
-// IdentifierMismatchReason is the event/condition reason used when a CR supplies
-// the resource identifier in both its first-class spec field and inside
-// spec.definition with differing values.
-const IdentifierMismatchReason = "IdentifierMismatch"
-
-// resolveIdentifier computes the resolved resource identifier using the
-// precedence spec.<id> > definition.<id> > metadata.name. The metadata.name
-// fallback is permanent, so an identifier is always derivable.
+// resolveIdentifier returns the resource identifier from its required spec field.
+// The identifier must be set there, not inside spec.definition.
 //
-// It returns the resolved value and whether the spec field and the in-definition
-// key both supplied a non-empty value that disagree. A mismatch is currently a
-// soft warning: the spec value wins and reconcile continues.
-func resolveIdentifier(specVal *string, defVal, metaName string) (resolved string, mismatch bool) {
+// specField is the spec property name (e.g. "realmName") used in error messages.
+// defVal is the identifier found in spec.definition, if any; setting it there is
+// an error.
+func resolveIdentifier(specField string, specVal *string, defVal string) (string, error) {
 	spec := ""
 	if specVal != nil {
 		spec = *specVal
 	}
-
-	switch {
-	case spec != "":
-		resolved = spec
-		mismatch = defVal != "" && defVal != spec
-	case defVal != "":
-		resolved = defVal
-	default:
-		resolved = metaName
+	if defVal != "" {
+		return "", fmt.Errorf("the identifier must be set via spec.%s, not inside spec.definition", specField)
 	}
-	return resolved, mismatch
+	if spec == "" {
+		return "", fmt.Errorf("spec.%s is required", specField)
+	}
+	return spec, nil
 }
 
-// warnIdentifierMismatch surfaces a soft warning when the first-class spec field
-// and the in-definition identifier key disagree. The spec value wins and the
-// reconcile continues; the in-definition identifier key is deprecated and will be
-// rejected in a future release.
-func warnIdentifierMismatch(ctx context.Context, field, resolved, defVal string) {
-	log.FromContext(ctx).Info("identifier mismatch: spec field overrides differing definition key (the in-definition identifier is deprecated and will be rejected in a future release)",
-		"reason", IdentifierMismatchReason, "field", field, "resolved", resolved, "definition", defVal)
+// identifierValue returns the dereferenced identifier. It is used by secondary
+// code paths (deletion, credential writes, drift lookups) that run after the
+// main reconcile has already validated the identifier with resolveIdentifier.
+func identifierValue(specVal *string) string {
+	if specVal == nil {
+		return ""
+	}
+	return *specVal
 }

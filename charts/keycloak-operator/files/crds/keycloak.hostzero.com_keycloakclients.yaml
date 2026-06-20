@@ -61,10 +61,8 @@ spec:
             description: KeycloakClientSpec defines the desired state of KeycloakClient
             properties:
               clientId:
-                description: |-
-                  ClientId is the client ID in Keycloak (defaults to metadata.name).
-                  This is the recommended way to set the client identifier and takes
-                  precedence over any clientId supplied inside spec.definition.
+                description: ClientId is the client ID in Keycloak.
+                minLength: 1
                 type: string
               clientSecretRef:
                 description: |-
@@ -111,11 +109,8 @@ spec:
                 type: object
               definition:
                 description: |-
-                  Definition contains the Keycloak ClientRepresentation.
-                  Deprecated: setting the identifier (clientId) inside definition is
-                  deprecated; use the first-class spec.clientId field instead. A clientId
-                  inside definition is still honored in this release but will be rejected
-                  in a future release.
+                  Definition contains the Keycloak ClientRepresentation. Set the client ID
+                  via spec.clientId.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:
@@ -129,6 +124,8 @@ spec:
                 required:
                 - name
                 type: object
+            required:
+            - clientId
             type: object
           status:
             description: KeycloakClientStatus defines the observed state of KeycloakClient

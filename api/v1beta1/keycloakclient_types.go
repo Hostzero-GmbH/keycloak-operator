@@ -17,17 +17,13 @@ type KeycloakClientSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// ClientId is the client ID in Keycloak (defaults to metadata.name).
-	// This is the recommended way to set the client identifier and takes
-	// precedence over any clientId supplied inside spec.definition.
-	// +optional
+	// ClientId is the client ID in Keycloak.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	ClientId *string `json:"clientId,omitempty"`
 
-	// Definition contains the Keycloak ClientRepresentation.
-	// Deprecated: setting the identifier (clientId) inside definition is
-	// deprecated; use the first-class spec.clientId field instead. A clientId
-	// inside definition is still honored in this release but will be rejected
-	// in a future release.
+	// Definition contains the Keycloak ClientRepresentation. Set the client ID
+	// via spec.clientId.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`

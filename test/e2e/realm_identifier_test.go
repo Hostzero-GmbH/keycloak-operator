@@ -14,9 +14,9 @@ import (
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 )
 
-// TestKeycloakRealmIdentifierUnification exercises the first-class identifier
-// behavior for realms: the realmName-only regression, spec-over-definition
-// precedence on mismatch, and the realmName immutability CEL rule.
+// TestKeycloakRealmIdentifierUnification covers realm identifier behavior:
+// resolving realmName from spec, rejecting a realm key set in definition, and
+// the realmName immutability CEL rule.
 func TestKeycloakRealmIdentifierUnification(t *testing.T) {
 	skipIfNoCluster(t)
 
@@ -54,10 +54,11 @@ func TestKeycloakRealmIdentifierUnification(t *testing.T) {
 		t.Logf("realm %q created from spec.realmName only", realmInKeycloak)
 	})
 
-	// spec.realmName must win when it differs from definition.realm: spec wins,
-	// reconcile continues, and a soft mismatch warning is logged.
-	t.Run("SpecOverridesDefinitionRealmMismatch", func(t *testing.T) {
-		crName := fmt.Sprintf("rn-mismatch-%d", time.Now().UnixNano())
+	// Supplying the identifier inside definition is rejected: the realm must not
+	// become Ready, the status message must point at spec.definition, and nothing
+	// is created in Keycloak.
+	t.Run("DefinitionRealmKeyRejected", func(t *testing.T) {
+		crName := fmt.Sprintf("rn-defkey-%d", time.Now().UnixNano())
 		specRealm := fmt.Sprintf("kc-spec-%d", time.Now().UnixNano())
 
 		realm := &keycloakv1beta1.KeycloakRealm{
@@ -65,22 +66,29 @@ func TestKeycloakRealmIdentifierUnification(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
 				RealmName:   strPtr(specRealm),
-				Definition:  rawJSON(`{"realm": "from-definition-should-be-overridden", "enabled": true}`),
+				Definition:  rawJSON(`{"realm": "in-definition-not-allowed", "enabled": true}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
 		t.Cleanup(func() { k8sClient.Delete(ctx, realm) })
 
-		updated := waitRealmReady(t, crName)
-		require.Equal(t, specRealm, updated.Status.RealmName,
-			"spec.realmName must win over definition.realm")
+		updated := &keycloakv1beta1.KeycloakRealm{}
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crName, Namespace: testNamespace}, updated); err != nil {
+				return false, nil
+			}
+			return !updated.Status.Ready && updated.Status.Message != "", nil
+		})
+		require.NoError(t, err, "realm should report a not-ready state")
+		require.False(t, updated.Status.Ready,
+			"a realm with an in-definition realm key must not be Ready")
+		require.Contains(t, updated.Status.Message, "definition",
+			"rejection message should point at spec.definition")
 
 		if canConnectToKeycloak() {
 			kc := getInternalKeycloakClient(t)
 			_, err := kc.GetRealm(ctx, specRealm)
-			require.NoError(t, err, "realm should exist under spec.realmName, not definition.realm")
-			_, err = kc.GetRealm(ctx, "from-definition-should-be-overridden")
-			require.Error(t, err, "the definition.realm value must NOT have been used")
+			require.Error(t, err, "realm must NOT be created while the identifier is rejected")
 		}
 	})
 

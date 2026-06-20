@@ -1,6 +1,6 @@
 # KeycloakComponent
 
-> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+> **Identifier field:** Set the component name in the `spec.name` field, not inside `spec.definition`. It is required.
 
 A `KeycloakComponent` manages Keycloak components such as LDAP user federation, custom storage providers, key providers, and other pluggable realm components.
 
@@ -23,8 +23,8 @@ spec:
   #   name: my-cluster-realm
   
   # Required: Component definition
+  name: corporate-ldap
   definition:
-    name: corporate-ldap
     providerId: ldap
     providerType: org.keycloak.storage.UserStorageProvider
     config:
@@ -68,8 +68,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: corporate-ldap
   definition:
-    name: corporate-ldap
     providerId: ldap
     providerType: org.keycloak.storage.UserStorageProvider
     config:
@@ -102,8 +102,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: rsa-generated
   definition:
-    name: rsa-generated
     providerId: rsa-generated
     providerType: org.keycloak.keys.KeyProvider
     config:

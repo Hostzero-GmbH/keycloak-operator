@@ -1,6 +1,6 @@
 # KeycloakRole
 
-> **Identifier field:** Set the identifier as the first-class `spec.name` field. It takes precedence over the same key inside `spec.definition`, which is deprecated for the identifier and will be rejected in a future release. If neither is set, the identifier defaults to `metadata.name`.
+> **Identifier field:** Set the role name in the `spec.name` field, not inside `spec.definition`. It is required.
 
 A `KeycloakRole` manages Keycloak roles. Roles can be either realm-level (shared across all clients) or client-level (specific to a single client).
 
@@ -23,8 +23,8 @@ spec:
   #   name: my-client
   
   # Required: Role definition (Keycloak RoleRepresentation)
+  name: admin-role
   definition:
-    name: admin-role
     description: Administrator role
 ```
 
@@ -62,8 +62,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: admin-role
   definition:
-    name: admin-role
     description: Administrator role with full access
     composite: false
 ```
@@ -79,8 +79,8 @@ metadata:
 spec:
   clientRef:
     name: my-client
+  name: editor
   definition:
-    name: editor
     description: Can edit resources
 ```
 

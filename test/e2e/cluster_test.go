@@ -97,11 +97,10 @@ func TestClusterKeycloakRealmE2E(t *testing.T) {
 	t.Run("CreateClusterRealm", func(t *testing.T) {
 		realmName := fmt.Sprintf("cluster-realm-%d", time.Now().UnixNano())
 
-		realmDef := rawJSON(fmt.Sprintf(`{
-			"realm": "%s",
+		realmDef := rawJSON(`{
 			"enabled": true,
 			"displayName": "Cluster Realm Test"
-		}`, realmName))
+		}`)
 
 		clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{
@@ -111,6 +110,7 @@ func TestClusterKeycloakRealmE2E(t *testing.T) {
 				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{
 					Name: clusterInstanceName,
 				},
+				RealmName:  strPtr(realmName),
 				Definition: realmDef,
 			},
 		}
@@ -143,10 +143,9 @@ func TestClusterKeycloakRealmE2E(t *testing.T) {
 
 		realmName := fmt.Sprintf("cluster-realm-ns-%d", time.Now().UnixNano())
 
-		realmDef := rawJSON(fmt.Sprintf(`{
-			"realm": "%s",
+		realmDef := rawJSON(`{
 			"enabled": true
-		}`, realmName))
+		}`)
 
 		clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{
@@ -157,6 +156,7 @@ func TestClusterKeycloakRealmE2E(t *testing.T) {
 					Name:      instanceName,
 					Namespace: instanceNS,
 				},
+				RealmName:  strPtr(realmName),
 				Definition: realmDef,
 			},
 		}
@@ -185,10 +185,9 @@ func TestClusterRealmCrossNamespaceE2E(t *testing.T) {
 
 	// Create a ClusterKeycloakRealm
 	realmName := fmt.Sprintf("cross-ns-realm-%d", time.Now().UnixNano())
-	realmDef := rawJSON(fmt.Sprintf(`{
-		"realm": "%s",
+	realmDef := rawJSON(`{
 		"enabled": true
-	}`, realmName))
+	}`)
 
 	clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{
 		ObjectMeta: metav1.ObjectMeta{
@@ -198,6 +197,7 @@ func TestClusterRealmCrossNamespaceE2E(t *testing.T) {
 			ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{
 				Name: clusterInstanceName,
 			},
+			RealmName:  strPtr(realmName),
 			Definition: realmDef,
 		},
 	}
@@ -219,12 +219,11 @@ func TestClusterRealmCrossNamespaceE2E(t *testing.T) {
 	t.Run("ClientInDifferentNamespace", func(t *testing.T) {
 		// Create a client in test namespace using the cluster realm
 		clientName := fmt.Sprintf("cross-ns-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true,
 			"protocol": "openid-connect",
 			"publicClient": true
-		}`, clientName))
+		}`)
 
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -235,6 +234,7 @@ func TestClusterRealmCrossNamespaceE2E(t *testing.T) {
 				ClusterRealmRef: &keycloakv1beta1.ClusterResourceRef{
 					Name: realmName,
 				},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -269,10 +269,9 @@ func TestClusterRealmCrossNamespaceE2E(t *testing.T) {
 		// Create a user in test namespace using the cluster realm
 		userName := fmt.Sprintf("cross-ns-user-%d", time.Now().UnixNano())
 		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
 			"email": "%s@example.com",
 			"enabled": true
-		}`, userName, userName))
+		}`, userName))
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -283,6 +282,7 @@ func TestClusterRealmCrossNamespaceE2E(t *testing.T) {
 				ClusterRealmRef: &keycloakv1beta1.ClusterResourceRef{
 					Name: realmName,
 				},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -314,10 +314,9 @@ func TestClusterResourceCleanup(t *testing.T) {
 
 	t.Run("ClusterRealmDeletion", func(t *testing.T) {
 		realmName := fmt.Sprintf("cleanup-realm-%d", time.Now().UnixNano())
-		realmDef := rawJSON(fmt.Sprintf(`{
-			"realm": "%s",
+		realmDef := rawJSON(`{
 			"enabled": true
-		}`, realmName))
+		}`)
 
 		clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{
@@ -327,6 +326,7 @@ func TestClusterResourceCleanup(t *testing.T) {
 				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{
 					Name: clusterInstanceName,
 				},
+				RealmName:  strPtr(realmName),
 				Definition: realmDef,
 			},
 		}

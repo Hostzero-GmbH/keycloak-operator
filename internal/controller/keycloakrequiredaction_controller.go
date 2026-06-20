@@ -94,11 +94,11 @@ func (r *KeycloakRequiredActionReconciler) Reconcile(ctx context.Context, req ct
 		return r.updateStatus(ctx, ra, false, "InvalidDefinition", fmt.Sprintf("Failed to parse definition: %v", err), "")
 	}
 
-	// Resolve the alias with precedence spec.alias > definition.alias >
-	// metadata.name.
-	alias, mismatch := resolveIdentifier(ra.Spec.Alias, raDef.Alias, ra.Name)
-	if mismatch {
-		warnIdentifierMismatch(ctx, "alias", alias, raDef.Alias)
+	// Resolve the alias from spec.alias.
+	alias, err := resolveIdentifier("alias", ra.Spec.Alias, raDef.Alias)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, ra, false, InvalidIdentifierReason, err.Error(), "")
 	}
 
 	definition := setFieldInDefinition(ra.Spec.Definition.Raw, "alias", alias)
@@ -150,19 +150,8 @@ func (r *KeycloakRequiredActionReconciler) deleteRequiredAction(ctx context.Cont
 		return err
 	}
 
-	// Resolve the alias using the same precedence as the create/update path
-	// (spec.alias > definition.alias > metadata.name) so deletion targets the
-	// synchronized required action.
-	var raDef struct {
-		Alias string `json:"alias"`
-	}
-	if len(ra.Spec.Definition.Raw) > 0 {
-		if err := json.Unmarshal(ra.Spec.Definition.Raw, &raDef); err != nil {
-			return fmt.Errorf("failed to parse definition: %w", err)
-		}
-	}
-
-	alias, _ := resolveIdentifier(ra.Spec.Alias, raDef.Alias, ra.Name)
+	// Use spec.alias so deletion targets the synchronized required action.
+	alias := identifierValue(ra.Spec.Alias)
 	return kc.DeleteRequiredAction(ctx, realmName, alias)
 }
 
@@ -189,19 +178,14 @@ func (r *KeycloakRequiredActionReconciler) getKeycloakClientAndRealm(ctx context
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmKey)
 	}
 
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
-	}
-
 	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", err
 	}
 
-	return kc, realmDef.Realm, nil
+	// The realm name is the referenced realm's resolved identifier (spec.realmName,
+	// surfaced via status); it is never read from the realm's definition.
+	return kc, realm.Status.RealmName, nil
 }
 
 func (r *KeycloakRequiredActionReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {
@@ -215,15 +199,6 @@ func (r *KeycloakRequiredActionReconciler) getKeycloakClientFromClusterRealm(ctx
 	}
 
 	realmName := clusterRealm.Status.RealmName
-	if realmName == "" {
-		var realmDef struct {
-			Realm string `json:"realm"`
-		}
-		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
-			return nil, "", fmt.Errorf("failed to parse cluster realm definition: %w", err)
-		}
-		realmName = realmDef.Realm
-	}
 
 	if clusterRealm.Spec.ClusterInstanceRef != nil {
 		clusterInstance := &keycloakv1beta1.ClusterKeycloakInstance{}

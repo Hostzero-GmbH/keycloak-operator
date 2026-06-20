@@ -27,15 +27,14 @@ func TestKeycloakClientE2E(t *testing.T) {
 	t.Run("ConfidentialClient", func(t *testing.T) {
 		// Create confidential client with service account
 		clientName := fmt.Sprintf("confidential-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Confidential Client",
 			"enabled": true,
 			"publicClient": false,
 			"standardFlowEnabled": true,
 			"serviceAccountsEnabled": true,
 			"directAccessGrantsEnabled": true
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -43,6 +42,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name: clientName + "-secret",
@@ -89,15 +89,14 @@ func TestKeycloakClientE2E(t *testing.T) {
 	t.Run("PublicClient", func(t *testing.T) {
 		// Create public client (no secret should be generated)
 		clientName := fmt.Sprintf("public-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Public Client",
 			"enabled": true,
 			"publicClient": true,
 			"standardFlowEnabled": true,
 			"directAccessGrantsEnabled": true,
 			"redirectUris": ["http://localhost:8080/*"]
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -105,6 +104,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				// No ClientSecretRef specified - public clients don't have secrets
 			},
@@ -145,14 +145,13 @@ func TestKeycloakClientE2E(t *testing.T) {
 		// behaviour relied on by consumers using envFrom: secretRef for the
 		// client-id.
 		clientName := fmt.Sprintf("public-client-secref-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Public Client With Secret Ref",
 			"enabled": true,
 			"publicClient": true,
 			"standardFlowEnabled": true,
 			"redirectUris": ["http://localhost:8080/*"]
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -160,6 +159,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name: clientName + "-secret",
@@ -205,13 +205,12 @@ func TestKeycloakClientE2E(t *testing.T) {
 	t.Run("BearerOnlyClient", func(t *testing.T) {
 		// Create bearer-only client (for backend services)
 		clientName := fmt.Sprintf("bearer-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Bearer Only Client",
 			"enabled": true,
 			"publicClient": false,
 			"bearerOnly": true
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -219,6 +218,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				// Bearer-only clients don't need secrets stored
 			},
@@ -246,13 +246,12 @@ func TestKeycloakClientE2E(t *testing.T) {
 	t.Run("ClientWithCustomSecretKeys", func(t *testing.T) {
 		// Create client with custom secret key names
 		clientName := fmt.Sprintf("custom-keys-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Custom Keys Client",
 			"enabled": true,
 			"publicClient": false,
 			"serviceAccountsEnabled": true
-		}`, clientName))
+		}`)
 		customIdKey := "OIDC_CLIENT_ID"
 		customSecretKey := "OIDC_CLIENT_SECRET"
 		kcClient := &keycloakv1beta1.KeycloakClient{
@@ -262,6 +261,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name:            clientName + "-secret",
@@ -307,10 +307,9 @@ func TestKeycloakClientE2E(t *testing.T) {
 
 	t.Run("InvalidRealmRef", func(t *testing.T) {
 		clientName := fmt.Sprintf("invalid-realm-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -318,6 +317,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: "non-existent-realm"},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -338,9 +338,9 @@ func TestKeycloakClientE2E(t *testing.T) {
 		t.Logf("Client correctly failed with invalid realm ref, message: %s", updated.Status.Message)
 	})
 
-	t.Run("DefaultsToResourceName", func(t *testing.T) {
-		// When no definition is provided, the controller uses the resource name as clientId
-		clientName := fmt.Sprintf("no-def-client-%d", time.Now().UnixNano())
+	t.Run("MissingClientIdRejected", func(t *testing.T) {
+		// No spec.clientId: it is required, so the apiserver must reject this.
+		clientName := fmt.Sprintf("no-clientid-client-%d", time.Now().UnixNano())
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -348,27 +348,15 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
-				// No Definition provided - should default clientId to resource name
+				// No clientId and no definition.
 			},
 		}
-		require.NoError(t, k8sClient.Create(ctx, kcClient))
-		t.Cleanup(func() {
-			k8sClient.Delete(ctx, kcClient)
-		})
-
-		// Wait for client to become ready (controller defaults clientId to resource name)
-		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
-			updated := &keycloakv1beta1.KeycloakClient{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
-				Name:      clientName,
-				Namespace: testNamespace,
-			}, updated); err != nil {
-				return false, nil
-			}
-			return updated.Status.Ready, nil
-		})
-		require.NoError(t, err, "Client with no definition should default to resource name as clientId")
-		t.Logf("Client correctly created using resource name as clientId")
+		err := k8sClient.Create(ctx, kcClient)
+		require.Error(t, err, "creating a client without spec.clientId must be rejected")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, kcClient) })
+		}
+		t.Logf("Client without clientId correctly rejected: %v", err)
 	})
 
 	t.Run("ClientWithPreExistingSecret", func(t *testing.T) {
@@ -394,13 +382,12 @@ func TestKeycloakClientE2E(t *testing.T) {
 		})
 
 		// Create KeycloakClient with create=false (strict mode)
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Pre-existing Secret Client",
 			"enabled": true,
 			"publicClient": false,
 			"serviceAccountsEnabled": true
-		}`, clientName))
+		}`)
 		createFalse := false
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -409,6 +396,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name:   secretName,
@@ -471,13 +459,12 @@ func TestKeycloakClientE2E(t *testing.T) {
 		})
 
 		// Create KeycloakClient with create=false and custom keys
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Pre-existing Secret Custom Keys Client",
 			"enabled": true,
 			"publicClient": false,
 			"serviceAccountsEnabled": true
-		}`, clientName))
+		}`)
 		createFalse := false
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -486,6 +473,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name:            secretName,
@@ -520,12 +508,11 @@ func TestKeycloakClientE2E(t *testing.T) {
 		clientName := fmt.Sprintf("missing-secret-strict-client-%d", time.Now().UnixNano())
 		secretName := clientName + "-nonexistent-secret"
 
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Missing Secret Strict Mode Client",
 			"enabled": true,
 			"publicClient": false
-		}`, clientName))
+		}`)
 		createFalse := false
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -534,6 +521,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name:   secretName,
@@ -564,13 +552,12 @@ func TestKeycloakClientE2E(t *testing.T) {
 		clientName := fmt.Sprintf("autocreate-secret-client-%d", time.Now().UnixNano())
 		secretName := clientName + "-secret"
 
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Auto Create Secret Client",
 			"enabled": true,
 			"publicClient": false,
 			"serviceAccountsEnabled": true
-		}`, clientName))
+		}`)
 		// create is true by default, so we don't need to set it
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -579,6 +566,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name: secretName,
@@ -643,12 +631,11 @@ func TestKeycloakClientE2E(t *testing.T) {
 		})
 
 		// Create KeycloakClient expecting default key "client-secret"
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Missing Key Client",
 			"enabled": true,
 			"publicClient": false
-		}`, clientName))
+		}`)
 		createFalse := false
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -657,6 +644,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
 					Name:   secretName,
@@ -691,12 +679,11 @@ func TestKeycloakClientE2E(t *testing.T) {
 
 		// Create a client
 		clientName := fmt.Sprintf("reconcile-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Reconcile Test Client",
 			"enabled": true,
 			"publicClient": false
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -704,6 +691,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -773,15 +761,14 @@ func TestKeycloakClientE2E(t *testing.T) {
 		skipIfNoKeycloakAccess(t)
 
 		clientName := fmt.Sprintf("custom-scopes-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Custom Scopes Client",
 			"enabled": true,
 			"publicClient": true,
 			"standardFlowEnabled": true,
 			"defaultClientScopes": ["profile"],
 			"optionalClientScopes": ["phone"]
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -789,6 +776,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -837,14 +825,13 @@ func TestKeycloakClientE2E(t *testing.T) {
 		skipIfNoKeycloakAccess(t)
 
 		clientName := fmt.Sprintf("empty-scopes-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Empty Scopes Client",
 			"enabled": true,
 			"publicClient": true,
 			"defaultClientScopes": [],
 			"optionalClientScopes": []
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -852,6 +839,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -896,8 +884,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 		// Create a client using browserFlowAlias instead of a UUID.
 		// "browser" is the default authentication flow alias in every Keycloak realm.
 		clientName := fmt.Sprintf("flow-alias-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Flow Alias Client",
 			"enabled": true,
 			"publicClient": true,
@@ -905,7 +892,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			"authenticationFlowBindingOverrides": {
 				"browserFlowAlias": "browser"
 			}
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -913,6 +900,7 @@ func TestKeycloakClientE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}

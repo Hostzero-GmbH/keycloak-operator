@@ -63,10 +63,8 @@ spec:
               KeycloakIdentityProvider
             properties:
               alias:
-                description: |-
-                  Alias is the identity provider alias in Keycloak (defaults to metadata.name).
-                  This is the recommended way to set the alias and takes precedence over any
-                  alias supplied inside spec.definition.
+                description: Alias is the identity provider alias in Keycloak.
+                minLength: 1
                 type: string
               clusterRealmRef:
                 description: |-
@@ -95,10 +93,8 @@ spec:
                 type: object
               definition:
                 description: |-
-                  Definition contains the Keycloak IdentityProviderRepresentation.
-                  Deprecated: setting the identifier (alias) inside definition is deprecated;
-                  use the first-class spec.alias field instead. An alias inside definition is
-                  still honored in this release but will be rejected in a future release.
+                  Definition contains the Keycloak IdentityProviderRepresentation. Set the
+                  alias via spec.alias.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:
@@ -137,6 +133,7 @@ spec:
                 - allowedClients
                 type: object
             required:
+            - alias
             - definition
             type: object
           status:

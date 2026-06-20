@@ -85,20 +85,17 @@ spec:
                 type: object
               definition:
                 description: |-
-                  Definition contains the Keycloak ProtocolMapperRepresentation.
-                  Deprecated: setting the identifier (name) inside definition is deprecated;
-                  use the first-class spec.name field instead. A name inside definition is
-                  still honored in this release but will be rejected in a future release.
+                  Definition contains the Keycloak ProtocolMapperRepresentation. Set the
+                  mapper name via spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               name:
-                description: |-
-                  Name is the protocol mapper name in Keycloak (defaults to metadata.name).
-                  This is the recommended way to set the mapper name and takes precedence
-                  over any name supplied inside spec.definition.
+                description: Name is the protocol mapper name in Keycloak.
+                minLength: 1
                 type: string
             required:
             - definition
+            - name
             type: object
           status:
             description: KeycloakProtocolMapperStatus defines the observed state of

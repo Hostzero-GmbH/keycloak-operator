@@ -32,11 +32,10 @@ type KeycloakRealmSpec struct {
 	// +optional
 	ClusterInstanceRef *ClusterResourceRef `json:"clusterInstanceRef,omitempty"`
 
-	// RealmName is the name of the realm in Keycloak (defaults to metadata.name).
-	// This is the recommended way to set the realm name and takes precedence
-	// over any realm key supplied inside spec.definition. It is immutable once
-	// set: a realm rename in Keycloak is destructive and would orphan the realm.
-	// +optional
+	// RealmName is the name of the realm in Keycloak. It is immutable once set:
+	// renaming a realm in Keycloak is destructive and would orphan it.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	RealmName *string `json:"realmName,omitempty"`
 
 	// SmtpSecretRef is a reference to a Kubernetes Secret containing SMTP credentials.
@@ -46,11 +45,8 @@ type KeycloakRealmSpec struct {
 	// +optional
 	SmtpSecretRef *SmtpSecretRefSpec `json:"smtpSecretRef,omitempty"`
 
-	// Definition contains the Keycloak RealmRepresentation.
-	// Deprecated: setting the identifier (realm) inside definition is deprecated;
-	// use the first-class spec.realmName field instead. A realm key inside
-	// definition is still honored in this release but will be rejected in a
-	// future release.
+	// Definition contains the Keycloak RealmRepresentation. Set the realm name
+	// via spec.realmName.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

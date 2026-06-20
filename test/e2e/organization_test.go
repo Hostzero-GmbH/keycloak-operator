@@ -37,12 +37,11 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 		orgName := fmt.Sprintf("test-org-%d", time.Now().UnixNano())
 		// Keycloak 26+ requires at least one domain for organizations
 		orgDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"alias": "%s",
 			"description": "Test organization for E2E",
 			"enabled": true,
 			"domains": [{"name": "%s.example.com", "verified": false}]
-		}`, orgName, orgName, orgName))
+		}`, orgName, orgName))
 		kcOrg := &keycloakv1beta1.KeycloakOrganization{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      orgName,
@@ -50,6 +49,7 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(orgName),
 				Definition: orgDef,
 			},
 		}
@@ -86,7 +86,6 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 	t.Run("OrganizationWithDomains", func(t *testing.T) {
 		orgName := fmt.Sprintf("test-org-domains-%d", time.Now().UnixNano())
 		orgDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"alias": "%s",
 			"description": "Organization with domains",
 			"enabled": true,
@@ -94,7 +93,7 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 				{"name": "example.com", "verified": false},
 				{"name": "test.org", "verified": false}
 			]
-		}`, orgName, orgName))
+		}`, orgName))
 		kcOrg := &keycloakv1beta1.KeycloakOrganization{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      orgName,
@@ -102,6 +101,7 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(orgName),
 				Definition: orgDef,
 			},
 		}
@@ -129,12 +129,11 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 		orgName := fmt.Sprintf("test-org-update-%d", time.Now().UnixNano())
 		// Keycloak 26+ requires at least one domain for organizations
 		orgDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"alias": "%s",
 			"description": "Original description",
 			"enabled": true,
 			"domains": [{"name": "%s.example.com", "verified": false}]
-		}`, orgName, orgName, orgName))
+		}`, orgName, orgName))
 		kcOrg := &keycloakv1beta1.KeycloakOrganization{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      orgName,
@@ -142,6 +141,7 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(orgName),
 				Definition: orgDef,
 			},
 		}
@@ -172,12 +172,11 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		newDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"alias": "%s",
 			"description": "Updated description",
 			"enabled": true,
 			"domains": [{"name": "%s.example.com", "verified": false}]
-		}`, orgName, orgName, orgName))
+		}`, orgName, orgName))
 		updatedOrg.Spec.Definition = newDef
 		require.NoError(t, k8sClient.Update(ctx, updatedOrg))
 
@@ -197,10 +196,9 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 
 	t.Run("InvalidRealmRef", func(t *testing.T) {
 		orgName := fmt.Sprintf("invalid-realm-org-%d", time.Now().UnixNano())
-		orgDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		orgDef := rawJSON(`{
 			"enabled": true
-		}`, orgName))
+		}`)
 		kcOrg := &keycloakv1beta1.KeycloakOrganization{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      orgName,
@@ -208,6 +206,7 @@ func TestKeycloakOrganizationE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: "non-existent-realm"},
+				Name:       strPtr(orgName),
 				Definition: orgDef,
 			},
 		}
