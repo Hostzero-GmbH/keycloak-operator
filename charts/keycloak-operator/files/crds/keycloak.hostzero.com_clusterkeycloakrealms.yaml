@@ -125,6 +125,9 @@ spec:
             required:
             - definition
             type: object
+            x-kubernetes-validations:
+            - message: exactly one of instanceRef or clusterInstanceRef must be set
+              rule: has(self.instanceRef) != has(self.clusterInstanceRef)
           status:
             description: ClusterKeycloakRealmStatus defines the observed state of
               ClusterKeycloakRealm

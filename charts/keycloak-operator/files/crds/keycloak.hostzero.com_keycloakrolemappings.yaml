@@ -90,6 +90,9 @@ spec:
                 required:
                 - name
                 type: object
+                x-kubernetes-validations:
+                - message: at most one of clientRef or clientId may be set
+                  rule: '!(has(self.clientRef) && has(self.clientId))'
               roleRef:
                 description: |-
                   RoleRef references an existing KeycloakRole resource
@@ -124,9 +127,15 @@ spec:
                     - name
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: exactly one of userRef or groupRef must be set
+                  rule: has(self.userRef) != has(self.groupRef)
             required:
             - subject
             type: object
+            x-kubernetes-validations:
+            - message: exactly one of role or roleRef must be set
+              rule: has(self.role) != has(self.roleRef)
           status:
             description: KeycloakRoleMappingStatus defines the observed state of KeycloakRoleMapping
             properties:

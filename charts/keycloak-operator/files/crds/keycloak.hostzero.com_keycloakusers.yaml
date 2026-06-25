@@ -133,6 +133,11 @@ spec:
                 - secretName
                 type: object
             type: object
+            x-kubernetes-validations:
+            - message: exactly one of realmRef, clusterRealmRef, or clientRef must
+                be set
+              rule: '(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1
+                : 0) + (has(self.clientRef) ? 1 : 0) == 1'
           status:
             description: KeycloakUserStatus defines the observed state of KeycloakUser
             properties:

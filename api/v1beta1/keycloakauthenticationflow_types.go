@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakAuthenticationFlowSpec defines the desired state of KeycloakAuthenticationFlow
+// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
 type KeycloakAuthenticationFlowSpec struct {
 	// RealmRef is a reference to a KeycloakRealm.
 	// One of realmRef or clusterRealmRef must be specified.

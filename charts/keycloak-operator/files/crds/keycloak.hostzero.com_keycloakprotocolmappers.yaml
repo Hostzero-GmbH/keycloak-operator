@@ -90,6 +90,9 @@ spec:
             required:
             - definition
             type: object
+            x-kubernetes-validations:
+            - message: exactly one of clientRef or clientScopeRef must be set
+              rule: has(self.clientRef) != has(self.clientScopeRef)
           status:
             description: KeycloakProtocolMapperStatus defines the observed state of
               KeycloakProtocolMapper

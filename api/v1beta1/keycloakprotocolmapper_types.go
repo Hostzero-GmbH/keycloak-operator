@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakProtocolMapperSpec defines the desired state of KeycloakProtocolMapper
+// +kubebuilder:validation:XValidation:rule="has(self.clientRef) != has(self.clientScopeRef)",message="exactly one of clientRef or clientScopeRef must be set"
 type KeycloakProtocolMapperSpec struct {
 	// ClientRef is a reference to a KeycloakClient
 	// One of clientRef or clientScopeRef must be specified

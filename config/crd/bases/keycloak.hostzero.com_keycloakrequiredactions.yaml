@@ -90,6 +90,9 @@ spec:
             required:
             - definition
             type: object
+            x-kubernetes-validations:
+            - message: exactly one of realmRef or clusterRealmRef must be set
+              rule: has(self.realmRef) != has(self.clusterRealmRef)
           status:
             description: KeycloakRequiredActionStatus defines the observed state of
               KeycloakRequiredAction

@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakRequiredActionSpec defines the desired state of KeycloakRequiredAction
+// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
 type KeycloakRequiredActionSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified

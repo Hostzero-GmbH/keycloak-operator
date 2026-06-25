@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakIdentityProviderSpec defines the desired state of KeycloakIdentityProvider
+// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
 type KeycloakIdentityProviderSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
