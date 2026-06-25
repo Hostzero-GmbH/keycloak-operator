@@ -15,6 +15,80 @@ import (
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 )
 
+func TestKeycloakComponentAdoptsExistingUserProfileComponentE2E(t *testing.T) {
+	skipIfNoCluster(t)
+	skipIfNoKeycloakAccess(t)
+
+	instanceName, _ := getOrCreateInstance(t)
+	realmName := createTestRealm(t, instanceName, "component-user-profile-adopt")
+	kc := getInternalKeycloakClient(t)
+
+	// Simulate saving the user profile through the Keycloak Admin UI/API before
+	// the operator-owned KeycloakComponent exists. Keycloak persists that config
+	// as a declarative-user-profile component, and in current Keycloak versions
+	// that component may have no name.
+	require.NoError(t, kc.Update(ctx, fmt.Sprintf("/admin/realms/%s/users/profile", realmName), map[string]interface{}{
+		"attributes": []map[string]interface{}{
+			{"name": "username"},
+			{"name": "email"},
+			{
+				"name": "team",
+				"permissions": map[string][]string{
+					"view": {"admin", "user"},
+					"edit": {"admin", "user"},
+				},
+			},
+		},
+	}))
+
+	components, err := kc.GetComponents(ctx, realmName, map[string]string{
+		"type": "org.keycloak.userprofile.UserProfileProvider",
+	})
+	require.NoError(t, err)
+	require.Len(t, components, 1, "precondition: Keycloak should have created one persisted user-profile component")
+
+	componentName := fmt.Sprintf("user-profile-component-%d", time.Now().UnixNano())
+	component := &keycloakv1beta1.KeycloakComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      componentName,
+			Namespace: testNamespace,
+		},
+		Spec: keycloakv1beta1.KeycloakComponentSpec{
+			RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+			Definition: rawJSON(`{
+				"name": "declarative-user-profile",
+				"providerId": "declarative-user-profile",
+				"providerType": "org.keycloak.userprofile.UserProfileProvider",
+				"config": {
+					"kc.user.profile.config": ["{\"attributes\":[{\"name\":\"username\"},{\"name\":\"email\"},{\"name\":\"department\",\"permissions\":{\"view\":[\"admin\",\"user\"],\"edit\":[\"admin\",\"user\"]}}]}"]
+				}
+			}`),
+		},
+	}
+	require.NoError(t, k8sClient.Create(ctx, component))
+	t.Cleanup(func() {
+		_ = k8sClient.Delete(ctx, component)
+	})
+
+	err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      component.Name,
+			Namespace: component.Namespace,
+		}, updated); err != nil {
+			return false, nil
+		}
+		return updated.Status.Ready, nil
+	})
+	require.NoError(t, err, "user-profile component did not become ready")
+
+	components, err = kc.GetComponents(ctx, realmName, map[string]string{
+		"type": "org.keycloak.userprofile.UserProfileProvider",
+	})
+	require.NoError(t, err)
+	require.Len(t, components, 1, "operator should update/adopt the existing user-profile component instead of creating a duplicate")
+}
+
 func TestKeycloakComponentE2E(t *testing.T) {
 	skipIfNoCluster(t)
 
