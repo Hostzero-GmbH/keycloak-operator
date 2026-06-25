@@ -6,8 +6,8 @@ metadata:
 spec:
   identityProviderRef:
     name: oidc
+  name: mdm-support-role-mapper
   definition:
-    name: mdm-support-role-mapper
     identityProviderMapper: oidc-role-idp-mapper
     config:
       syncMode: FORCE

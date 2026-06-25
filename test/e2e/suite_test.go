@@ -260,10 +260,10 @@ func createTestRealm(t *testing.T, instanceName, suffix string) string {
 		},
 		Spec: keycloakv1beta1.KeycloakRealmSpec{
 			InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-			Definition: rawJSON(fmt.Sprintf(`{
-				"realm": "%s",
+			RealmName:   strPtr(realmName),
+			Definition: rawJSON(`{
 				"enabled": true
-			}`, realmName)),
+			}`),
 		},
 	}
 	require.NoError(t, k8sClient.Create(ctx, realm))
@@ -296,11 +296,11 @@ func createTestRealmWithOrganizations(t *testing.T, instanceName, suffix string)
 		},
 		Spec: keycloakv1beta1.KeycloakRealmSpec{
 			InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-			Definition: rawJSON(fmt.Sprintf(`{
-				"realm": "%s",
+			RealmName:   strPtr(realmName),
+			Definition: rawJSON(`{
 				"enabled": true,
 				"organizationsEnabled": true
-			}`, realmName)),
+			}`),
 		},
 	}
 	require.NoError(t, k8sClient.Create(ctx, realm))

@@ -18,11 +18,13 @@ type KeycloakClientSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// ClientId is the client ID in Keycloak (defaults to metadata.name)
-	// +optional
+	// ClientId is the client ID in Keycloak.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	ClientId *string `json:"clientId,omitempty"`
 
-	// Definition contains the Keycloak ClientRepresentation
+	// Definition contains the Keycloak ClientRepresentation. Set the client ID
+	// via spec.clientId.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`
@@ -191,6 +193,10 @@ type KeycloakClientStatus struct {
 	// +optional
 	ClientUUID string `json:"clientUUID,omitempty"`
 
+	// ClientID is the resolved client ID (clientId) in Keycloak
+	// +optional
+	ClientID string `json:"clientID,omitempty"`
+
 	// Instance contains the resolved instance reference
 	// +optional
 	Instance *InstanceRef `json:"instance,omitempty"`
@@ -211,6 +217,7 @@ type KeycloakClientStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the client is ready"
+// +kubebuilder:printcolumn:name="ClientId",type=string,JSONPath=`.status.clientID`,description="Client ID in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcc,categories={keycloak,all}

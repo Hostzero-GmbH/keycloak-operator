@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Organization name in Keycloak
+      jsonPath: .status.organizationName
+      name: Name
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -70,9 +74,15 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak OrganizationRepresentation
+                description: |-
+                  Definition contains the Keycloak OrganizationRepresentation. Set the
+                  organization name via spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              name:
+                description: Name is the organization name in Keycloak.
+                minLength: 1
+                type: string
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm
@@ -86,6 +96,7 @@ spec:
                 type: object
             required:
             - definition
+            - name
             type: object
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set
@@ -172,6 +183,10 @@ spec:
               organizationID:
                 description: OrganizationID is the Keycloak internal organization
                   ID
+                type: string
+              organizationName:
+                description: OrganizationName is the resolved organization name in
+                  Keycloak
                 type: string
               ready:
                 description: Ready indicates if the organization is ready

@@ -7,6 +7,7 @@ import (
 
 // KeycloakUserSpec defines the desired state of KeycloakUser
 // +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.clientRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or clientRef must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.clientRef) || (has(self.username) && size(self.username) > 0)",message="spec.username is required unless spec.clientRef is set (service account user)"
 type KeycloakUserSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef, clusterRealmRef, or clientRef must be specified
@@ -26,7 +27,15 @@ type KeycloakUserSpec struct {
 	// +optional
 	ClientRef *ResourceRef `json:"clientRef,omitempty"`
 
-	// Definition contains the Keycloak UserRepresentation
+	// Username is the username in Keycloak. Required for regular realm users;
+	// omit it for service account users, which are identified by clientRef and
+	// whose username is derived by Keycloak.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Username *string `json:"username,omitempty"`
+
+	// Definition contains the Keycloak UserRepresentation. Set the username via
+	// spec.username.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`
@@ -157,6 +166,10 @@ type KeycloakUserStatus struct {
 	// +optional
 	UserID string `json:"userID,omitempty"`
 
+	// Username is the resolved username in Keycloak
+	// +optional
+	Username string `json:"username,omitempty"`
+
 	// IsServiceAccount indicates if this user is a service account for a client
 	// +optional
 	IsServiceAccount bool `json:"isServiceAccount,omitempty"`
@@ -185,6 +198,7 @@ type KeycloakUserStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the user is ready"
+// +kubebuilder:printcolumn:name="Username",type=string,JSONPath=`.status.username`,description="Username in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcu,categories={keycloak,all}

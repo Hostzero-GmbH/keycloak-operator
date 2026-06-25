@@ -1,5 +1,7 @@
 # KeycloakOrganization
 
+> **Identifier field:** Set the organization name in the `spec.name` field, not inside `spec.definition`. It is required.
+
 A `KeycloakOrganization` represents an organization within a Keycloak realm.
 
 > **Note:** Organizations require **Keycloak 26.0.0 or later**. Attempting to use this resource with earlier Keycloak versions will result in an error.
@@ -17,8 +19,8 @@ spec:
     name: my-realm
   
   # Required: Organization definition (Keycloak OrganizationRepresentation)
+  name: ACME Corporation
   definition:
-    name: ACME Corporation
     alias: acme
     description: ACME Corp organization
     enabled: true
@@ -61,8 +63,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: My Organization
   definition:
-    name: My Organization
     enabled: true
 ```
 
@@ -78,8 +80,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: Example Organization
   definition:
-    name: Example Organization
     alias: example
     description: An example organization with verified domains
     enabled: true
@@ -100,8 +102,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: Enterprise Organization
   definition:
-    name: Enterprise Organization
     alias: enterprise
     enabled: true
     attributes:
@@ -123,8 +125,8 @@ metadata:
 spec:
   clusterRealmRef:
     name: shared-realm
+  name: Global Organization
   definition:
-    name: Global Organization
     enabled: true
 ```
 

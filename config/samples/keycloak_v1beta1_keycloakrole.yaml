@@ -6,6 +6,6 @@ metadata:
 spec:
   realmRef:
     name: example-realm
+  name: admin
   definition:
-    name: admin
     description: "Realm-level administrator role"

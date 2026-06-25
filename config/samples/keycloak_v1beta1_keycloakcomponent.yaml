@@ -6,8 +6,8 @@ metadata:
 spec:
   realmRef:
     name: example-realm
+  name: ldap
   definition:
-    name: ldap
     providerId: ldap
     providerType: org.keycloak.storage.UserStorageProvider
     config:

@@ -95,23 +95,32 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return r.updateStatus(ctx, realm, false, "InstanceNotReady", err.Error(), instanceRef)
 	}
 
-	// Parse realm definition to extract realm name
+	// Resolve the realm name from spec.realmName. realmDef.Realm is parsed only
+	// so resolveIdentifier can reject a realm key set in definition.
 	var realmDef struct {
 		Realm string `json:"realm"`
 	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		RecordError(controllerName, "invalid_definition")
-		return r.updateStatus(ctx, realm, false, "InvalidDefinition", fmt.Sprintf("Failed to parse realm definition: %v", err), instanceRef)
+	if len(realm.Spec.Definition.Raw) > 0 {
+		if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
+			RecordError(controllerName, "invalid_definition")
+			return r.updateStatus(ctx, realm, false, "InvalidDefinition", fmt.Sprintf("Failed to parse realm definition: %v", err), instanceRef)
+		}
 	}
 
-	// Ensure realm name is set
-	if realmDef.Realm == "" {
-		RecordError(controllerName, "invalid_definition")
-		return r.updateStatus(ctx, realm, false, "InvalidDefinition", "Realm name is required in definition", instanceRef)
+	realmName, err := resolveIdentifier("realmName", realm.Spec.RealmName, realmDef.Realm)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, realm, false, InvalidIdentifierReason, err.Error(), instanceRef)
 	}
+	realm.Status.RealmName = realmName
 
-	// Build the effective definition, injecting SMTP credentials from secret if configured
+	// Build the effective definition, injecting the resolved realm name and SMTP
+	// credentials from secret if configured.
 	definition := realm.Spec.Definition.Raw
+	if len(definition) == 0 {
+		definition = []byte("{}")
+	}
+	definition = setFieldInDefinition(definition, "realm", realmName)
 	if realm.Spec.SmtpSecretRef != nil {
 		smtpUser, smtpPassword, err := r.resolveSmtpSecret(ctx, realm)
 		if err != nil {
@@ -122,19 +131,19 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Check if realm exists
-	existingRealm, err := kc.GetRealm(ctx, realmDef.Realm)
+	existingRealm, err := kc.GetRealm(ctx, realmName)
 	if err != nil {
 		// Realm doesn't exist, create it
-		log.Info("creating realm", "realm", realmDef.Realm)
+		log.Info("creating realm", "realm", realmName)
 		createDefinition, flowBindingsDeferred := stripRealmFlowBindingsForCreate(definition)
 		if err := kc.CreateRealmFromDefinition(ctx, createDefinition); err != nil {
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, realm, false, "CreateFailed", fmt.Sprintf("Failed to create realm: %v", err), instanceRef)
 		}
-		log.Info("realm created successfully", "realm", realmDef.Realm)
+		log.Info("realm created successfully", "realm", realmName)
 		if flowBindingsDeferred {
-			log.Info("deferred realm authentication flow bindings until referenced flows exist", "realm", realmDef.Realm)
-			realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmDef.Realm)
+			log.Info("deferred realm authentication flow bindings until referenced flows exist", "realm", realmName)
+			realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
 			result, statusErr := r.updateStatus(ctx, realm, true, "Ready", "Realm synchronized; authentication flow bindings will be retried after referenced flows exist", instanceRef)
 			if statusErr != nil {
 				return result, statusErr
@@ -147,7 +156,7 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		definition = mergeIDIntoDefinition(definition, existingRealm.ID)
 
 		// Fetch current state from Keycloak for drift detection
-		currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmDef.Realm)
+		currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmName)
 
 		needsUpdate := true
 		if fetchErr != nil {
@@ -157,8 +166,8 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		if needsUpdate {
-			log.Info("updating realm", "realm", realmDef.Realm)
-			if err := kc.UpdateRealm(ctx, realmDef.Realm, definition); err != nil {
+			log.Info("updating realm", "realm", realmName)
+			if err := kc.UpdateRealm(ctx, realmName, definition); err != nil {
 				// If the realm references authentication flows that don't exist yet
 				// (managed by separate KeycloakAuthenticationFlow CRs that haven't been
 				// reconciled), strip the flow-bindings and retry; mark the realm Ready
@@ -168,12 +177,12 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					RecordError(controllerName, "keycloak_api_error")
 					return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)
 				}
-				log.Info("realm update failed with authentication flow bindings; retrying without them", "realm", realmDef.Realm, "error", err)
-				if fallbackErr := kc.UpdateRealm(ctx, realmDef.Realm, strippedDefinition); fallbackErr != nil {
+				log.Info("realm update failed with authentication flow bindings; retrying without them", "realm", realmName, "error", err)
+				if fallbackErr := kc.UpdateRealm(ctx, realmName, strippedDefinition); fallbackErr != nil {
 					RecordError(controllerName, "keycloak_api_error")
 					return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)
 				}
-				realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmDef.Realm)
+				realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
 				result, statusErr := r.updateStatus(ctx, realm, true, "Ready", "Realm synchronized; authentication flow bindings will be retried after referenced flows exist", instanceRef)
 				if statusErr != nil {
 					return result, statusErr
@@ -181,14 +190,14 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				result.RequeueAfter = ErrorRequeueDelay
 				return result, nil
 			}
-			log.Info("realm updated successfully", "realm", realmDef.Realm)
+			log.Info("realm updated successfully", "realm", realmName)
 		} else {
-			log.V(1).Info("realm already in sync, skipping update", "realm", realmDef.Realm)
+			log.V(1).Info("realm already in sync, skipping update", "realm", realmName)
 		}
 	}
 
 	// Update status
-	realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmDef.Realm)
+	realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
 	return r.updateStatus(ctx, realm, true, "Ready", "Realm synchronized", instanceRef)
 }
 
@@ -261,19 +270,10 @@ func (r *KeycloakRealmReconciler) deleteRealm(ctx context.Context, realm *keyclo
 		return err
 	}
 
-	// Parse realm definition to get realm name
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return fmt.Errorf("failed to parse realm definition: %w", err)
-	}
-
-	if realmDef.Realm == "" {
-		return fmt.Errorf("realm name not found in definition")
-	}
-
-	return kc.DeleteRealm(ctx, realmDef.Realm)
+	// Use spec.realmName so deletion never targets a different realm than the one
+	// that was synchronized.
+	realmName := identifierValue(realm.Spec.RealmName)
+	return kc.DeleteRealm(ctx, realmName)
 }
 
 func (r *KeycloakRealmReconciler) updateStatus(ctx context.Context, realm *keycloakv1beta1.KeycloakRealm, ready bool, status, message string, instanceRef *keycloakv1beta1.InstanceRef) (ctrl.Result, error) {

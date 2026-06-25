@@ -28,8 +28,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		idp := createOIDCIdentityProvider(t, realmName, "role-idp")
 
 		mapperName := fmt.Sprintf("role-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"identityProviderMapper": "oidc-role-idp-mapper",
 			"config": {
 				"syncMode": "FORCE",
@@ -37,7 +36,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 				"claim.value": "mdmsupport",
 				"role": "offline_access"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -46,6 +45,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: idp.Name},
+				Name:                strPtr(mapperName),
 				Definition:          mapperDef,
 			},
 		}
@@ -68,15 +68,14 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		// Create two mappers under the same parent IdP to verify they coexist
 		// and are matched by name (not by ID).
 		firstName := fmt.Sprintf("source-attr-%d", time.Now().UnixNano())
-		firstDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		firstDef := rawJSON(`{
 			"identityProviderMapper": "hardcoded-attribute-idp-mapper",
 			"config": {
 				"syncMode": "INHERIT",
 				"attribute": "source",
 				"attribute.value": "oidc"
 			}
-		}`, firstName))
+		}`)
 
 		first := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -85,6 +84,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: idp.Name},
+				Name:                strPtr(firstName),
 				Definition:          firstDef,
 			},
 		}
@@ -93,14 +93,13 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 
 		secondName := fmt.Sprintf("provider-name-%d", time.Now().UnixNano())
 		secondDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"identityProviderMapper": "hardcoded-attribute-idp-mapper",
 			"config": {
 				"syncMode": "INHERIT",
 				"attribute": "provider",
 				"attribute.value": "%s"
 			}
-		}`, secondName, idp.Name))
+		}`, idp.Name))
 
 		second := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -109,6 +108,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: idp.Name},
+				Name:                strPtr(secondName),
 				Definition:          secondDef,
 			},
 		}
@@ -128,15 +128,14 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		idp := createOIDCIdentityProvider(t, realmName, "update-idp")
 
 		mapperName := fmt.Sprintf("update-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"identityProviderMapper": "oidc-user-attribute-idp-mapper",
 			"config": {
 				"syncMode": "INHERIT",
 				"claim": "department",
 				"user.attribute": "department"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -145,6 +144,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: idp.Name},
+				Name:                strPtr(mapperName),
 				Definition:          mapperDef,
 			},
 		}
@@ -156,15 +156,14 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		mapperID := ready.Status.MapperID
 
 		// Patch the spec.definition with a new sync mode
-		updatedDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		updatedDef := rawJSON(`{
 			"identityProviderMapper": "oidc-user-attribute-idp-mapper",
 			"config": {
 				"syncMode": "FORCE",
 				"claim": "department",
 				"user.attribute": "department"
 			}
-		}`, mapperName))
+		}`)
 
 		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 			latest := &keycloakv1beta1.KeycloakIdentityProviderMapper{}
@@ -194,15 +193,14 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		idp := createOIDCIdentityProvider(t, realmName, "cleanup-idp")
 
 		mapperName := fmt.Sprintf("cleanup-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"identityProviderMapper": "hardcoded-attribute-idp-mapper",
 			"config": {
 				"syncMode": "INHERIT",
 				"attribute": "source",
 				"attribute.value": "oidc"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -211,6 +209,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: idp.Name},
+				Name:                strPtr(mapperName),
 				Definition:          mapperDef,
 			},
 		}
@@ -242,15 +241,14 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		idp := createOIDCIdentityProvider(t, realmName, "preserve-idp")
 
 		mapperName := fmt.Sprintf("preserve-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"identityProviderMapper": "hardcoded-attribute-idp-mapper",
 			"config": {
 				"syncMode": "INHERIT",
 				"attribute": "preserved",
 				"attribute.value": "yes"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -262,6 +260,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: idp.Name},
+				Name:                strPtr(mapperName),
 				Definition:          mapperDef,
 			},
 		}
@@ -298,15 +297,14 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		// Reference a parent IdP CR that doesn't exist yet
 		parentName := fmt.Sprintf("missing-idp-%d", time.Now().UnixNano())
 		mapperName := fmt.Sprintf("waiting-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"identityProviderMapper": "hardcoded-attribute-idp-mapper",
 			"config": {
 				"syncMode": "INHERIT",
 				"attribute": "wait",
 				"attribute.value": "yes"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -315,6 +313,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: parentName},
+				Name:                strPtr(mapperName),
 				Definition:          mapperDef,
 			},
 		}
@@ -348,10 +347,10 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.ClusterKeycloakRealmSpec{
 				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{Name: clusterInstanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:          strPtr(clusterRealmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, clusterRealmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, clusterRealm))
@@ -367,8 +366,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		require.NoError(t, err, "ClusterKeycloakRealm did not become ready")
 
 		idpName := fmt.Sprintf("cluster-idp-%d", time.Now().UnixNano())
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"providerId": "oidc",
 			"enabled": true,
 			"config": {
@@ -377,7 +375,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 				"authorizationUrl": "https://idp.example.com/auth",
 				"tokenUrl": "https://idp.example.com/token"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{
@@ -386,6 +384,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				ClusterRealmRef: &keycloakv1beta1.ClusterResourceRef{Name: clusterRealmName},
+				Alias:           strPtr(idpName),
 				Definition:      idpDef,
 			},
 		}
@@ -402,15 +401,14 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 		require.NoError(t, err, "KeycloakIdentityProvider on cluster realm did not become ready")
 
 		mapperName := fmt.Sprintf("cluster-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"identityProviderMapper": "hardcoded-attribute-idp-mapper",
 			"config": {
 				"syncMode": "INHERIT",
 				"attribute": "cluster",
 				"attribute.value": "yes"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakIdentityProviderMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -419,6 +417,7 @@ func TestKeycloakIdentityProviderMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderMapperSpec{
 				IdentityProviderRef: keycloakv1beta1.ResourceRef{Name: idp.Name},
+				Name:                strPtr(mapperName),
 				Definition:          mapperDef,
 			},
 		}
@@ -442,8 +441,7 @@ func createOIDCIdentityProvider(t *testing.T, realmName, suffix string) *keycloa
 // but with an explicit IdP CR name (and alias).
 func createOIDCIdentityProviderWithName(t *testing.T, realmName, name string) *keycloakv1beta1.KeycloakIdentityProvider {
 	t.Helper()
-	idpDef := rawJSON(fmt.Sprintf(`{
-		"alias": "%s",
+	idpDef := rawJSON(`{
 		"providerId": "oidc",
 		"enabled": true,
 		"config": {
@@ -453,7 +451,7 @@ func createOIDCIdentityProviderWithName(t *testing.T, realmName, name string) *k
 			"tokenUrl": "https://idp.example.com/token",
 			"defaultScope": "openid"
 		}
-	}`, name))
+	}`)
 
 	idp := &keycloakv1beta1.KeycloakIdentityProvider{
 		ObjectMeta: metav1.ObjectMeta{
@@ -462,6 +460,7 @@ func createOIDCIdentityProviderWithName(t *testing.T, realmName, name string) *k
 		},
 		Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 			RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+			Alias:      strPtr(name),
 			Definition: idpDef,
 		},
 	}

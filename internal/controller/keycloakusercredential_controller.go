@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -200,20 +199,14 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClient(ctx context.Context
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realm.Name)
 	}
 
-	// Get realm name from definition
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
-	}
-
 	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", err
 	}
 
-	return kc, realmDef.Realm, nil
+	// The realm name is the referenced realm's resolved identifier (spec.realmName,
+	// surfaced via status); it is never read from the realm's definition.
+	return kc, realm.Status.RealmName, nil
 }
 
 func (r *KeycloakUserCredentialReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {
@@ -229,15 +222,6 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClientFromClusterRealm(ctx
 
 	// Get realm name
 	realmName := clusterRealm.Status.RealmName
-	if realmName == "" {
-		var realmDef struct {
-			Realm string `json:"realm"`
-		}
-		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
-			return nil, "", fmt.Errorf("failed to parse cluster realm definition: %w", err)
-		}
-		realmName = realmDef.Realm
-	}
 
 	// Get Keycloak client from cluster instance
 	if clusterRealm.Spec.ClusterInstanceRef != nil {
@@ -332,8 +316,8 @@ func (r *KeycloakUserCredentialReconciler) ensureSecret(ctx context.Context, cre
 		passwordKey = "password"
 	}
 
-	// Get username from user definition (simplified - just use user.Name)
-	username := user.Name
+	// The Keycloak username comes from the referenced user's spec.username.
+	username := identifierValue(user.Spec.Username)
 
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

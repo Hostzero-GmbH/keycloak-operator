@@ -187,11 +187,11 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: customRealmName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(customRealmName),
 				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
 					"enabled": true,
 					"browserFlow": "%s"
-				}`, customRealmName, flowAlias)),
+				}`, flowAlias)),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -252,11 +252,11 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: customRealmName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(customRealmName),
 				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
 					"enabled": true,
 					"firstBrokerLoginFlow": "%s"
-				}`, customRealmName, flowAlias)),
+				}`, flowAlias)),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -479,11 +479,11 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: customRealmName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(customRealmName),
 				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
 					"enabled": true,
 					"browserFlow": "%s"
-				}`, customRealmName, flowAlias)),
+				}`, flowAlias)),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))

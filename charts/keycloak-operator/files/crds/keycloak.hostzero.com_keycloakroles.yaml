@@ -83,9 +83,15 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak RoleRepresentation
+                description: |-
+                  Definition contains the Keycloak RoleRepresentation. Set the role name via
+                  spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              name:
+                description: Name is the role name in Keycloak.
+                minLength: 1
+                type: string
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm
@@ -99,6 +105,7 @@ spec:
                 type: object
             required:
             - definition
+            - name
             type: object
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set

@@ -24,10 +24,9 @@ func TestKeycloakRoleMappingE2E(t *testing.T) {
 	t.Run("MapRealmRoleToUser", func(t *testing.T) {
 		// Create a user first
 		userName := fmt.Sprintf("rolemapping-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -36,6 +35,7 @@ func TestKeycloakRoleMappingE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -110,9 +110,7 @@ func TestKeycloakRoleMappingE2E(t *testing.T) {
 	t.Run("MapRoleToGroup", func(t *testing.T) {
 		// Create a group first
 		groupName := fmt.Sprintf("rolemapping-group-%d", time.Now().UnixNano())
-		groupDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s"
-		}`, groupName))
+		groupDef := rawJSON(`{}`)
 
 		kcGroup := &keycloakv1beta1.KeycloakGroup{
 			ObjectMeta: metav1.ObjectMeta{
@@ -121,6 +119,7 @@ func TestKeycloakRoleMappingE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(groupName),
 				Definition: groupDef,
 			},
 		}
@@ -238,10 +237,9 @@ func TestKeycloakRoleMappingE2E(t *testing.T) {
 	t.Run("InvalidRoleName", func(t *testing.T) {
 		// Create a user first
 		userName := fmt.Sprintf("invalid-role-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -250,6 +248,7 @@ func TestKeycloakRoleMappingE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -325,10 +324,9 @@ func TestKeycloakRoleMappingCleanup(t *testing.T) {
 	t.Run("RoleMappingRemovalOnDelete", func(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("cleanup-mapping-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -337,6 +335,7 @@ func TestKeycloakRoleMappingCleanup(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -417,14 +416,14 @@ func TestKeycloakRoleMappingRoleRefE2E(t *testing.T) {
 
 	t.Run("RealmRoleViaRoleRef", func(t *testing.T) {
 		userName := fmt.Sprintf("roleref-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{Name: userName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -445,7 +444,8 @@ func TestKeycloakRoleMappingRoleRefE2E(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{"name":"%s"}`, roleName)),
+				Name:       strPtr(roleName),
+				Definition: rawJSON(`{}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, role))
@@ -496,14 +496,14 @@ func TestKeycloakRoleMappingRoleRefE2E(t *testing.T) {
 		// Exercises the new transitive lookup: KeycloakRole has its own clientRef,
 		// so the mapping must follow it and resolve the client UUID.
 		clientName := fmt.Sprintf("roleref-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{Name: clientName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -525,7 +525,8 @@ func TestKeycloakRoleMappingRoleRefE2E(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
-				Definition: rawJSON(fmt.Sprintf(`{"name":"%s"}`, roleName)),
+				Name:       strPtr(roleName),
+				Definition: rawJSON(`{}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, role))
@@ -541,14 +542,14 @@ func TestKeycloakRoleMappingRoleRefE2E(t *testing.T) {
 		require.NoError(t, err, "KeycloakRole (client-scoped) did not become ready")
 
 		userName := fmt.Sprintf("roleref-client-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{Name: userName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -606,13 +607,12 @@ func TestKeycloakClientRoleMapping(t *testing.T) {
 	t.Run("MapClientRoleToUser", func(t *testing.T) {
 		// Create a client with roles
 		clientName := fmt.Sprintf("client-role-test-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true,
 			"protocol": "openid-connect",
 			"publicClient": false,
 			"serviceAccountsEnabled": true
-		}`, clientName))
+		}`)
 
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -621,6 +621,7 @@ func TestKeycloakClientRoleMapping(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -644,10 +645,9 @@ func TestKeycloakClientRoleMapping(t *testing.T) {
 
 		// Create a user
 		userName := fmt.Sprintf("client-role-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -656,6 +656,7 @@ func TestKeycloakClientRoleMapping(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}

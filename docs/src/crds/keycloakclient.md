@@ -1,5 +1,7 @@
 # KeycloakClient
 
+> **Identifier field:** Set the client ID in the `spec.clientId` field, not inside `spec.definition`. It is required.
+
 A `KeycloakClient` represents an OAuth2/OIDC client within a Keycloak realm.
 
 ## Specification
@@ -20,12 +22,11 @@ spec:
   # clusterRealmRef:
   #   name: my-cluster-realm
   
-  # Optional: Client ID in Keycloak (defaults to metadata.name)
+  # Required: Client ID in Keycloak (do NOT set clientId in definition)
   clientId: my-app
   
   # Optional: Client definition (Keycloak ClientRepresentation)
   definition:
-    clientId: my-app
     name: My Application
     enabled: true
     publicClient: false
@@ -112,8 +113,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  clientId: my-spa
   definition:
-    clientId: my-spa
     name: My Single Page Application
     enabled: true
     publicClient: true
@@ -141,8 +142,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  clientId: my-api
   definition:
-    clientId: my-api
     name: My Backend API
     enabled: true
     publicClient: false
@@ -163,8 +164,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  clientId: my-service
   definition:
-    clientId: my-service
     name: My Service Account
     enabled: true
     publicClient: false
@@ -197,8 +198,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  clientId: my-app
   definition:
-    clientId: my-app
     enabled: true
     publicClient: false
   clientSecretRef:
@@ -264,8 +265,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  clientId: my-app
   definition:
-    clientId: my-app
     enabled: true
     publicClient: true
     standardFlowEnabled: true

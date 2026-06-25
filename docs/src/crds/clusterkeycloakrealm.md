@@ -1,5 +1,9 @@
 # ClusterKeycloakRealm
 
+> **Identifier field:** Set the realm name in the `spec.realmName` field, not inside `spec.definition`. It is required and immutable once set.
+
+> **`spec.realmName` is immutable once set.** A realm rename in Keycloak is destructive and would orphan the realm, so the value is locked after the first time it is set (the one-time migration from unset to a value is permitted).
+
 The `ClusterKeycloakRealm` resource defines a Keycloak realm at the **cluster level**, making it accessible to resources in any namespace.
 
 ## Overview
@@ -21,8 +25,8 @@ metadata:
 spec:
   clusterInstanceRef:
     name: central-keycloak
+  realmName: shared
   definition:
-    realm: shared
     enabled: true
     displayName: Shared Platform Realm
 ```
@@ -38,8 +42,8 @@ spec:
   instanceRef:
     name: keycloak-instance
     namespace: keycloak-system
+  realmName: company
   definition:
-    realm: company
     enabled: true
     loginWithEmailAllowed: true
     registrationAllowed: false
@@ -57,7 +61,6 @@ spec:
     name: production-keycloak
   realmName: prod  # Override the Keycloak realm name
   definition:
-    realm: prod
     enabled: true
     displayName: Production
     sslRequired: external
@@ -83,7 +86,7 @@ spec:
 | `clusterInstanceRef.name` | string | Reference to ClusterKeycloakInstance | One of these |
 | `instanceRef.name` | string | Reference to namespaced KeycloakInstance | One of these |
 | `instanceRef.namespace` | string | Namespace of the KeycloakInstance | Required if instanceRef |
-| `realmName` | string | Override realm name in Keycloak | No (defaults to metadata.name) |
+| `realmName` | string | Realm name in Keycloak (must NOT be set in definition) | Yes |
 | `definition` | object | Keycloak RealmRepresentation | Yes |
 
 ### Definition Fields
@@ -169,8 +172,8 @@ metadata:
 spec:
   clusterInstanceRef:
     name: platform-keycloak
+  realmName: acme
   definition:
-    realm: acme
     enabled: true
     displayName: ACME Corporation
 ---
@@ -183,8 +186,8 @@ metadata:
 spec:
   clusterRealmRef:
     name: tenant-acme
+  clientId: acme-web-app
   definition:
-    clientId: acme-web-app
     protocol: openid-connect
     publicClient: true
     redirectUris:
@@ -202,8 +205,8 @@ metadata:
 spec:
   clusterInstanceRef:
     name: keycloak-dev
+  realmName: app-dev
   definition:
-    realm: app-dev
     enabled: true
     registrationAllowed: true  # Allow in dev
     sslRequired: none  # Relaxed for dev
@@ -216,8 +219,8 @@ metadata:
 spec:
   clusterInstanceRef:
     name: keycloak-prod
+  realmName: app-prod
   definition:
-    realm: app-prod
     enabled: true
     registrationAllowed: false
     sslRequired: external
@@ -239,8 +242,8 @@ metadata:
 spec:
   clusterRealmRef:
     name: shared-realm  # References ClusterKeycloakRealm
+  clientId: my-client
   definition:
-    clientId: my-client
     # ...
 ---
 # KeycloakUser in namespace-b
@@ -252,8 +255,8 @@ metadata:
 spec:
   clusterRealmRef:
     name: shared-realm  # Same ClusterKeycloakRealm
+  username: myuser
   definition:
-    username: myuser
     # ...
 ```
 

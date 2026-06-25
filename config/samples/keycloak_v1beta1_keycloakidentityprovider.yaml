@@ -14,8 +14,8 @@ spec:
     name: example-realm
   configSecretRef:
     name: google-idp-credentials
+  alias: google
   definition:
-    alias: google
     providerId: google
     enabled: true
     trustEmail: true
@@ -32,8 +32,8 @@ metadata:
 spec:
   realmRef:
     name: example-realm
+  alias: example-oidc-idp
   definition:
-    alias: example-oidc-idp
     displayName: "Example OIDC Provider"
     providerId: oidc
     enabled: true
@@ -56,8 +56,8 @@ metadata:
 spec:
   realmRef:
     name: example-realm
+  alias: example-trusted-issuer
   definition:
-    alias: example-trusted-issuer
     displayName: "External JWT Issuer"
     providerId: oidc
     enabled: true

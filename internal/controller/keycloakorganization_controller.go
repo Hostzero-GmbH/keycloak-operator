@@ -107,10 +107,17 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 		return r.updateStatus(ctx, org, false, "InvalidDefinition", fmt.Sprintf("Failed to parse organization definition: %v", err), "")
 	}
 
-	// Ensure name is set
-	if orgDef.Name == "" {
-		orgDef.Name = org.Name
+	// Resolve the organization name from spec.name. NOTE: organizations use a
+	// typed-struct round-trip, so any definition field not present on
+	// keycloak.OrganizationRepresentation is dropped before send. This is a known
+	// passthrough limitation.
+	orgName, err := resolveIdentifier("name", org.Spec.Name, orgDef.Name)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, org, false, InvalidIdentifierReason, err.Error(), "")
 	}
+	orgDef.Name = orgName
+	org.Status.OrganizationName = orgName
 
 	// Check if organization exists by name
 	existingOrgs, err := kc.GetOrganizations(ctx, realmName)
@@ -225,20 +232,14 @@ func (r *KeycloakOrganizationReconciler) getKeycloakClientRealmAndVersion(ctx co
 		return nil, "", "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 
-	// Get realm name from definition
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return nil, "", "", fmt.Errorf("failed to parse realm definition: %w", err)
-	}
-
 	kc, keycloakVersion, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
 	if err != nil {
 		return nil, "", "", err
 	}
 
-	return kc, realmDef.Realm, keycloakVersion, nil
+	// The realm name is the referenced realm's resolved identifier (spec.realmName,
+	// surfaced via status); it is never read from the realm's definition.
+	return kc, realm.Status.RealmName, keycloakVersion, nil
 }
 
 func (r *KeycloakOrganizationReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, string, error) {
@@ -254,15 +255,6 @@ func (r *KeycloakOrganizationReconciler) getKeycloakClientFromClusterRealm(ctx c
 
 	// Get realm name
 	realmName := clusterRealm.Status.RealmName
-	if realmName == "" {
-		var realmDef struct {
-			Realm string `json:"realm"`
-		}
-		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
-			return nil, "", "", fmt.Errorf("failed to parse cluster realm definition: %w", err)
-		}
-		realmName = realmDef.Realm
-	}
 
 	// Get Keycloak version and client from cluster instance
 	if clusterRealm.Spec.ClusterInstanceRef != nil {

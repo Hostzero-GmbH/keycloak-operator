@@ -23,7 +23,13 @@ type KeycloakRoleSpec struct {
 	// +optional
 	ClientRef *ResourceRef `json:"clientRef,omitempty"`
 
-	// Definition contains the Keycloak RoleRepresentation
+	// Name is the role name in Keycloak.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak RoleRepresentation. Set the role name via
+	// spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

@@ -109,12 +109,13 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		return r.updateStatus(ctx, idp, false, "InvalidDefinition", fmt.Sprintf("Failed to parse identity provider definition: %v", err), "")
 	}
 
-	// Ensure alias is set
-	alias := idpDef.Alias
-	if alias == "" {
-		// Default to metadata.name
-		alias = idp.Name
+	// Resolve the alias from spec.alias.
+	alias, err := resolveIdentifier("alias", idp.Spec.Alias, idpDef.Alias)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, idp, false, InvalidIdentifierReason, err.Error(), "")
 	}
+	idp.Status.Alias = alias
 
 	// Prepare definition with alias set
 	definition := setFieldInDefinition(idp.Spec.Definition.Raw, "alias", alias)
@@ -208,19 +209,8 @@ func (r *KeycloakIdentityProviderReconciler) deleteIdentityProvider(ctx context.
 		return err
 	}
 
-	// Get alias from definition
-	var idpDef struct {
-		Alias string `json:"alias"`
-	}
-	if err := json.Unmarshal(idp.Spec.Definition.Raw, &idpDef); err != nil {
-		return fmt.Errorf("failed to parse identity provider definition: %w", err)
-	}
-
-	alias := idpDef.Alias
-	if alias == "" {
-		alias = idp.Name
-	}
-
+	// Use spec.alias so deletion targets the synchronized identity provider.
+	alias := identifierValue(idp.Spec.Alias)
 	return kc.DeleteIdentityProvider(ctx, realmName, alias)
 }
 

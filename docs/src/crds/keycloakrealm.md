@@ -1,5 +1,9 @@
 # KeycloakRealm
 
+> **Identifier field:** Set the realm name in the `spec.realmName` field, not inside `spec.definition`. It is required and immutable once set.
+
+> **`spec.realmName` is immutable once set.** A realm rename in Keycloak is destructive and would orphan the realm, so the value is locked after the first time it is set (the one-time migration from unset to a value is permitted).
+
 A `KeycloakRealm` represents a realm within a Keycloak instance.
 
 ## Specification
@@ -20,12 +24,11 @@ spec:
   # clusterInstanceRef:
   #   name: my-cluster-instance
   
-  # Optional: Realm name in Keycloak (defaults to metadata.name)
+  # Required: Realm name in Keycloak (do NOT set realm in definition)
   realmName: my-realm
   
   # Required: Realm definition (Keycloak RealmRepresentation)
   definition:
-    realm: my-realm
     displayName: My Realm
     enabled: true
     # ... any other Keycloak realm properties
@@ -59,8 +62,8 @@ metadata:
 spec:
   instanceRef:
     name: production-keycloak
+  realmName: my-app
   definition:
-    realm: my-app
     displayName: My Application
     enabled: true
 ```
@@ -75,8 +78,8 @@ metadata:
 spec:
   clusterInstanceRef:
     name: central-keycloak
+  realmName: my-app
   definition:
-    realm: my-app
     displayName: My Application
     enabled: true
 ```
@@ -91,8 +94,8 @@ metadata:
 spec:
   instanceRef:
     name: production-keycloak
+  realmName: production
   definition:
-    realm: production
     displayName: Production Realm
     enabled: true
     
@@ -163,8 +166,8 @@ spec:
     name: smtp-credentials
     # userKey: user         # default
     # passwordKey: password # default
+  realmName: my-realm
   definition:
-    realm: my-realm
     enabled: true
     smtpServer:
       host: smtp.example.com
@@ -189,8 +192,8 @@ spec:
   smtpSecretRef:
     name: smtp-credentials
     namespace: keycloak-system
+  realmName: my-realm
   definition:
-    realm: my-realm
     enabled: true
     smtpServer:
       host: smtp.example.com
@@ -238,8 +241,8 @@ metadata:
 spec:
   instanceRef:
     name: my-keycloak
+  realmName: my-realm
   definition:
-    realm: my-realm
     enabled: true
     browserFlow: my-custom-browser           # may be created later
     registrationFlow: my-custom-registration # may be created later
@@ -281,8 +284,8 @@ metadata:
 spec:
   instanceRef:
     name: my-keycloak
+  realmName: my-realm
   definition:
-    realm: my-realm
     enabled: true
 ```
 

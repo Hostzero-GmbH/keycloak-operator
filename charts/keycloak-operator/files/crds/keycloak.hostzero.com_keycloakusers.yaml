@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Username in Keycloak
+      jsonPath: .status.username
+      name: Username
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -81,7 +85,9 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak UserRepresentation
+                description: |-
+                  Definition contains the Keycloak UserRepresentation. Set the username via
+                  spec.username.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               initialPassword:
@@ -132,12 +138,23 @@ spec:
                 required:
                 - secretName
                 type: object
+              username:
+                description: |-
+                  Username is the username in Keycloak. Required for regular realm users;
+                  omit it for service account users, which are identified by clientRef and
+                  whose username is derived by Keycloak.
+                minLength: 1
+                type: string
             type: object
             x-kubernetes-validations:
             - message: exactly one of realmRef, clusterRealmRef, or clientRef must
                 be set
               rule: '(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1
                 : 0) + (has(self.clientRef) ? 1 : 0) == 1'
+            - message: spec.username is required unless spec.clientRef is set (service
+                account user)
+              rule: has(self.clientRef) || (has(self.username) && size(self.username)
+                > 0)
           status:
             description: KeycloakUserStatus defines the observed state of KeycloakUser
             properties:
@@ -245,6 +262,9 @@ spec:
                 type: string
               userID:
                 description: UserID is the Keycloak internal user ID
+                type: string
+              username:
+                description: Username is the resolved username in Keycloak
                 type: string
             required:
             - ready

@@ -22,7 +22,13 @@ type KeycloakGroupSpec struct {
 	// +optional
 	ParentGroupRef *ResourceRef `json:"parentGroupRef,omitempty"`
 
-	// Definition contains the Keycloak GroupRepresentation
+	// Name is the group name in Keycloak.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak GroupRepresentation. Set the group name
+	// via spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -49,6 +55,10 @@ type KeycloakGroupStatus struct {
 	// +optional
 	GroupID string `json:"groupID,omitempty"`
 
+	// GroupName is the resolved group name in Keycloak
+	// +optional
+	GroupName string `json:"groupName,omitempty"`
+
 	// Instance contains the resolved instance reference
 	// +optional
 	Instance *InstanceRef `json:"instance,omitempty"`
@@ -65,6 +75,7 @@ type KeycloakGroupStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the group is ready"
+// +kubebuilder:printcolumn:name="Name",type=string,JSONPath=`.status.groupName`,description="Group name in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcg,categories={keycloak,all}

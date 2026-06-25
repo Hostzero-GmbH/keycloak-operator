@@ -18,7 +18,13 @@ type KeycloakOrganizationSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// Definition contains the Keycloak OrganizationRepresentation
+	// Name is the organization name in Keycloak.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak OrganizationRepresentation. Set the
+	// organization name via spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -84,6 +90,10 @@ type KeycloakOrganizationStatus struct {
 	// +optional
 	OrganizationID string `json:"organizationID,omitempty"`
 
+	// OrganizationName is the resolved organization name in Keycloak
+	// +optional
+	OrganizationName string `json:"organizationName,omitempty"`
+
 	// Instance contains the resolved instance reference
 	// +optional
 	Instance *InstanceRef `json:"instance,omitempty"`
@@ -104,6 +114,7 @@ type KeycloakOrganizationStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the organization is ready"
+// +kubebuilder:printcolumn:name="Name",type=string,JSONPath=`.status.organizationName`,description="Organization name in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcorg,categories={keycloak,all}

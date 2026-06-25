@@ -24,12 +24,11 @@ func TestKeycloakUserE2E(t *testing.T) {
 		// Create user
 		userName := fmt.Sprintf("test-user-%d", time.Now().UnixNano())
 		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
 			"email": "%s@example.com",
 			"firstName": "Test",
 			"lastName": "User",
 			"enabled": true
-		}`, userName, userName))
+		}`, userName))
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      userName,
@@ -37,6 +36,7 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -62,10 +62,9 @@ func TestKeycloakUserE2E(t *testing.T) {
 
 	t.Run("InvalidRealmRef", func(t *testing.T) {
 		userName := fmt.Sprintf("invalid-realm-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      userName,
@@ -73,6 +72,7 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: "non-existent-realm"},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -93,10 +93,10 @@ func TestKeycloakUserE2E(t *testing.T) {
 		t.Logf("User correctly failed with invalid realm ref, message: %s", updated.Status.Message)
 	})
 
-	t.Run("InvalidUserDefinition", func(t *testing.T) {
-		userName := fmt.Sprintf("invalid-def-user-%d", time.Now().UnixNano())
-		// Valid JSON but with empty username which Keycloak won't accept
-		userDef := rawJSON(`{"username": "", "enabled": true}`)
+	t.Run("MissingUsernameRejected", func(t *testing.T) {
+		userName := fmt.Sprintf("missing-username-user-%d", time.Now().UnixNano())
+		// No spec.username: it is required, so the apiserver must reject this.
+		userDef := rawJSON(`{"enabled": true}`)
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      userName,
@@ -107,21 +107,12 @@ func TestKeycloakUserE2E(t *testing.T) {
 				Definition: &userDef,
 			},
 		}
-		require.NoError(t, k8sClient.Create(ctx, kcUser))
-		t.Cleanup(func() {
-			k8sClient.Delete(ctx, kcUser)
-		})
-
-		// Wait and verify the user is NOT ready (empty username should fail)
-		time.Sleep(5 * time.Second)
-		updated := &keycloakv1beta1.KeycloakUser{}
-		err := k8sClient.Get(ctx, types.NamespacedName{
-			Name:      userName,
-			Namespace: testNamespace,
-		}, updated)
-		require.NoError(t, err)
-		require.False(t, updated.Status.Ready, "User with empty username should not be ready")
-		t.Logf("User correctly failed with invalid definition, message: %s", updated.Status.Message)
+		err := k8sClient.Create(ctx, kcUser)
+		require.Error(t, err, "creating a user without spec.username must be rejected")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, kcUser) })
+		}
+		t.Logf("User without username correctly rejected: %v", err)
 	})
 
 	t.Run("DuplicateUsername", func(t *testing.T) {
@@ -132,10 +123,9 @@ func TestKeycloakUserE2E(t *testing.T) {
 		// Create first user
 		userName := fmt.Sprintf("dup-user-%d", time.Now().UnixNano())
 		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
 			"email": "%s@example.com",
 			"enabled": true
-		}`, userName, userName))
+		}`, userName))
 		kcUser1 := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      userName + "-1",
@@ -143,6 +133,7 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -181,7 +172,8 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: &userDef, // Same username
+				Username:   strPtr(userName), // Same username
+				Definition: &userDef,
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, kcUser2))
@@ -222,12 +214,11 @@ func TestKeycloakUserE2E(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("reconcile-user-%d", time.Now().UnixNano())
 		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
 			"email": "%s@example.com",
 			"firstName": "Reconcile",
 			"lastName": "Test",
 			"enabled": true
-		}`, userName, userName))
+		}`, userName))
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      userName,
@@ -235,6 +226,7 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -303,14 +295,13 @@ func TestKeycloakUserE2E(t *testing.T) {
 	t.Run("ServiceAccountUser", func(t *testing.T) {
 		// Create a confidential client with service accounts enabled
 		clientName := fmt.Sprintf("sa-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Service Account Client",
 			"enabled": true,
 			"publicClient": false,
 			"serviceAccountsEnabled": true,
 			"directAccessGrantsEnabled": false
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -318,6 +309,7 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -396,13 +388,12 @@ func TestKeycloakUserE2E(t *testing.T) {
 	t.Run("ServiceAccountUserWithoutDefinition", func(t *testing.T) {
 		// Create a confidential client with service accounts enabled
 		clientName := fmt.Sprintf("sa-client-nodef-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Service Account Client NoDef",
 			"enabled": true,
 			"publicClient": false,
 			"serviceAccountsEnabled": true
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -410,6 +401,7 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -506,13 +498,12 @@ func TestKeycloakUserE2E(t *testing.T) {
 	t.Run("ServiceAccountUserClientWithoutServiceAccounts", func(t *testing.T) {
 		// Create a client WITHOUT service accounts enabled
 		clientName := fmt.Sprintf("no-sa-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "No Service Account Client",
 			"enabled": true,
 			"publicClient": false,
 			"serviceAccountsEnabled": false
-		}`, clientName))
+		}`)
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -520,6 +511,7 @@ func TestKeycloakUserE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}

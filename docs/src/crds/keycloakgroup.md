@@ -1,5 +1,7 @@
 # KeycloakGroup
 
+> **Identifier field:** Set the group name in the `spec.name` field, not inside `spec.definition`. It is required.
+
 A `KeycloakGroup` represents a group within a Keycloak realm.
 
 ## Specification
@@ -25,8 +27,8 @@ spec:
     name: parent-group
   
   # Required: Group definition
+  name: my-group
   definition:
-    name: my-group
     # ... any other properties
 ```
 
@@ -61,8 +63,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
-  definition:
-    name: developers
+  name: developers
+  definition: {}
 ```
 
 ### Group with Attributes
@@ -75,8 +77,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  name: engineering
   definition:
-    name: engineering
     attributes:
       department:
         - Engineering
@@ -96,8 +98,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
-  definition:
-    name: organization
+  name: organization
+  definition: {}
 ```
 
 Then create child groups:
@@ -112,8 +114,8 @@ spec:
     name: my-realm
   parentGroupRef:
     name: organization
-  definition:
-    name: team-alpha
+  name: team-alpha
+  definition: {}
 ```
 
 ## Definition Properties

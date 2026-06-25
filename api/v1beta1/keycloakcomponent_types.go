@@ -18,7 +18,13 @@ type KeycloakComponentSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// Definition contains the Keycloak ComponentRepresentation
+	// Name is the component name in Keycloak. The providerType is set in spec.definition.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak ComponentRepresentation. Set the component
+	// name via spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

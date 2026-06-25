@@ -1,5 +1,7 @@
 # KeycloakRequiredAction
 
+> **Identifier field:** Set the alias in the `spec.alias` field, not inside `spec.definition`. It is required.
+
 A `KeycloakRequiredAction` manages a required action provider within a Keycloak realm. Required actions are steps that users must complete (e.g. update password, configure OTP, verify email) and can be enabled, disabled, or set as default for new users.
 
 Changes to `requiredActions` in `KeycloakRealm.spec.definition` only take effect on initial realm import. This CRD uses the dedicated required action API endpoints to allow changes after realm creation.
@@ -23,8 +25,8 @@ spec:
   #   name: my-cluster-realm
 
   # Required: RequiredActionProviderRepresentation
+  alias: TERMS_AND_CONDITIONS
   definition:
-    alias: TERMS_AND_CONDITIONS
     name: "Terms and Conditions"
     providerId: TERMS_AND_CONDITIONS
     enabled: true
@@ -60,8 +62,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  alias: TERMS_AND_CONDITIONS
   definition:
-    alias: TERMS_AND_CONDITIONS
     name: "Terms and Conditions"
     providerId: TERMS_AND_CONDITIONS
     enabled: true
@@ -80,8 +82,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  alias: CONFIGURE_TOTP
   definition:
-    alias: CONFIGURE_TOTP
     name: "Configure OTP"
     providerId: CONFIGURE_TOTP
     enabled: true
@@ -100,8 +102,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  alias: VERIFY_EMAIL
   definition:
-    alias: VERIFY_EMAIL
     name: "Verify Email"
     providerId: VERIFY_EMAIL
     enabled: true
@@ -120,8 +122,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  alias: UPDATE_PASSWORD
   definition:
-    alias: UPDATE_PASSWORD
     name: "Update Password"
     providerId: UPDATE_PASSWORD
     enabled: true
@@ -140,8 +142,8 @@ metadata:
 spec:
   clusterRealmRef:
     name: my-cluster-realm
+  alias: VERIFY_EMAIL
   definition:
-    alias: VERIFY_EMAIL
     name: "Verify Email"
     providerId: VERIFY_EMAIL
     enabled: true

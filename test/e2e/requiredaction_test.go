@@ -30,8 +30,8 @@ func TestKeycloakRequiredActionE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRequiredActionSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:    strPtr("VERIFY_EMAIL"),
 				Definition: rawJSON(`{
-					"alias": "VERIFY_EMAIL",
 					"name": "Verify Email",
 					"providerId": "VERIFY_EMAIL",
 					"enabled": true,
@@ -76,8 +76,8 @@ func TestKeycloakRequiredActionE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRequiredActionSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:    strPtr("UPDATE_PASSWORD"),
 				Definition: rawJSON(`{
-					"alias": "UPDATE_PASSWORD",
 					"name": "Update Password",
 					"providerId": "UPDATE_PASSWORD",
 					"enabled": true,
@@ -112,7 +112,6 @@ func TestKeycloakRequiredActionE2E(t *testing.T) {
 		}, current))
 
 		current.Spec.Definition = rawJSON(`{
-			"alias": "UPDATE_PASSWORD",
 			"name": "Update Password",
 			"providerId": "UPDATE_PASSWORD",
 			"enabled": true,
@@ -148,8 +147,8 @@ func TestKeycloakRequiredActionE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRequiredActionSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:    strPtr("CONFIGURE_TOTP"),
 				Definition: rawJSON(`{
-					"alias": "CONFIGURE_TOTP",
 					"name": "Configure OTP",
 					"providerId": "CONFIGURE_TOTP",
 					"enabled": true,
@@ -196,8 +195,8 @@ func TestKeycloakRequiredActionE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRequiredActionSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:    strPtr("VERIFY_EMAIL"),
 				Definition: rawJSON(`{
-					"alias": "VERIFY_EMAIL",
 					"name": "Verify Email",
 					"providerId": "VERIFY_EMAIL",
 					"enabled": true,
@@ -242,8 +241,8 @@ func TestKeycloakRequiredActionE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRequiredActionSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: "nonexistent-realm"},
+				Alias:    strPtr("VERIFY_EMAIL"),
 				Definition: rawJSON(`{
-					"alias": "VERIFY_EMAIL",
 					"name": "Verify Email",
 					"providerId": "VERIFY_EMAIL",
 					"enabled": true

@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Group name in Keycloak
+      jsonPath: .status.groupName
+      name: Name
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -68,9 +72,15 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak GroupRepresentation
+                description: |-
+                  Definition contains the Keycloak GroupRepresentation. Set the group name
+                  via spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              name:
+                description: Name is the group name in Keycloak.
+                minLength: 1
+                type: string
               parentGroupRef:
                 description: ParentGroupRef is a reference to a parent KeycloakGroup
                   (for nested groups)
@@ -94,6 +104,7 @@ spec:
                 type: object
             required:
             - definition
+            - name
             type: object
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set
@@ -160,6 +171,9 @@ spec:
                 type: array
               groupID:
                 description: GroupID is the Keycloak internal group ID
+                type: string
+              groupName:
+                description: GroupName is the resolved group name in Keycloak
                 type: string
               instance:
                 description: Instance contains the resolved instance reference

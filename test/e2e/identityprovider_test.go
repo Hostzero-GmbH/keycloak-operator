@@ -23,8 +23,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 
 	t.Run("OIDCIdentityProvider", func(t *testing.T) {
 		idpName := fmt.Sprintf("test-oidc-idp-%d", time.Now().UnixNano())
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"displayName": "Test OIDC Provider",
 			"providerId": "oidc",
 			"enabled": true,
@@ -40,7 +39,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 				"userInfoUrl": "https://idp.example.com/userinfo",
 				"defaultScope": "openid profile email"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{
@@ -49,6 +48,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:      strPtr(idpName),
 				Definition: idpDef,
 			},
 		}
@@ -83,8 +83,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 
 	t.Run("SAMLIdentityProvider", func(t *testing.T) {
 		idpName := fmt.Sprintf("test-saml-idp-%d", time.Now().UnixNano())
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"displayName": "Test SAML Provider",
 			"providerId": "saml",
 			"enabled": true,
@@ -97,7 +96,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 				"nameIDPolicyFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
 				"signatureAlgorithm": "RSA_SHA256"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{
@@ -106,6 +105,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:      strPtr(idpName),
 				Definition: idpDef,
 			},
 		}
@@ -130,8 +130,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 
 	t.Run("GitHubIdentityProvider", func(t *testing.T) {
 		idpName := fmt.Sprintf("test-github-idp-%d", time.Now().UnixNano())
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"displayName": "GitHub",
 			"providerId": "github",
 			"enabled": true,
@@ -141,7 +140,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 				"clientSecret": "github-client-secret",
 				"defaultScope": "read:user user:email"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{
@@ -150,6 +149,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:      strPtr(idpName),
 				Definition: idpDef,
 			},
 		}
@@ -180,17 +180,17 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 			fmt.Sprintf("te-allowed-b-%d", time.Now().UnixNano()),
 		}
 		for _, cn := range clientNames {
-			clientDef := rawJSON(fmt.Sprintf(`{
-				"clientId": "%s",
+			clientDef := rawJSON(`{
 				"enabled": true,
 				"protocol": "openid-connect",
 				"publicClient": false,
 				"serviceAccountsEnabled": true
-			}`, cn))
+			}`)
 			kcClient := &keycloakv1beta1.KeycloakClient{
 				ObjectMeta: metav1.ObjectMeta{Name: cn, Namespace: testNamespace},
 				Spec: keycloakv1beta1.KeycloakClientSpec{
 					RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+					ClientId:   strPtr(cn),
 					Definition: &clientDef,
 				},
 			}
@@ -208,8 +208,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 
 		// IdP with spec.tokenExchange.allowedClients targeting the two clients above.
 		idpName := fmt.Sprintf("te-idp-%d", time.Now().UnixNano())
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"displayName": "TE Test IdP",
 			"providerId": "oidc",
 			"enabled": true,
@@ -221,12 +220,13 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 				"tokenUrl": "https://te.example.com/token",
 				"hideOnLoginPage": "true"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{Name: idpName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:      strPtr(idpName),
 				Definition: idpDef,
 				TokenExchange: &keycloakv1beta1.IDPTokenExchangeSpec{
 					AllowedClients: clientNames,
@@ -265,8 +265,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 		// status surface should communicate the wait without flipping Ready off.
 		missing := fmt.Sprintf("te-missing-client-%d", time.Now().UnixNano())
 		idpName := fmt.Sprintf("te-waiting-idp-%d", time.Now().UnixNano())
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"providerId": "oidc",
 			"enabled": true,
 			"firstBrokerLoginFlowAlias": "first broker login",
@@ -277,12 +276,13 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 				"tokenUrl": "https://te.example.com/token",
 				"hideOnLoginPage": "true"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{Name: idpName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:      strPtr(idpName),
 				Definition: idpDef,
 				TokenExchange: &keycloakv1beta1.IDPTokenExchangeSpec{
 					AllowedClients: []string{missing},
@@ -312,8 +312,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 
 	t.Run("IdentityProviderCleanup", func(t *testing.T) {
 		idpName := fmt.Sprintf("cleanup-idp-%d", time.Now().UnixNano())
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"providerId": "oidc",
 			"enabled": true,
 			"config": {
@@ -322,7 +321,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 				"authorizationUrl": "https://test.example.com/auth",
 				"tokenUrl": "https://test.example.com/token"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{
@@ -331,6 +330,7 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:      strPtr(idpName),
 				Definition: idpDef,
 			},
 		}

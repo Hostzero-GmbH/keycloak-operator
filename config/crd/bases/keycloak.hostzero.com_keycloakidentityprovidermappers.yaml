@@ -64,10 +64,9 @@ spec:
             properties:
               definition:
                 description: |-
-                  Definition contains the Keycloak IdentityProviderMapperRepresentation.
-                  The identityProviderAlias field is auto-injected from the parent
-                  KeycloakIdentityProvider at reconcile time and does not need to be set
-                  here.
+                  Definition contains the Keycloak IdentityProviderMapperRepresentation. The
+                  identityProviderAlias field is injected from the parent KeycloakIdentityProvider
+                  at reconcile time. Set the mapper name via spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               identityProviderRef:
@@ -82,9 +81,14 @@ spec:
                 required:
                 - name
                 type: object
+              name:
+                description: Name is the mapper name in Keycloak.
+                minLength: 1
+                type: string
             required:
             - definition
             - identityProviderRef
+            - name
             type: object
           status:
             description: KeycloakIdentityProviderMapperStatus defines the observed

@@ -72,9 +72,16 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak ComponentRepresentation
+                description: |-
+                  Definition contains the Keycloak ComponentRepresentation. Set the component
+                  name via spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              name:
+                description: Name is the component name in Keycloak. The providerType
+                  is set in spec.definition.
+                minLength: 1
+                type: string
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm
@@ -88,6 +95,7 @@ spec:
                 type: object
             required:
             - definition
+            - name
             type: object
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set

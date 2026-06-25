@@ -34,11 +34,11 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
 					"displayName": "Test Realm",
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -71,10 +71,10 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: "non-existent-instance"},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -94,8 +94,8 @@ func TestKeycloakRealmE2E(t *testing.T) {
 		t.Logf("Realm correctly failed with invalid instance ref, message: %s", updated.Status.Message)
 	})
 
-	t.Run("InvalidRealmDefinition", func(t *testing.T) {
-		realmName := fmt.Sprintf("realm-invalid-def-%d", time.Now().UnixNano())
+	t.Run("MissingRealmNameRejected", func(t *testing.T) {
+		realmName := fmt.Sprintf("realm-missing-name-%d", time.Now().UnixNano())
 
 		realm := &keycloakv1beta1.KeycloakRealm{
 			ObjectMeta: metav1.ObjectMeta{
@@ -104,25 +104,16 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-				// Valid JSON but with conflicting/problematic realm config
-				Definition: rawJSON(`{"realm": "", "enabled": true}`),
+				// No spec.realmName: it is required, so the apiserver must reject this.
+				Definition: rawJSON(`{"enabled": true}`),
 			},
 		}
-		require.NoError(t, k8sClient.Create(ctx, realm))
-		t.Cleanup(func() {
-			k8sClient.Delete(ctx, realm)
-		})
-
-		// Wait and verify the realm is NOT ready (empty realm name should fail)
-		time.Sleep(5 * time.Second)
-		updated := &keycloakv1beta1.KeycloakRealm{}
-		err := k8sClient.Get(ctx, types.NamespacedName{
-			Name:      realmName,
-			Namespace: testNamespace,
-		}, updated)
-		require.NoError(t, err)
-		require.False(t, updated.Status.Ready, "Realm with empty name should not be ready")
-		t.Logf("Realm correctly failed with invalid definition, message: %s", updated.Status.Message)
+		err := k8sClient.Create(ctx, realm)
+		require.Error(t, err, "creating a realm without spec.realmName must be rejected")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, realm) })
+		}
+		t.Logf("Realm without realmName correctly rejected: %v", err)
 	})
 
 	t.Run("SmtpSecretRef", func(t *testing.T) {
@@ -152,11 +143,11 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(realmName),
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name: realmName + "-smtp",
 				},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				Definition: rawJSON(`{
 					"enabled": true,
 					"smtpServer": {
 						"host": "smtp.example.com",
@@ -164,7 +155,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 						"starttls": "true",
 						"auth": "true"
 					}
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -231,19 +222,19 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(realmName),
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name:        realmName + "-smtp",
 					UserKey:     "smtp-username",
 					PasswordKey: "smtp-password",
 				},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				Definition: rawJSON(`{
 					"enabled": true,
 					"smtpServer": {
 						"host": "smtp.example.com",
 						"port": "465"
 					}
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -291,13 +282,13 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(realmName),
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name: "nonexistent-smtp-secret",
 				},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -343,13 +334,13 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(realmName),
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{
 					Name: realmName + "-smtp",
 				},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -384,11 +375,11 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{
 					Name: clusterInstanceName,
 				},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName: strPtr(realmName),
+				Definition: rawJSON(`{
 					"displayName": "Cluster Instance Realm",
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -432,10 +423,10 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{
 					Name: "nonexistent-cluster-instance",
 				},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName: strPtr(realmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -465,28 +456,19 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName: strPtr(realmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
-		require.NoError(t, k8sClient.Create(ctx, realm))
-		t.Cleanup(func() {
-			k8sClient.Delete(ctx, realm)
-		})
-
-		time.Sleep(5 * time.Second)
-		updated := &keycloakv1beta1.KeycloakRealm{}
-		err := k8sClient.Get(ctx, types.NamespacedName{
-			Name:      realmName,
-			Namespace: testNamespace,
-		}, updated)
-		require.NoError(t, err)
-		require.False(t, updated.Status.Ready,
-			"Realm with neither instanceRef nor clusterInstanceRef should not be ready")
-		require.Contains(t, updated.Status.Message, "either instanceRef or clusterInstanceRef must be specified")
-		t.Logf("Realm correctly failed with no instance ref, message: %s", updated.Status.Message)
+		err := k8sClient.Create(ctx, realm)
+		require.Error(t, err, "realm with neither instanceRef nor clusterInstanceRef must be rejected")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, realm) })
+		}
+		require.Contains(t, err.Error(), "exactly one of instanceRef or clusterInstanceRef must be set")
+		t.Logf("Realm without instance ref correctly rejected: %v", err)
 	})
 
 	t.Run("ReconcileAfterManualDeletion", func(t *testing.T) {
@@ -504,10 +486,10 @@ func TestKeycloakRealmE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -575,8 +557,8 @@ func TestSameNamespaceRefEnforcement(t *testing.T) {
 				"name":      instanceName,
 				"namespace": "non-existent-namespace",
 			},
+			"realmName": realmName,
 			"definition": map[string]interface{}{
-				"realm":   realmName,
 				"enabled": true,
 			},
 		})
@@ -605,8 +587,8 @@ func TestSameNamespaceRefEnforcement(t *testing.T) {
 				"name":      realmName,
 				"namespace": "non-existent-namespace",
 			},
+			"clientId": clientName,
 			"definition": map[string]interface{}{
-				"clientId":     clientName,
 				"enabled":      true,
 				"publicClient": true,
 			},

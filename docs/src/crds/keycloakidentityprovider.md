@@ -1,5 +1,7 @@
 # KeycloakIdentityProvider
 
+> **Identifier field:** Set the alias in the `spec.alias` field, not inside `spec.definition`. It is required.
+
 A `KeycloakIdentityProvider` represents an external identity provider configuration within a Keycloak realm.
 
 ## Specification
@@ -25,8 +27,8 @@ spec:
     name: my-idp-credentials
   
   # Required: Identity provider definition
+  alias: my-idp
   definition:
-    alias: my-idp
     providerId: oidc
     enabled: true
     # ... any other properties
@@ -64,8 +66,8 @@ spec:
     name: my-realm
   configSecretRef:
     name: corporate-sso-credentials
+  alias: corporate-sso
   definition:
-    alias: corporate-sso
     displayName: Corporate SSO
     providerId: oidc
     enabled: true
@@ -91,8 +93,8 @@ spec:
     name: my-realm
   configSecretRef:
     name: google-idp-credentials
+  alias: google
   definition:
-    alias: google
     displayName: Sign in with Google
     providerId: google
     enabled: true
@@ -113,8 +115,8 @@ spec:
     name: my-realm
   configSecretRef:
     name: github-idp-credentials
+  alias: github
   definition:
-    alias: github
     displayName: Sign in with GitHub
     providerId: github
     enabled: true
@@ -130,8 +132,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  alias: saml-idp
   definition:
-    alias: saml-idp
     displayName: Corporate SAML
     providerId: saml
     enabled: true
@@ -164,8 +166,8 @@ spec:
     name: my-realm
   configSecretRef:
     name: corporate-sso-credentials
+  alias: corporate-sso
   definition:
-    alias: corporate-sso
     providerId: oidc
     enabled: true
     config:
@@ -192,8 +194,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  alias: external-issuer
   definition:
-    alias: external-issuer
     providerId: oidc
     enabled: true
     config:
