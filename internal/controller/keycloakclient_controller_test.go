@@ -206,6 +206,111 @@ func TestDefinitionsMatch_ProtocolMappersExtraInDesired(t *testing.T) {
 	}
 }
 
+func TestDefinitionsMatchStrict_DetectsRemovedField(t *testing.T) {
+	// User had emailVerified: true in the CRD, then removed it.
+	// Strict must detect that "emailVerified" is in current but not desired.
+	desired := json.RawMessage(`{
+		"username": "foo"
+	}`)
+	current := json.RawMessage(`{
+		"username": "foo",
+		"emailVerified": true
+	}`)
+
+	if definitionsMatchStrict(desired, current, "id", "createdTimestamp") {
+		t.Error("expected no match: emailVerified is in current but not desired")
+	}
+}
+
+func TestDefinitionsMatchStrict_IgnoresSystemFields(t *testing.T) {
+	// id and createdTimestamp are known Keycloak-only fields — must be ignored.
+	desired := json.RawMessage(`{
+		"username": "foo",
+		"enabled": true
+	}`)
+	current := json.RawMessage(`{
+		"id": "abc-123",
+		"createdTimestamp": "1718000000",
+		"username": "foo",
+		"enabled": true
+	}`)
+
+	if !definitionsMatchStrict(desired, current, "id", "createdTimestamp") {
+		t.Error("expected match: system fields should be ignored")
+	}
+}
+
+func TestDefinitionsMatchStrict_DetectsValueDiff(t *testing.T) {
+	desired := json.RawMessage(`{
+		"username": "foo",
+		"enabled": true
+	}`)
+	current := json.RawMessage(`{
+		"username": "foo",
+		"enabled": false
+	}`)
+
+	if definitionsMatchStrict(desired, current, "id") {
+		t.Error("expected no match: enabled differs")
+	}
+}
+
+func TestDefinitionsMatchStrict_Match(t *testing.T) {
+	desired := json.RawMessage(`{
+		"username": "foo",
+		"email": "foo@example.com",
+		"enabled": true
+	}`)
+	current := json.RawMessage(`{
+		"id": "xyz",
+		"username": "foo",
+		"email": "foo@example.com",
+		"enabled": true,
+		"createdTimestamp": 1718000000
+	}`)
+
+	if !definitionsMatchStrict(desired, current, "id", "createdTimestamp") {
+		t.Error("expected match: all desired fields match and extra fields are system")
+	}
+}
+
+func TestDefinitionsMatchStrict_DetectsNewFieldInCurrent(t *testing.T) {
+	// A new field appears in Keycloak (e.g. from a manual edit) that is not
+	// in desired and not in the ignore list — must detect as drift.
+	desired := json.RawMessage(`{
+		"username": "foo"
+	}`)
+	current := json.RawMessage(`{
+		"username": "foo",
+		"emailVerified": true
+	}`)
+
+	if definitionsMatchStrict(desired, current) {
+		t.Error("expected no match: emailVerified is not in desired or ignore list")
+	}
+}
+
+func TestDefinitionsMatchStrict_IgnoresRoleAndGroupFields(t *testing.T) {
+	// realmRoles, clientRoles, and groups are reconciled via dedicated endpoints
+	// and must be ignored in strict comparison to avoid spurious updates.
+	desired := json.RawMessage(`{
+		"username": "foo",
+		"enabled": true
+	}`)
+	current := json.RawMessage(`{
+		"id": "abc",
+		"username": "foo",
+		"enabled": true,
+		"realmRoles": ["offline_access"],
+		"clientRoles": {"my-app": ["admin"]},
+		"groups": ["admins"]
+	}`)
+
+	if !definitionsMatchStrict(desired, current, "id", "realmRoles", "clientRoles", "groups") {
+		t.Error("expected match: role and group fields should be ignored")
+	}
+}
+
 func TestIsPublicClient(t *testing.T) {
 	cases := []struct {
 		name string

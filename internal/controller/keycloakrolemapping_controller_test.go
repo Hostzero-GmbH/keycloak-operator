@@ -454,11 +454,106 @@ func TestFindRoleMappingsForGroup_IgnoresUserMappings(t *testing.T) {
 	}
 }
 
+func TestResolveSubject_ServiceAccountRef_NotFound(t *testing.T) {
+	mapping := &keycloakv1beta1.KeycloakRoleMapping{
+		ObjectMeta: metav1.ObjectMeta{Name: "mapping", Namespace: "default"},
+		Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+			Subject: keycloakv1beta1.RoleMappingSubject{
+				ServiceAccountRef: &keycloakv1beta1.ResourceRef{Name: "my-app"},
+			},
+		},
+	}
+
+	r := &KeycloakRoleMappingReconciler{
+		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).Build(),
+	}
+
+	_, _, _, _, err := r.resolveSubject(context.Background(), mapping)
+	if err == nil {
+		t.Fatal("expected error for missing client, got nil")
+	}
+}
+
+func TestResolveSubject_ServiceAccountRef_NotReady(t *testing.T) {
+	kcClient := &keycloakv1beta1.KeycloakClient{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-app", Namespace: "default"},
+		Status:     keycloakv1beta1.KeycloakClientStatus{Ready: false},
+	}
+	mapping := &keycloakv1beta1.KeycloakRoleMapping{
+		ObjectMeta: metav1.ObjectMeta{Name: "mapping", Namespace: "default"},
+		Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+			Subject: keycloakv1beta1.RoleMappingSubject{
+				ServiceAccountRef: &keycloakv1beta1.ResourceRef{Name: "my-app"},
+			},
+		},
+	}
+
+	r := &KeycloakRoleMappingReconciler{
+		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(kcClient).Build(),
+	}
+
+	subjectType, _, _, _, err := r.resolveSubject(context.Background(), mapping)
+	if err == nil {
+		t.Fatal("expected error for unready client, got nil")
+	}
+	if subjectType != "user" {
+		t.Errorf("subjectType = %q, want \"user\"", subjectType)
+	}
+}
+
+func TestFindRoleMappingsForServiceAccountClient(t *testing.T) {
+	appMapping := &keycloakv1beta1.KeycloakRoleMapping{
+		ObjectMeta: metav1.ObjectMeta{Name: "app-mapping", Namespace: "default"},
+		Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+			Subject: keycloakv1beta1.RoleMappingSubject{ServiceAccountRef: &keycloakv1beta1.ResourceRef{Name: "my-app"}},
+		},
+	}
+	otherMapping := &keycloakv1beta1.KeycloakRoleMapping{
+		ObjectMeta: metav1.ObjectMeta{Name: "other-mapping", Namespace: "default"},
+		Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+			Subject: keycloakv1beta1.RoleMappingSubject{ServiceAccountRef: &keycloakv1beta1.ResourceRef{Name: "other-app"}},
+		},
+	}
+	client := &keycloakv1beta1.KeycloakClient{ObjectMeta: metav1.ObjectMeta{Name: "my-app", Namespace: "default"}}
+
+	r := &KeycloakRoleMappingReconciler{
+		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(appMapping, otherMapping).Build(),
+	}
+
+	reqs := r.findRoleMappingsForServiceAccountClient(context.Background(), client)
+	if len(reqs) != 1 {
+		t.Fatalf("got %d requests, want 1", len(reqs))
+	}
+	want := reconcile.Request{NamespacedName: types.NamespacedName{Name: "app-mapping", Namespace: "default"}}
+	if reqs[0] != want {
+		t.Errorf("got %v, want %v", reqs[0], want)
+	}
+}
+
+func TestFindRoleMappingsForServiceAccountClient_OnlySvcAccount(t *testing.T) {
+	// A user mapping referencing the same name must not be returned.
+	userMapping := &keycloakv1beta1.KeycloakRoleMapping{
+		ObjectMeta: metav1.ObjectMeta{Name: "user-mapping", Namespace: "default"},
+		Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+			Subject: keycloakv1beta1.RoleMappingSubject{UserRef: &keycloakv1beta1.ResourceRef{Name: "my-app"}},
+		},
+	}
+	client := &keycloakv1beta1.KeycloakClient{ObjectMeta: metav1.ObjectMeta{Name: "my-app", Namespace: "default"}}
+
+	r := &KeycloakRoleMappingReconciler{
+		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(userMapping).Build(),
+	}
+
+	if reqs := r.findRoleMappingsForServiceAccountClient(context.Background(), client); len(reqs) != 0 {
+		t.Errorf("got %d requests, want 0", len(reqs))
+	}
+}
+
 func TestReconcile_InvalidSpec_NoSubject(t *testing.T) {
 	mapping := &keycloakv1beta1.KeycloakRoleMapping{
 		ObjectMeta: metav1.ObjectMeta{Name: "mapping", Namespace: "default"},
 		Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
-			// Subject is empty — neither UserRef nor GroupRef set
+			// Subject is empty — neither UserRef, GroupRef, nor ServiceAccountRef set
 			Role: &keycloakv1beta1.RoleDefinition{Name: "admin"},
 		},
 	}

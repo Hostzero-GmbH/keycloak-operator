@@ -117,6 +117,18 @@ spec:
                     required:
                     - name
                     type: object
+                  serviceAccountRef:
+                    description: |-
+                      ServiceAccountRef references a KeycloakClient to assign roles to its
+                      auto-created service account user. This avoids needing an intermediate
+                      KeycloakUser CR for clients with serviceAccountsEnabled: true.
+                    properties:
+                      name:
+                        description: Name of the resource
+                        type: string
+                    required:
+                    - name
+                    type: object
                   userRef:
                     description: UserRef references a KeycloakUser
                     properties:
