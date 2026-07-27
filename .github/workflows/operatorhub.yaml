@@ -103,13 +103,15 @@ jobs:
           token: ${{ secrets.OPERATORHUB_PAT }}
           fetch-depth: 0
 
-      - name: Sync fork with upstream main
+      # Branch from the fork's own main, not upstream/main: the PAT lacks the
+      # `workflow` scope, so pushing upstream's newer .github/workflows files to
+      # the fork is rejected. The PR diff is computed from the merge-base, so a
+      # stale fork base is fine — we only add a new version directory.
+      - name: Create release branch
         if: ${{ !inputs.dry_run }}
         working-directory: community-operators
         run: |
-          git remote add upstream https://github.com/k8s-operatorhub/community-operators.git
-          git fetch upstream main
-          git checkout -B release-keycloak-operator-${{ steps.version.outputs.version }} upstream/main
+          git checkout -B release-keycloak-operator-${{ steps.version.outputs.version }} origin/main
 
       - name: Copy bundle into community-operators
         if: ${{ !inputs.dry_run }}
