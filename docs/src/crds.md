@@ -81,20 +81,36 @@ KeycloakInstance / ClusterKeycloakInstance
 
 ## Common Patterns
 
-### Definition Field
+### Spec Layout
 
-Most resources include a `definition` field that accepts the full Keycloak API representation:
+Every CRD that mirrors a Keycloak representation is built from the same four layers:
+
+1. **Placement refs** — typed references that anchor the resource in the hierarchy: `realmRef`, `clusterRealmRef`, `clientRef`, `clientScopeRef`, `parentGroupRef`, `identityProviderRef`, …
+2. **Identity** — one typed, required, immutable field naming the object in Keycloak: `realmName`, `clientId`, `username`, `alias`, or `name`. It is mirrored to status and shown as a printer column.
+3. **Kubernetes integration** — typed fields for anything that touches cluster objects or other CRs: Secret references (`clientSecretRef`, `smtpSecretRef`, `configSecretRef`), `initialPassword`, `tokenExchange`. The operator injects these into the payload or applies them through separate Keycloak API calls.
+4. **Payload** — `spec.definition`, the verbatim Keycloak API representation. The operator writes into it (identifier, secret merges) but never reads configuration out of it; everything else passes through unchanged. This is what lets you configure any Keycloak property, even ones the CRD does not model.
 
 ```yaml
 spec:
-  definition:
-    # Full Keycloak API object
-    realm: my-realm
+  instanceRef:                  # 1. placement
+    name: my-keycloak
+  realmName: my-realm           # 2. identity
+  smtpSecretRef:                # 3. Kubernetes integration
+    name: smtp-credentials
+  definition:                   # 4. payload — full Keycloak API object
     enabled: true
     displayName: My Realm
 ```
 
-This provides flexibility to configure any Keycloak property, even those not explicitly modeled in the CRD.
+**Every datum has exactly one home.** A value that belongs to a typed layer must not also be configured inside `definition`: an identifier in the definition is tolerated only when it matches the spec field, and a conflicting value sets `Ready=False`.
+
+Fully typed CRDs without a `definition` (KeycloakInstance, KeycloakRoleMapping, KeycloakUserCredential) are operator constructs rather than representation mirrors, so they have no payload layer.
+
+For contributors, the layer of a new field follows mechanically:
+
+- References a Kubernetes object or another CR? → typed spec field (layer 3).
+- Managed through a separate Keycloak API endpoint rather than the representation `PUT`? → its own CRD (like KeycloakRoleMapping) or a typed spec section — never keys inside `definition`.
+- Part of the Keycloak representation itself? → stays in `definition`, untyped.
 
 ### Status Tracking
 

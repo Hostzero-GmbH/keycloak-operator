@@ -108,6 +108,14 @@ make generate
 - Write tests for new functionality
 - Keep functions focused and well-documented
 
+### API Design
+
+CRD specs follow a four-layer layout (placement refs / identity / Kubernetes
+integration / opaque `definition` payload) with one invariant: every datum has
+exactly one home. Before adding a spec field or reading from `definition`, see
+[Spec Layout](docs/src/crds.md#spec-layout) for the rules and the decision
+guide on where a new field belongs.
+
 ### Commit Messages
 
 We follow conventional commit messages:
