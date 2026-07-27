@@ -26,10 +26,9 @@ func TestKeycloakUserCredentialE2E(t *testing.T) {
 		// First create a user
 		userName := fmt.Sprintf("cred-user-%d", time.Now().UnixNano())
 		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
 			"email": "%s@example.com",
 			"enabled": true
-		}`, userName, userName))
+		}`, userName))
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -38,6 +37,7 @@ func TestKeycloakUserCredentialE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -122,10 +122,9 @@ func TestKeycloakUserCredentialE2E(t *testing.T) {
 	t.Run("UseExistingSecret", func(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("existing-secret-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -134,6 +133,7 @@ func TestKeycloakUserCredentialE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -219,10 +219,9 @@ func TestKeycloakUserCredentialE2E(t *testing.T) {
 	t.Run("MissingSecretError", func(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("missing-secret-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -231,6 +230,7 @@ func TestKeycloakUserCredentialE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -297,10 +297,9 @@ func TestKeycloakUserCredentialCleanup(t *testing.T) {
 	t.Run("SecretDeletedWithCredential", func(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("cleanup-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -309,6 +308,7 @@ func TestKeycloakUserCredentialCleanup(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}

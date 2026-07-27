@@ -1108,6 +1108,11 @@ func (in *KeycloakClientScopeSpec) DeepCopyInto(out *KeycloakClientScopeSpec) {
 		*out = new(ClusterResourceRef)
 		**out = **in
 	}
+	if in.Name != nil {
+		in, out := &in.Name, &out.Name
+		*out = new(string)
+		**out = **in
+	}
 	in.Definition.DeepCopyInto(&out.Definition)
 }
 
@@ -1297,6 +1302,11 @@ func (in *KeycloakComponentSpec) DeepCopyInto(out *KeycloakComponentSpec) {
 		*out = new(ClusterResourceRef)
 		**out = **in
 	}
+	if in.Name != nil {
+		in, out := &in.Name, &out.Name
+		*out = new(string)
+		**out = **in
+	}
 	in.Definition.DeepCopyInto(&out.Definition)
 }
 
@@ -1417,6 +1427,11 @@ func (in *KeycloakGroupSpec) DeepCopyInto(out *KeycloakGroupSpec) {
 	if in.ParentGroupRef != nil {
 		in, out := &in.ParentGroupRef, &out.ParentGroupRef
 		*out = new(ResourceRef)
+		**out = **in
+	}
+	if in.Name != nil {
+		in, out := &in.Name, &out.Name
+		*out = new(string)
 		**out = **in
 	}
 	in.Definition.DeepCopyInto(&out.Definition)
@@ -1586,6 +1601,11 @@ func (in *KeycloakIdentityProviderMapperList) DeepCopyObject() runtime.Object {
 func (in *KeycloakIdentityProviderMapperSpec) DeepCopyInto(out *KeycloakIdentityProviderMapperSpec) {
 	*out = *in
 	out.IdentityProviderRef = in.IdentityProviderRef
+	if in.Name != nil {
+		in, out := &in.Name, &out.Name
+		*out = new(string)
+		**out = **in
+	}
 	in.Definition.DeepCopyInto(&out.Definition)
 }
 
@@ -1653,6 +1673,11 @@ func (in *KeycloakIdentityProviderSpec) DeepCopyInto(out *KeycloakIdentityProvid
 		in, out := &in.TokenExchange, &out.TokenExchange
 		*out = new(IDPTokenExchangeSpec)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.Alias != nil {
+		in, out := &in.Alias, &out.Alias
+		*out = new(string)
+		**out = **in
 	}
 	in.Definition.DeepCopyInto(&out.Definition)
 }
@@ -1888,6 +1913,11 @@ func (in *KeycloakOrganizationSpec) DeepCopyInto(out *KeycloakOrganizationSpec) 
 		*out = new(ClusterResourceRef)
 		**out = **in
 	}
+	if in.Name != nil {
+		in, out := &in.Name, &out.Name
+		*out = new(string)
+		**out = **in
+	}
 	in.Definition.DeepCopyInto(&out.Definition)
 }
 
@@ -2003,6 +2033,11 @@ func (in *KeycloakProtocolMapperSpec) DeepCopyInto(out *KeycloakProtocolMapperSp
 	if in.ClientScopeRef != nil {
 		in, out := &in.ClientScopeRef, &out.ClientScopeRef
 		*out = new(ResourceRef)
+		**out = **in
+	}
+	if in.Name != nil {
+		in, out := &in.Name, &out.Name
+		*out = new(string)
 		**out = **in
 	}
 	in.Definition.DeepCopyInto(&out.Definition)
@@ -2244,6 +2279,11 @@ func (in *KeycloakRequiredActionSpec) DeepCopyInto(out *KeycloakRequiredActionSp
 		*out = new(ClusterResourceRef)
 		**out = **in
 	}
+	if in.Alias != nil {
+		in, out := &in.Alias, &out.Alias
+		*out = new(string)
+		**out = **in
+	}
 	in.Definition.DeepCopyInto(&out.Definition)
 }
 
@@ -2483,6 +2523,11 @@ func (in *KeycloakRoleSpec) DeepCopyInto(out *KeycloakRoleSpec) {
 		*out = new(ResourceRef)
 		**out = **in
 	}
+	if in.Name != nil {
+		in, out := &in.Name, &out.Name
+		*out = new(string)
+		**out = **in
+	}
 	in.Definition.DeepCopyInto(&out.Definition)
 }
 
@@ -2711,6 +2756,11 @@ func (in *KeycloakUserSpec) DeepCopyInto(out *KeycloakUserSpec) {
 	if in.ClientRef != nil {
 		in, out := &in.ClientRef, &out.ClientRef
 		*out = new(ResourceRef)
+		**out = **in
+	}
+	if in.Username != nil {
+		in, out := &in.Username, &out.Username
+		*out = new(string)
 		**out = **in
 	}
 	if in.Definition != nil {

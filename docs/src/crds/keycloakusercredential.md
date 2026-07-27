@@ -115,8 +115,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: new-user
   definition:
-    username: new-user
     email: user@example.com
     enabled: true
 ---

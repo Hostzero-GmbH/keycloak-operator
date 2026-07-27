@@ -91,9 +91,11 @@ func (r *KeycloakIdentityProviderMapperReconciler) Reconcile(ctx context.Context
 		return r.updateStatus(ctx, mapper, false, "InvalidDefinition", fmt.Sprintf("Failed to parse mapper definition: %v", err), "", "", alias)
 	}
 
-	mapperName := mapperDef.Name
-	if mapperName == "" {
-		mapperName = mapper.Name
+	// Resolve the mapper name from spec.name.
+	mapperName, err := resolveIdentifier("name", mapper.Spec.Name, mapperDef.Name)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, mapper, false, InvalidIdentifierReason, err.Error(), "", "", alias)
 	}
 
 	definition := setFieldInDefinition(mapper.Spec.Definition.Raw, "name", mapperName)
@@ -190,9 +192,9 @@ func (r *KeycloakIdentityProviderMapperReconciler) getKeycloakClientAndParent(ct
 		return nil, "", "", fmt.Errorf("KeycloakIdentityProvider %s is not ready", idpKey)
 	}
 
-	alias, err := identityProviderAlias(idp)
-	if err != nil {
-		return nil, "", "", err
+	alias := identityProviderAlias(idp)
+	if alias == "" {
+		return nil, "", "", fmt.Errorf("KeycloakIdentityProvider %s has no resolved alias yet", idpKey)
 	}
 
 	kc, realmName, err := GetKeycloakClientAndRealmForIDP(ctx, r.Client, r.ClientManager, idp)
@@ -203,23 +205,14 @@ func (r *KeycloakIdentityProviderMapperReconciler) getKeycloakClientAndParent(ct
 	return kc, realmName, alias, nil
 }
 
-// identityProviderAlias extracts the Keycloak alias for the given
-// KeycloakIdentityProvider, following the same fallback as the IdP controller:
-// the alias from spec.definition, falling back to the CR's metadata.name.
-func identityProviderAlias(idp *keycloakv1beta1.KeycloakIdentityProvider) (string, error) {
-	var idpDef struct {
-		Alias string `json:"alias"`
+// identityProviderAlias returns the Keycloak alias of the parent
+// KeycloakIdentityProvider, preferring the resolved status value over
+// spec.alias (a legacy parent may not have re-reconciled yet).
+func identityProviderAlias(idp *keycloakv1beta1.KeycloakIdentityProvider) string {
+	if idp.Status.Alias != "" {
+		return idp.Status.Alias
 	}
-	if len(idp.Spec.Definition.Raw) > 0 {
-		if err := json.Unmarshal(idp.Spec.Definition.Raw, &idpDef); err != nil {
-			return "", fmt.Errorf("failed to parse identity provider definition: %w", err)
-		}
-	}
-	alias := idpDef.Alias
-	if alias == "" {
-		alias = idp.Name
-	}
-	return alias, nil
+	return identifierValue(idp.Spec.Alias)
 }
 
 func (r *KeycloakIdentityProviderMapperReconciler) deleteMapper(ctx context.Context, mapper *keycloakv1beta1.KeycloakIdentityProviderMapper) error {

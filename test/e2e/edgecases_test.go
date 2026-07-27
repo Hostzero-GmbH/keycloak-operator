@@ -28,10 +28,9 @@ func TestSecretChangeDetection(t *testing.T) {
 	t.Run("PasswordReSyncOnSecretChange", func(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("secret-change-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -40,6 +39,7 @@ func TestSecretChangeDetection(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -173,10 +173,10 @@ func TestParentDeletionWithChildren(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -196,10 +196,9 @@ func TestParentDeletionWithChildren(t *testing.T) {
 
 		// Create a user in the realm
 		userName := fmt.Sprintf("orphan-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -208,6 +207,7 @@ func TestParentDeletionWithChildren(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -267,10 +267,9 @@ func TestParentDeletionWithChildren(t *testing.T) {
 
 		// Create a user
 		userName := fmt.Sprintf("mapping-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -279,6 +278,7 @@ func TestParentDeletionWithChildren(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -377,12 +377,11 @@ func TestDriftDetection(t *testing.T) {
 	t.Run("UserReconciliationAfterDirectModification", func(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("drift-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"firstName": "Original",
 			"lastName": "Name",
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -391,6 +390,7 @@ func TestDriftDetection(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -473,11 +473,10 @@ func TestGenerationTracking(t *testing.T) {
 	t.Run("ObservedGenerationUpdatedOnSpecChange", func(t *testing.T) {
 		// Create a user
 		userName := fmt.Sprintf("gen-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"firstName": "Initial",
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -486,6 +485,7 @@ func TestGenerationTracking(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -518,11 +518,10 @@ func TestGenerationTracking(t *testing.T) {
 		t.Logf("Initial generation: %d, ObservedGeneration: %d", initialGeneration, updatedUser.Status.ObservedGeneration)
 
 		// Update the spec
-		newUserDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		newUserDef := rawJSON(`{
 			"firstName": "Updated",
 			"enabled": true
-		}`, userName))
+		}`)
 		updatedUser.Spec.Definition = &newUserDef
 		require.NoError(t, k8sClient.Update(ctx, updatedUser))
 

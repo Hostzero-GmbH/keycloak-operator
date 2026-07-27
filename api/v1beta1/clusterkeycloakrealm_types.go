@@ -7,6 +7,7 @@ import (
 
 // ClusterKeycloakRealmSpec defines the desired state of ClusterKeycloakRealm
 // +kubebuilder:validation:XValidation:rule="has(self.instanceRef) != has(self.clusterInstanceRef)",message="exactly one of instanceRef or clusterInstanceRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.realmName) || self.realmName == oldSelf.realmName",message="spec.realmName is immutable once set"
 type ClusterKeycloakRealmSpec struct {
 	// InstanceRef is a reference to a namespaced KeycloakInstance
 	// One of instanceRef or clusterInstanceRef must be specified
@@ -18,8 +19,10 @@ type ClusterKeycloakRealmSpec struct {
 	// +optional
 	ClusterInstanceRef *ClusterResourceRef `json:"clusterInstanceRef,omitempty"`
 
-	// RealmName is the name of the realm in Keycloak (defaults to metadata.name)
-	// +optional
+	// RealmName is the name of the realm in Keycloak. It is immutable once set:
+	// renaming a realm in Keycloak is destructive and would orphan it.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	RealmName *string `json:"realmName,omitempty"`
 
 	// SmtpSecretRef is a reference to a Kubernetes Secret containing SMTP credentials.
@@ -28,7 +31,8 @@ type ClusterKeycloakRealmSpec struct {
 	// +optional
 	SmtpSecretRef *ClusterSmtpSecretRefSpec `json:"smtpSecretRef,omitempty"`
 
-	// Definition contains the Keycloak RealmRepresentation
+	// Definition contains the Keycloak RealmRepresentation. Set the realm name
+	// via spec.realmName.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -103,14 +107,6 @@ type ClusterKeycloakRealmList struct {
 
 func init() {
 	SchemeBuilder.Register(&ClusterKeycloakRealm{}, &ClusterKeycloakRealmList{})
-}
-
-// GetRealmName returns the realm name to use in Keycloak
-func (r *ClusterKeycloakRealm) GetRealmName() string {
-	if r.Spec.RealmName != nil {
-		return *r.Spec.RealmName
-	}
-	return r.Name
 }
 
 // UsesClusterInstance returns true if this realm references a ClusterKeycloakInstance

@@ -133,7 +133,7 @@ func TestKeycloakGroupNestedReconcile(t *testing.T) {
 func newGroupCR(t *testing.T, k8sName, realmName, parentK8sName, kcGroupName string, attrs map[string][]string) *keycloakv1beta1.KeycloakGroup {
 	t.Helper()
 
-	body := map[string]interface{}{"name": kcGroupName}
+	body := map[string]interface{}{}
 	if len(attrs) > 0 {
 		body["attributes"] = attrs
 	}
@@ -147,6 +147,7 @@ func newGroupCR(t *testing.T, k8sName, realmName, parentK8sName, kcGroupName str
 		},
 		Spec: keycloakv1beta1.KeycloakGroupSpec{
 			RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+			Name:       strPtr(kcGroupName),
 			Definition: rawJSON(string(def)),
 		},
 	}
@@ -183,7 +184,6 @@ func updateGroupDefinition(t *testing.T, group *keycloakv1beta1.KeycloakGroup, k
 	t.Helper()
 
 	body := map[string]interface{}{
-		"name":       kcName,
 		"attributes": attrs,
 	}
 	def, err := json.Marshal(body)

@@ -6,8 +6,8 @@ metadata:
 spec:
   realmRef:
     name: example-realm
+  alias: CONFIGURE_TOTP
   definition:
-    alias: CONFIGURE_TOTP
     name: "Configure OTP"
     providerId: CONFIGURE_TOTP
     enabled: true

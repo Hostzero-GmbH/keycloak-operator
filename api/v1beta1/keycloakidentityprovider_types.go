@@ -7,6 +7,7 @@ import (
 
 // KeycloakIdentityProviderSpec defines the desired state of KeycloakIdentityProvider
 // +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.alias) || self.alias == oldSelf.alias",message="spec.alias is immutable once set"
 type KeycloakIdentityProviderSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
@@ -36,7 +37,13 @@ type KeycloakIdentityProviderSpec struct {
 	// +optional
 	TokenExchange *IDPTokenExchangeSpec `json:"tokenExchange,omitempty"`
 
-	// Definition contains the Keycloak IdentityProviderRepresentation
+	// Alias is the identity provider alias in Keycloak. Immutable once set.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Alias *string `json:"alias,omitempty"`
+
+	// Definition contains the Keycloak IdentityProviderRepresentation. Set the
+	// alias via spec.alias.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`
@@ -115,6 +122,10 @@ type KeycloakIdentityProviderStatus struct {
 	// +optional
 	ResourcePath string `json:"resourcePath,omitempty"`
 
+	// Alias is the resolved identity provider alias in Keycloak
+	// +optional
+	Alias string `json:"alias,omitempty"`
+
 	// TokenExchange contains the observed state of the token-exchange
 	// permission wiring, populated only when spec.tokenExchange is set.
 	// +optional
@@ -136,6 +147,7 @@ type KeycloakIdentityProviderStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the identity provider is ready"
+// +kubebuilder:printcolumn:name="Alias",type=string,JSONPath=`.status.alias`,description="Identity provider alias in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcidp,categories={keycloak,all}

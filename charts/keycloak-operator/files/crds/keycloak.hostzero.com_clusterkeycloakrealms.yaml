@@ -73,7 +73,9 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak RealmRepresentation
+                description: |-
+                  Definition contains the Keycloak RealmRepresentation. Set the realm name
+                  via spec.realmName.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               instanceRef:
@@ -92,8 +94,10 @@ spec:
                 - namespace
                 type: object
               realmName:
-                description: RealmName is the name of the realm in Keycloak (defaults
-                  to metadata.name)
+                description: |-
+                  RealmName is the name of the realm in Keycloak. It is immutable once set:
+                  renaming a realm in Keycloak is destructive and would orphan it.
+                minLength: 1
                 type: string
               smtpSecretRef:
                 description: |-
@@ -124,10 +128,13 @@ spec:
                 type: object
             required:
             - definition
+            - realmName
             type: object
             x-kubernetes-validations:
             - message: exactly one of instanceRef or clusterInstanceRef must be set
               rule: has(self.instanceRef) != has(self.clusterInstanceRef)
+            - message: spec.realmName is immutable once set
+              rule: '!has(oldSelf.realmName) || self.realmName == oldSelf.realmName'
           status:
             description: ClusterKeycloakRealmStatus defines the observed state of
               ClusterKeycloakRealm

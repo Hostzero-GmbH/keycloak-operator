@@ -6,8 +6,8 @@ metadata:
 spec:
   realmRef:
     name: example-realm
+  name: groups
   definition:
-    name: groups
     description: "Includes group memberships in the access token"
     protocol: openid-connect
     attributes:

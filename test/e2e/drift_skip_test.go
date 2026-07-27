@@ -47,13 +47,12 @@ func TestDriftSkip(t *testing.T) {
 		realmName := createTestRealm(t, instanceName, "drift-client")
 
 		clientName := fmt.Sprintf("drift-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true,
 			"publicClient": true,
 			"redirectUris": ["https://a.example.com/*", "https://b.example.com/*", "https://c.example.com/*"],
 			"webOrigins": ["https://a.example.com", "https://b.example.com"]
-		}`, clientName))
+		}`)
 
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -62,6 +61,7 @@ func TestDriftSkip(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -111,8 +111,7 @@ func TestDriftSkip(t *testing.T) {
 		require.NoError(t, k8sClient.Create(ctx, idpSecret))
 		t.Cleanup(func() { k8sClient.Delete(ctx, idpSecret) })
 
-		idpDef := rawJSON(fmt.Sprintf(`{
-			"alias": "%s",
+		idpDef := rawJSON(`{
 			"providerId": "oidc",
 			"enabled": true,
 			"config": {
@@ -120,7 +119,7 @@ func TestDriftSkip(t *testing.T) {
 				"tokenUrl": "https://idp.example.com/token",
 				"defaultScope": "openid"
 			}
-		}`, idpName))
+		}`)
 
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{
@@ -129,6 +128,7 @@ func TestDriftSkip(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:        &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:           strPtr(idpName),
 				ConfigSecretRef: &keycloakv1beta1.IDPConfigSecretRef{Name: idpSecret.Name},
 				Definition:      idpDef,
 			},
@@ -191,16 +191,16 @@ func TestDriftSkip(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef:   &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:     strPtr(realmName),
 				SmtpSecretRef: &keycloakv1beta1.SmtpSecretRefSpec{Name: smtpSecret.Name},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				Definition: rawJSON(`{
 					"enabled": true,
 					"smtpServer": {
 						"host": "smtp.example.com",
 						"port": "587",
 						"auth": "true"
 					}
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -248,11 +248,10 @@ func TestDriftSkip(t *testing.T) {
 		// the exact case organizationDefinitionsMatch strips so a naive
 		// byte-compare doesn't fire drift and PUT every reconcile.
 		orgDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"alias": "%s",
 			"enabled": true,
 			"domains": [{"name": "%s.example.com"}]
-		}`, orgName, orgName, orgName))
+		}`, orgName, orgName))
 
 		org := &keycloakv1beta1.KeycloakOrganization{
 			ObjectMeta: metav1.ObjectMeta{
@@ -260,6 +259,7 @@ func TestDriftSkip(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
+				Name:       strPtr(orgName),
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				Definition: orgDef,
 			},

@@ -40,11 +40,11 @@ func TestPreserveResourceAnnotation(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
 					"displayName": "Preserved Realm",
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -102,12 +102,11 @@ func TestPreserveResourceAnnotation(t *testing.T) {
 
 		// Create a user with the preserve annotation
 		userName := fmt.Sprintf("preserved-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{
-			"username": "%s",
+		userDef := rawJSON(`{
 			"firstName": "Preserved",
 			"lastName": "User",
 			"enabled": true
-		}`, userName))
+		}`)
 
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{
@@ -119,6 +118,7 @@ func TestPreserveResourceAnnotation(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -183,12 +183,11 @@ func TestPreserveResourceAnnotation(t *testing.T) {
 
 		// Create a client with the preserve annotation
 		clientName := fmt.Sprintf("preserved-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"name": "Preserved Client",
 			"enabled": true,
 			"publicClient": false
-		}`, clientName))
+		}`)
 
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -200,6 +199,7 @@ func TestPreserveResourceAnnotation(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -270,11 +270,11 @@ func TestPreserveResourceAnnotation(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
 					"displayName": "Normal Delete Realm",
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -334,10 +334,10 @@ func TestPreserveResourceAnnotation(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRealmSpec{
 				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, realm))
@@ -431,10 +431,10 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.ClusterKeycloakRealmSpec{
 				ClusterInstanceRef: &keycloakv1beta1.ClusterResourceRef{Name: clusterInstanceName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"realm": "%s",
+				RealmName:          strPtr(realmName),
+				Definition: rawJSON(`{
 					"enabled": true
-				}`, realmName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, clusterRealm))
@@ -467,10 +467,10 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"name": "%s",
+				Name:     strPtr(scopeName),
+				Definition: rawJSON(`{
 					"protocol": "openid-connect"
-				}`, scopeName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, scope))
@@ -504,10 +504,10 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: scopeName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"name": "%s",
+				Name:     strPtr(scopeName),
+				Definition: rawJSON(`{
 					"protocol": "openid-connect"
-				}`, scopeName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, scope))
@@ -532,8 +532,8 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakProtocolMapperSpec{
 				ClientScopeRef: &keycloakv1beta1.ResourceRef{Name: scopeName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"name": "%s",
+				Name:           strPtr(mapperName),
+				Definition: rawJSON(`{
 					"protocol": "openid-connect",
 					"protocolMapper": "oidc-usermodel-attribute-mapper",
 					"config": {
@@ -543,7 +543,7 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 						"id.token.claim": "true",
 						"access.token.claim": "true"
 					}
-				}`, mapperName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, mapper))
@@ -585,7 +585,8 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{"name": "%s"}`, groupName)),
+				Name:       strPtr(groupName),
+				Definition: rawJSON(`{}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, group))
@@ -624,10 +625,10 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"name": "%s",
+				Name:     strPtr(roleName),
+				Definition: rawJSON(`{
 					"description": "preserve-role test"
-				}`, roleName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, role))
@@ -654,11 +655,12 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 
 		// Create the user that owns the mapping.
 		userName := fmt.Sprintf("preserve-rm-user-%d", time.Now().UnixNano())
-		userDef := rawJSON(fmt.Sprintf(`{"username": "%s", "enabled": true}`, userName))
+		userDef := rawJSON(`{"enabled": true}`)
 		kcUser := &keycloakv1beta1.KeycloakUser{
 			ObjectMeta: metav1.ObjectMeta{Name: userName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakUserSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
 				Definition: &userDef,
 			},
 		}
@@ -740,8 +742,8 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakComponentSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"name": "%s",
+				Name:     strPtr(componentName),
+				Definition: rawJSON(`{
 					"providerId": "rsa-generated",
 					"providerType": "org.keycloak.keys.KeyProvider",
 					"config": {
@@ -749,7 +751,7 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 						"keySize": ["2048"],
 						"algorithm": ["RS256"]
 					}
-				}`, componentName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, component))
@@ -788,8 +790,8 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{
-					"alias": "%s",
+				Alias:    strPtr(idpName),
+				Definition: rawJSON(`{
 					"providerId": "oidc",
 					"enabled": true,
 					"config": {
@@ -799,7 +801,7 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 						"tokenUrl": "https://idp.example.com/token",
 						"defaultScope": "openid"
 					}
-				}`, idpName)),
+				}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, idp))
@@ -840,12 +842,12 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:     strPtr(orgName),
 				Definition: rawJSON(fmt.Sprintf(`{
-					"name": "%s",
 					"alias": "%s",
 					"enabled": true,
 					"domains": [{"name": "%s.example.com", "verified": false}]
-				}`, orgName, orgName, orgName)),
+				}`, orgName, orgName)),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, org))
@@ -928,8 +930,8 @@ func TestPreserveResourceAnnotationAcrossResources(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRequiredActionSpec{
 				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:    strPtr("VERIFY_EMAIL"),
 				Definition: rawJSON(`{
-					"alias": "VERIFY_EMAIL",
 					"name": "Verify Email",
 					"providerId": "VERIFY_EMAIL",
 					"enabled": true,

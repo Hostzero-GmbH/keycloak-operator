@@ -5,9 +5,10 @@ metadata:
   name: example-client
   namespace: default
 spec:
-  realmRef: example-realm
+  realmRef:
+    name: example-realm
+  clientId: example-web-app
   definition:
-    clientId: example-web-app
     name: "Example Web Application"
     enabled: true
     publicClient: false

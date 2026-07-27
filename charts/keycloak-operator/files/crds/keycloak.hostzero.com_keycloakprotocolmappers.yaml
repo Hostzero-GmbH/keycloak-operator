@@ -84,15 +84,25 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak ProtocolMapperRepresentation
+                description: |-
+                  Definition contains the Keycloak ProtocolMapperRepresentation. Set the
+                  mapper name via spec.name.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              name:
+                description: Name is the protocol mapper name in Keycloak. Immutable
+                  once set.
+                minLength: 1
+                type: string
             required:
             - definition
+            - name
             type: object
             x-kubernetes-validations:
             - message: exactly one of clientRef or clientScopeRef must be set
               rule: has(self.clientRef) != has(self.clientScopeRef)
+            - message: spec.name is immutable once set
+              rule: '!has(oldSelf.name) || self.name == oldSelf.name'
           status:
             description: KeycloakProtocolMapperStatus defines the observed state of
               KeycloakProtocolMapper

@@ -1,5 +1,7 @@
 # KeycloakProtocolMapper
 
+> **Identifier field:** Set the mapper name in the `spec.name` field. It is required and immutable once set. A `name` inside `spec.definition` is tolerated only when it matches `spec.name`; a conflicting value is rejected.
+
 A `KeycloakProtocolMapper` defines how user attributes, roles, and other data are mapped into tokens. Protocol mappers can be attached to either clients or client scopes.
 
 ## Specification
@@ -19,8 +21,8 @@ spec:
   #   name: my-scope
   
   # Required: Mapper definition
+  name: department
   definition:
-    name: department
     protocol: openid-connect
     protocolMapper: oidc-usermodel-attribute-mapper
     config:
@@ -63,8 +65,8 @@ metadata:
 spec:
   clientRef:
     name: my-client
+  name: department
   definition:
-    name: department
     protocol: openid-connect
     protocolMapper: oidc-usermodel-attribute-mapper
     config:
@@ -87,8 +89,8 @@ metadata:
 spec:
   clientScopeRef:
     name: my-scope
+  name: groups
   definition:
-    name: groups
     protocol: openid-connect
     protocolMapper: oidc-group-membership-mapper
     config:

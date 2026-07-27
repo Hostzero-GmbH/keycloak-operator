@@ -6,8 +6,8 @@ metadata:
 spec:
   realmRef:
     name: example-realm
+  name: acme
   definition:
-    name: acme
     alias: acme
     description: "ACME Corporation tenant"
     enabled: true

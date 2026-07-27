@@ -96,11 +96,14 @@ func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.
 		return r.updateStatus(ctx, clientScope, false, "InvalidDefinition", fmt.Sprintf("Failed to parse client scope definition: %v", err), "")
 	}
 
-	// Ensure name is set
-	if scopeDef.Name == "" {
-		// Default to metadata.name
-		scopeDef.Name = clientScope.Name
+	// Resolve the client scope name from spec.name.
+	scopeName, err := resolveIdentifier("name", clientScope.Spec.Name, scopeDef.Name)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, clientScope, false, InvalidIdentifierReason, err.Error(), "")
 	}
+	scopeDef.Name = scopeName
+	clientScope.Status.ClientScopeName = scopeName
 
 	// Prepare definition JSON with name set
 	definition := setFieldInDefinition(clientScope.Spec.Definition.Raw, "name", scopeDef.Name)
@@ -167,16 +170,8 @@ func (r *KeycloakClientScopeReconciler) getKeycloakClientAndRealm(ctx context.Co
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
-	}
-
-	// Get realm name from definition
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
 	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
@@ -184,7 +179,9 @@ func (r *KeycloakClientScopeReconciler) getKeycloakClientAndRealm(ctx context.Co
 		return nil, "", err
 	}
 
-	return kc, realmDef.Realm, nil
+	// The realm name is the referenced realm's resolved identifier (spec.realmName,
+	// surfaced via status); it is never read from the realm's definition.
+	return kc, realm.Status.RealmName, nil
 }
 
 func (r *KeycloakClientScopeReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {
@@ -194,21 +191,12 @@ func (r *KeycloakClientScopeReconciler) getKeycloakClientFromClusterRealm(ctx co
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
 	// Get realm name
 	realmName := clusterRealm.Status.RealmName
-	if realmName == "" {
-		var realmDef struct {
-			Realm string `json:"realm"`
-		}
-		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
-			return nil, "", fmt.Errorf("failed to parse cluster realm definition: %w", err)
-		}
-		realmName = realmDef.Realm
-	}
 
 	// Get Keycloak client from cluster instance
 	if clusterRealm.Spec.ClusterInstanceRef != nil {
@@ -271,16 +259,11 @@ func (r *KeycloakClientScopeReconciler) deleteClientScope(ctx context.Context, c
 		return err
 	}
 
-	// Get scope ID from resource path or find by name
-	var scopeDef struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(clientScope.Spec.Definition.Raw, &scopeDef); err != nil {
-		return fmt.Errorf("failed to parse client scope definition: %w", err)
-	}
-
-	if scopeDef.Name == "" {
-		scopeDef.Name = clientScope.Name
+	// Use spec.name so deletion targets the synchronized scope. Empty means
+	// never synchronized (unmigrated object).
+	scopeName := identifierValue(clientScope.Spec.Name)
+	if scopeName == "" {
+		return nil
 	}
 
 	// Find scope by name
@@ -290,7 +273,7 @@ func (r *KeycloakClientScopeReconciler) deleteClientScope(ctx context.Context, c
 	}
 
 	for _, s := range scopes {
-		if s.Name != nil && *s.Name == scopeDef.Name {
+		if s.Name != nil && *s.Name == scopeName {
 			return kc.DeleteClientScope(ctx, realmName, *s.ID)
 		}
 	}

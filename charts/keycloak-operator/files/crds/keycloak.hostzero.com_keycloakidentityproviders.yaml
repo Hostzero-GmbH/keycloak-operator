@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Identity provider alias in Keycloak
+      jsonPath: .status.alias
+      name: Alias
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -58,6 +62,11 @@ spec:
             description: KeycloakIdentityProviderSpec defines the desired state of
               KeycloakIdentityProvider
             properties:
+              alias:
+                description: Alias is the identity provider alias in Keycloak. Immutable
+                  once set.
+                minLength: 1
+                type: string
               clusterRealmRef:
                 description: |-
                   ClusterRealmRef is a reference to a ClusterKeycloakRealm
@@ -84,7 +93,9 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak IdentityProviderRepresentation
+                description: |-
+                  Definition contains the Keycloak IdentityProviderRepresentation. Set the
+                  alias via spec.alias.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               realmRef:
@@ -123,15 +134,21 @@ spec:
                 - allowedClients
                 type: object
             required:
+            - alias
             - definition
             type: object
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set
               rule: has(self.realmRef) != has(self.clusterRealmRef)
+            - message: spec.alias is immutable once set
+              rule: '!has(oldSelf.alias) || self.alias == oldSelf.alias'
           status:
             description: KeycloakIdentityProviderStatus defines the observed state
               of KeycloakIdentityProvider
             properties:
+              alias:
+                description: Alias is the resolved identity provider alias in Keycloak
+                type: string
               conditions:
                 description: Conditions represent the latest available observations
                 items:

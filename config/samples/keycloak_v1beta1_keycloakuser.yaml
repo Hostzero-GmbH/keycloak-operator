@@ -5,9 +5,10 @@ metadata:
   name: example-user
   namespace: default
 spec:
-  realmRef: example-realm
+  realmRef:
+    name: example-realm
+  username: testuser
   definition:
-    username: testuser
     email: testuser@example.com
     emailVerified: true
     enabled: true
