@@ -1,6 +1,6 @@
 # KeycloakRoleMapping
 
-The `KeycloakRoleMapping` resource assigns Keycloak roles to users or groups.
+The `KeycloakRoleMapping` resource assigns Keycloak roles to users, groups, or client service accounts.
 
 ## Overview
 
@@ -9,6 +9,7 @@ This CRD provides a declarative way to:
 - Assign client roles to users
 - Assign realm roles to groups
 - Assign client roles to groups
+- Assign roles to a client's service account (via `serviceAccountRef`)
 
 ## Examples
 
@@ -91,12 +92,32 @@ spec:
     name: developer-role
 ```
 
+### Role to a Client's Service Account
+
+`serviceAccountRef` assigns roles to the service account user that Keycloak auto-creates for clients with `serviceAccountsEnabled: true`, without an intermediate `KeycloakUser` resource:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRoleMapping
+metadata:
+  name: my-app-sa-manage-users
+spec:
+  subject:
+    serviceAccountRef:
+      name: my-app  # KeycloakClient
+  role:
+    name: manage-users
+    clientRef:
+      name: realm-management
+```
+
 ## Spec
 
 | Field | Type | Description | Required |
 |-------|------|-------------|----------|
-| `subject.userRef` | ResourceRef | Reference to KeycloakUser | Either userRef or groupRef |
-| `subject.groupRef` | ResourceRef | Reference to KeycloakGroup | Either userRef or groupRef |
+| `subject.userRef` | ResourceRef | Reference to KeycloakUser | Exactly one subject ref |
+| `subject.groupRef` | ResourceRef | Reference to KeycloakGroup | Exactly one subject ref |
+| `subject.serviceAccountRef` | ResourceRef | Reference to a KeycloakClient whose service account is the subject | Exactly one subject ref |
 | `roleRef` | ResourceRef | Reference to KeycloakRole resource | Either roleRef or role |
 | `role.name` | string | Keycloak role name (inline) | Either roleRef or role |
 | `role.clientRef` | ResourceRef | Reference to KeycloakClient for client roles (within inline role) | No (realm role if omitted) |
@@ -146,6 +167,7 @@ spec:
 | groupRef | inline `role` with `clientRef` or `clientId` | Group client role mapping |
 | groupRef | `roleRef` to a `KeycloakRole` without `clientRef` | Group realm role mapping |
 | groupRef | `roleRef` to a `KeycloakRole` with `clientRef` | Group client role mapping |
+| serviceAccountRef | any role source | Role mapping on the client's service account user |
 
 ### Cleanup
 
@@ -245,7 +267,8 @@ spec:
 
 ## Notes
 
-- Only one of `userRef` or `groupRef` can be specified
+- Exactly one of `userRef`, `groupRef`, or `serviceAccountRef` can be specified
 - Only one of `roleRef` or `role` can be specified
 - When using `role.clientRef`, the role must be a client role, not a realm role
 - Built-in Keycloak roles (like `offline_access`, `uma_authorization`) should use inline `role.name`
+- Do not combine `KeycloakRoleMapping` with the authoritative `spec.realmRoles`/`spec.clientRoles` fields of a `KeycloakUser` targeting the same user — the user's reconciler would remove the mappings again
