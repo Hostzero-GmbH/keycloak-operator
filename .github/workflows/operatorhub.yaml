@@ -8,9 +8,11 @@ name: Publish to OperatorHub.io
 # Required secrets:
 #   OPERATORHUB_FORK_OWNER  GitHub user/org that owns the community-operators fork.
 #                           (Defaults to ${{ github.repository_owner }} if unset.)
-#   OPERATORHUB_PAT         Classic PAT with the `public_repo` scope. A fine-grained
-#                           PAT does not work for cross-repo PR creation against the
-#                           upstream community-operators repo.
+#   OPERATORHUB_PAT         Classic PAT with the `public_repo` and `workflow` scopes.
+#                           `workflow` is needed because syncing the fork with
+#                           upstream main pushes upstream's .github/workflows files.
+#                           A fine-grained PAT does not work for cross-repo PR
+#                           creation against the upstream community-operators repo.
 on:
   workflow_dispatch:
     inputs:
@@ -103,15 +105,17 @@ jobs:
           token: ${{ secrets.OPERATORHUB_PAT }}
           fetch-depth: 0
 
-      # Branch from the fork's own main, not upstream/main: the PAT lacks the
-      # `workflow` scope, so pushing upstream's newer .github/workflows files to
-      # the fork is rejected. The PR diff is computed from the merge-base, so a
-      # stale fork base is fine — we only add a new version directory.
-      - name: Create release branch
+      # The community-operators pipeline rejects PRs that are not rebased on
+      # upstream main, so the branch must be based there even though pushing
+      # upstream's .github/workflows files to the fork requires the PAT to have
+      # the `workflow` scope.
+      - name: Sync fork with upstream main
         if: ${{ !inputs.dry_run }}
         working-directory: community-operators
         run: |
-          git checkout -B release-keycloak-operator-${{ steps.version.outputs.version }} origin/main
+          git remote add upstream https://github.com/k8s-operatorhub/community-operators.git
+          git fetch upstream main
+          git checkout -B release-keycloak-operator-${{ steps.version.outputs.version }} upstream/main
 
       - name: Copy bundle into community-operators
         if: ${{ !inputs.dry_run }}
