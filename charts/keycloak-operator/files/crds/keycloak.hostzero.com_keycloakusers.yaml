@@ -72,6 +72,17 @@ spec:
                 required:
                 - name
                 type: object
+              clientRoles:
+                additionalProperties:
+                  items:
+                    type: string
+                  type: array
+                description: |-
+                  ClientRoles maps a client's clientId to the authoritative set of
+                  client-level role names for this user. When omitted, client roles are not
+                  managed; when set, roles on clients absent from the map are removed.
+                  Do not combine with KeycloakRoleMapping resources targeting the same user.
+                type: object
               clusterRealmRef:
                 description: |-
                   ClusterRealmRef is a reference to a ClusterKeycloakRealm
@@ -87,9 +98,18 @@ spec:
               definition:
                 description: |-
                   Definition contains the Keycloak UserRepresentation. Set the username via
-                  spec.username.
+                  spec.username; role and group assignments go in spec.realmRoles,
+                  spec.clientRoles, and spec.groups.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              groups:
+                description: |-
+                  Groups is the authoritative set of group names this user belongs to,
+                  reconciled via the Keycloak group-membership endpoints. When omitted,
+                  group memberships are not managed; an empty list removes all memberships.
+                items:
+                  type: string
+                type: array
               initialPassword:
                 description: InitialPassword sets the initial password for the user
                   (only on creation)
@@ -116,6 +136,16 @@ spec:
                 required:
                 - name
                 type: object
+              realmRoles:
+                description: |-
+                  RealmRoles is the authoritative set of realm-level role names for this
+                  user, reconciled via the Keycloak role-mapping endpoints. When omitted,
+                  realm roles are not managed; an empty list removes all realm roles.
+                  Pointer types so an explicit empty value survives JSON round-trips.
+                  Do not combine with KeycloakRoleMapping resources targeting the same user.
+                items:
+                  type: string
+                type: array
               userSecret:
                 description: UserSecret configures where to store user credentials
                 properties:

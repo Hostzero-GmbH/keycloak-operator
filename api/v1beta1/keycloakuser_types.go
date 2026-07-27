@@ -36,10 +36,32 @@ type KeycloakUserSpec struct {
 	Username *string `json:"username,omitempty"`
 
 	// Definition contains the Keycloak UserRepresentation. Set the username via
-	// spec.username.
+	// spec.username; role and group assignments go in spec.realmRoles,
+	// spec.clientRoles, and spec.groups.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`
+
+	// RealmRoles is the authoritative set of realm-level role names for this
+	// user, reconciled via the Keycloak role-mapping endpoints. When omitted,
+	// realm roles are not managed; an empty list removes all realm roles.
+	// Pointer types so an explicit empty value survives JSON round-trips.
+	// Do not combine with KeycloakRoleMapping resources targeting the same user.
+	// +optional
+	RealmRoles *[]string `json:"realmRoles,omitempty"`
+
+	// ClientRoles maps a client's clientId to the authoritative set of
+	// client-level role names for this user. When omitted, client roles are not
+	// managed; when set, roles on clients absent from the map are removed.
+	// Do not combine with KeycloakRoleMapping resources targeting the same user.
+	// +optional
+	ClientRoles *map[string][]string `json:"clientRoles,omitempty"`
+
+	// Groups is the authoritative set of group names this user belongs to,
+	// reconciled via the Keycloak group-membership endpoints. When omitted,
+	// group memberships are not managed; an empty list removes all memberships.
+	// +optional
+	Groups *[]string `json:"groups,omitempty"`
 
 	// InitialPassword sets the initial password for the user (only on creation)
 	// +optional
@@ -80,7 +102,9 @@ type UserSecretSpec struct {
 }
 
 // UserDefinition represents the Keycloak UserRepresentation
-// This is a subset - use runtime.RawExtension for full flexibility
+// This is a subset - use runtime.RawExtension for full flexibility.
+// Role and group assignments are not part of the definition; they live in the
+// typed spec fields (realmRoles, clientRoles, groups).
 type UserDefinition struct {
 	// Username is the unique username
 	// +kubebuilder:validation:Required
@@ -105,18 +129,6 @@ type UserDefinition struct {
 	// Enabled indicates if the user is enabled
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
-
-	// Groups the user belongs to
-	// +optional
-	Groups []string `json:"groups,omitempty"`
-
-	// RealmRoles assigned to the user
-	// +optional
-	RealmRoles []string `json:"realmRoles,omitempty"`
-
-	// ClientRoles assigned to the user (map of client to roles)
-	// +optional
-	ClientRoles map[string][]string `json:"clientRoles,omitempty"`
 
 	// RequiredActions for the user
 	// +optional
