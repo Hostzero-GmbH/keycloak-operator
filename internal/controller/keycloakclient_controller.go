@@ -113,7 +113,9 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return r.updateStatus(ctx, kcClient, false, InvalidIdentifierReason, err.Error(), "", instanceRef, realmRef)
 	}
 	clientDef.ClientID = resolvedClientID
-	kcClient.Status.ClientID = resolvedClientID
+	if err := persistResolvedIdentifier(ctx, r.Client, kcClient, &kcClient.Status.ClientID, resolvedClientID); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Prepare definition JSON with clientId set
 	var definition []byte
@@ -253,7 +255,7 @@ func (r *KeycloakClientReconciler) getKeycloakClientAndRealm(ctx context.Context
 	}
 
 	// Check if realm is ready
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", instanceRef, realmRef, fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 
@@ -277,7 +279,7 @@ func (r *KeycloakClientReconciler) getKeycloakClientFromClusterRealm(ctx context
 		return nil, "", instanceRef, fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", instanceRef, fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
@@ -586,8 +588,12 @@ func (r *KeycloakClientReconciler) deleteClient(ctx context.Context, kcClient *k
 		return err
 	}
 
-	// Use the clientId from spec.clientId.
+	// Use the clientId from spec.clientId. Empty means never synchronized
+	// (unmigrated object); an empty search term would match arbitrary clients.
 	clientId := identifierValue(kcClient.Spec.ClientId)
+	if clientId == "" {
+		return nil
+	}
 
 	// Find client by clientId
 	existingClient, err := kc.GetClientByClientID(ctx, realmName, clientId)

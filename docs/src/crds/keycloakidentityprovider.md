@@ -1,6 +1,6 @@
 # KeycloakIdentityProvider
 
-> **Identifier field:** Set the alias in the `spec.alias` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the alias in the `spec.alias` field. It is required and immutable once set. An `alias` inside `spec.definition` is tolerated only when it matches `spec.alias`; a conflicting value is rejected.
 
 A `KeycloakIdentityProvider` represents an external identity provider configuration within a Keycloak realm.
 

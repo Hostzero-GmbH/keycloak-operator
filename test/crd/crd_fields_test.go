@@ -1,7 +1,7 @@
 // Package crd contains schema-level assertions over the generated CRD YAML in
 // config/crd/bases. They guard the identifier contract: every affected CRD must
-// expose an identifier spec field and a printer column sourced from the status
-// identifier, and the realm CRDs must carry the realmName immutability CEL rule.
+// expose an identifier spec field, a printer column sourced from the status
+// identifier, and an immutability CEL transition rule for the identifier.
 // The test reads the generated YAML so it stays cheap and requires no apiserver.
 package crd
 
@@ -29,7 +29,7 @@ type crdExpectation struct {
 }
 
 var expectations = []crdExpectation{
-	{file: "keycloak.hostzero.com_keycloakclients.yaml", specField: "clientId", columnJSONPath: ".status.clientID"},
+	{file: "keycloak.hostzero.com_keycloakclients.yaml", specField: "clientId", columnJSONPath: ".status.clientId"},
 	{file: "keycloak.hostzero.com_keycloakrealms.yaml", specField: "realmName", columnJSONPath: ".status.realmName"},
 	{file: "keycloak.hostzero.com_clusterkeycloakrealms.yaml", specField: "realmName", columnJSONPath: ".status.realmName"},
 	{file: "keycloak.hostzero.com_keycloakroles.yaml", specField: "name", columnJSONPath: ".status.roleName"},
@@ -150,25 +150,21 @@ func TestIdentifierPrinterColumnPresent(t *testing.T) {
 	}
 }
 
-func TestRealmNameImmutabilityRule(t *testing.T) {
-	realmCRDs := []string{
-		"keycloak.hostzero.com_keycloakrealms.yaml",
-		"keycloak.hostzero.com_clusterkeycloakrealms.yaml",
-	}
-	for _, file := range realmCRDs {
-		t.Run(file, func(t *testing.T) {
-			crd := loadCRD(t, file)
+func TestIdentifierImmutabilityRule(t *testing.T) {
+	for _, exp := range expectations {
+		t.Run(exp.file, func(t *testing.T) {
+			crd := loadCRD(t, exp.file)
 			v := storageVersion(t, crd)
 			spec := v.Schema.OpenAPIV3Schema.Properties["spec"]
 			found := false
 			for _, rule := range spec.XValidations {
-				if strings.Contains(rule.Rule, "oldSelf.realmName") {
+				if strings.Contains(rule.Rule, "oldSelf."+exp.specField) {
 					found = true
 					break
 				}
 			}
 			if !found {
-				t.Errorf("%s: spec is missing the realmName immutability CEL transition rule", file)
+				t.Errorf("%s: spec is missing the %s immutability CEL transition rule", exp.file, exp.specField)
 			}
 		})
 	}

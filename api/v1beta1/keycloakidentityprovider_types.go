@@ -7,6 +7,7 @@ import (
 
 // KeycloakIdentityProviderSpec defines the desired state of KeycloakIdentityProvider
 // +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.alias) || self.alias == oldSelf.alias",message="spec.alias is immutable once set"
 type KeycloakIdentityProviderSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
@@ -36,7 +37,7 @@ type KeycloakIdentityProviderSpec struct {
 	// +optional
 	TokenExchange *IDPTokenExchangeSpec `json:"tokenExchange,omitempty"`
 
-	// Alias is the identity provider alias in Keycloak.
+	// Alias is the identity provider alias in Keycloak. Immutable once set.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Alias *string `json:"alias,omitempty"`

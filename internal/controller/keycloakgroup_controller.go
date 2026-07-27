@@ -220,7 +220,7 @@ func (r *KeycloakGroupReconciler) getKeycloakClientAndRealm(ctx context.Context,
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 
@@ -241,7 +241,7 @@ func (r *KeycloakGroupReconciler) getKeycloakClientFromClusterRealm(ctx context.
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 

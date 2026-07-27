@@ -170,7 +170,7 @@ func (r *KeycloakClientScopeReconciler) getKeycloakClientAndRealm(ctx context.Co
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 
@@ -191,7 +191,7 @@ func (r *KeycloakClientScopeReconciler) getKeycloakClientFromClusterRealm(ctx co
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
@@ -259,8 +259,12 @@ func (r *KeycloakClientScopeReconciler) deleteClientScope(ctx context.Context, c
 		return err
 	}
 
-	// Use spec.name so deletion targets the synchronized scope.
+	// Use spec.name so deletion targets the synchronized scope. Empty means
+	// never synchronized (unmigrated object).
 	scopeName := identifierValue(clientScope.Spec.Name)
+	if scopeName == "" {
+		return nil
+	}
 
 	// Find scope by name
 	scopes, err := kc.GetClientScopes(ctx, realmName)

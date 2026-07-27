@@ -8,6 +8,7 @@ import (
 // KeycloakUserSpec defines the desired state of KeycloakUser
 // +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.clientRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or clientRef must be set"
 // +kubebuilder:validation:XValidation:rule="has(self.clientRef) || (has(self.username) && size(self.username) > 0)",message="spec.username is required unless spec.clientRef is set (service account user)"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.username) || (has(self.username) && self.username == oldSelf.username)",message="spec.username is immutable once set"
 type KeycloakUserSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef, clusterRealmRef, or clientRef must be specified
@@ -29,7 +30,7 @@ type KeycloakUserSpec struct {
 
 	// Username is the username in Keycloak. Required for regular realm users;
 	// omit it for service account users, which are identified by clientRef and
-	// whose username is derived by Keycloak.
+	// whose username is derived by Keycloak. Immutable once set.
 	// +kubebuilder:validation:MinLength=1
 	// +optional
 	Username *string `json:"username,omitempty"`

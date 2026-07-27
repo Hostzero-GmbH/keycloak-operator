@@ -1,6 +1,6 @@
 # KeycloakProtocolMapper
 
-> **Identifier field:** Set the mapper name in the `spec.name` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the mapper name in the `spec.name` field. It is required and immutable once set. A `name` inside `spec.definition` is tolerated only when it matches `spec.name`; a conflicting value is rejected.
 
 A `KeycloakProtocolMapper` defines how user attributes, roles, and other data are mapped into tokens. Protocol mappers can be attached to either clients or client scopes.
 

@@ -142,7 +142,7 @@ spec:
                 description: |-
                   Username is the username in Keycloak. Required for regular realm users;
                   omit it for service account users, which are identified by clientRef and
-                  whose username is derived by Keycloak.
+                  whose username is derived by Keycloak. Immutable once set.
                 minLength: 1
                 type: string
             type: object
@@ -155,6 +155,9 @@ spec:
                 account user)
               rule: has(self.clientRef) || (has(self.username) && size(self.username)
                 > 0)
+            - message: spec.username is immutable once set
+              rule: '!has(oldSelf.username) || (has(self.username) && self.username
+                == oldSelf.username)'
           status:
             description: KeycloakUserStatus defines the observed state of KeycloakUser
             properties:

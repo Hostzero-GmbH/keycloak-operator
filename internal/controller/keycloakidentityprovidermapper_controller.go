@@ -193,6 +193,9 @@ func (r *KeycloakIdentityProviderMapperReconciler) getKeycloakClientAndParent(ct
 	}
 
 	alias := identityProviderAlias(idp)
+	if alias == "" {
+		return nil, "", "", fmt.Errorf("KeycloakIdentityProvider %s has no resolved alias yet", idpKey)
+	}
 
 	kc, realmName, err := GetKeycloakClientAndRealmForIDP(ctx, r.Client, r.ClientManager, idp)
 	if err != nil {
@@ -203,9 +206,12 @@ func (r *KeycloakIdentityProviderMapperReconciler) getKeycloakClientAndParent(ct
 }
 
 // identityProviderAlias returns the Keycloak alias of the parent
-// KeycloakIdentityProvider from its spec.alias field. The parent IdP controller
-// requires spec.alias, so it is always populated for a ready parent.
+// KeycloakIdentityProvider, preferring the resolved status value over
+// spec.alias (a legacy parent may not have re-reconciled yet).
 func identityProviderAlias(idp *keycloakv1beta1.KeycloakIdentityProvider) string {
+	if idp.Status.Alias != "" {
+		return idp.Status.Alias
+	}
 	return identifierValue(idp.Spec.Alias)
 }
 

@@ -78,8 +78,9 @@ spec:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               name:
-                description: Name is the component name in Keycloak. The providerType
-                  is set in spec.definition.
+                description: |-
+                  Name is the component name in Keycloak. Immutable once set. The
+                  providerType is set in spec.definition.
                 minLength: 1
                 type: string
               realmRef:
@@ -100,6 +101,8 @@ spec:
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set
               rule: has(self.realmRef) != has(self.clusterRealmRef)
+            - message: spec.name is immutable once set
+              rule: '!has(oldSelf.name) || self.name == oldSelf.name'
           status:
             description: KeycloakComponentStatus defines the observed state of KeycloakComponent
             properties:

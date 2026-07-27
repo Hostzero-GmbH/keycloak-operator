@@ -1,6 +1,6 @@
 # KeycloakOrganization
 
-> **Identifier field:** Set the organization name in the `spec.name` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the organization name in the `spec.name` field. It is required and immutable once set. A `name` inside `spec.definition` is tolerated only when it matches `spec.name`; a conflicting value is rejected.
 
 A `KeycloakOrganization` represents an organization within a Keycloak realm.
 

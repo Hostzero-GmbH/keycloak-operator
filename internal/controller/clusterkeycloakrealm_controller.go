@@ -111,6 +111,9 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 		RecordError(controllerName, "invalid_identifier")
 		return r.updateStatus(ctx, realm, false, InvalidIdentifierReason, err.Error(), instanceRef)
 	}
+	if err := persistResolvedIdentifier(ctx, r.Client, realm, &realm.Status.RealmName, realmName); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Build the effective definition, injecting the resolved realm name and SMTP
 	// credentials from secret if configured.
@@ -166,7 +169,6 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Update status
 	realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
-	realm.Status.RealmName = realmName
 	return r.updateStatus(ctx, realm, true, "Ready", "Realm synchronized", instanceRef)
 }
 
@@ -243,8 +245,11 @@ func (r *ClusterKeycloakRealmReconciler) deleteRealm(ctx context.Context, realm 
 	}
 
 	// Use spec.realmName so deletion never targets a different realm than the one
-	// that was synchronized.
+	// that was synchronized. Empty means never synchronized (unmigrated object).
 	realmName := identifierValue(realm.Spec.RealmName)
+	if realmName == "" {
+		return nil
+	}
 	return kc.DeleteRealm(ctx, realmName)
 }
 

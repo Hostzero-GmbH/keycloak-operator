@@ -1,6 +1,6 @@
 # KeycloakRequiredAction
 
-> **Identifier field:** Set the alias in the `spec.alias` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the alias in the `spec.alias` field. It is required and immutable once set. An `alias` inside `spec.definition` is tolerated only when it matches `spec.alias`; a conflicting value is rejected.
 
 A `KeycloakRequiredAction` manages a required action provider within a Keycloak realm. Required actions are steps that users must complete (e.g. update password, configure OTP, verify email) and can be enabled, disabled, or set as default for new users.
 

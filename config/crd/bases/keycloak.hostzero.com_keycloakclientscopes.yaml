@@ -78,7 +78,8 @@ spec:
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               name:
-                description: Name is the client scope name in Keycloak.
+                description: Name is the client scope name in Keycloak. Immutable
+                  once set.
                 minLength: 1
                 type: string
               realmRef:
@@ -99,6 +100,8 @@ spec:
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set
               rule: has(self.realmRef) != has(self.clusterRealmRef)
+            - message: spec.name is immutable once set
+              rule: '!has(oldSelf.name) || self.name == oldSelf.name'
           status:
             description: KeycloakClientScopeStatus defines the observed state of KeycloakClientScope
             properties:

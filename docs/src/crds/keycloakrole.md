@@ -1,6 +1,6 @@
 # KeycloakRole
 
-> **Identifier field:** Set the role name in the `spec.name` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the role name in the `spec.name` field. It is required and immutable once set. A `name` inside `spec.definition` is tolerated only when it matches `spec.name`; a conflicting value is rejected.
 
 A `KeycloakRole` manages Keycloak roles. Roles can be either realm-level (shared across all clients) or client-level (specific to a single client).
 

@@ -15,8 +15,8 @@ import (
 )
 
 // TestKeycloakRealmIdentifierUnification covers realm identifier behavior:
-// resolving realmName from spec, rejecting a realm key set in definition, and
-// the realmName immutability CEL rule.
+// resolving realmName from spec, tolerating a matching realm key in definition,
+// rejecting a conflicting one, and the realmName immutability CEL rule.
 func TestKeycloakRealmIdentifierUnification(t *testing.T) {
 	skipIfNoCluster(t)
 
@@ -54,10 +54,31 @@ func TestKeycloakRealmIdentifierUnification(t *testing.T) {
 		t.Logf("realm %q created from spec.realmName only", realmInKeycloak)
 	})
 
-	// Supplying the identifier inside definition is rejected: the realm must not
-	// become Ready, the status message must point at spec.definition, and nothing
-	// is created in Keycloak.
-	t.Run("DefinitionRealmKeyRejected", func(t *testing.T) {
+	// A realm key inside definition that matches spec.realmName is tolerated so
+	// pre-existing manifests migrate by adding the spec field alone.
+	t.Run("DefinitionRealmKeyMatchingSpecAccepted", func(t *testing.T) {
+		crName := fmt.Sprintf("rn-defmatch-%d", time.Now().UnixNano())
+		realmInKeycloak := fmt.Sprintf("kc-defmatch-%d", time.Now().UnixNano())
+
+		realm := &keycloakv1beta1.KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakRealmSpec{
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(realmInKeycloak),
+				Definition:  rawJSON(fmt.Sprintf(`{"realm": %q, "enabled": true}`, realmInKeycloak)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, realm))
+		t.Cleanup(func() { k8sClient.Delete(ctx, realm) })
+
+		updated := waitRealmReady(t, crName)
+		require.Equal(t, realmInKeycloak, updated.Status.RealmName)
+	})
+
+	// A realm key inside definition that conflicts with spec.realmName is
+	// rejected: the realm must not become Ready, the status message must point
+	// at spec.definition, and nothing is created in Keycloak.
+	t.Run("DefinitionRealmKeyConflictRejected", func(t *testing.T) {
 		crName := fmt.Sprintf("rn-defkey-%d", time.Now().UnixNano())
 		specRealm := fmt.Sprintf("kc-spec-%d", time.Now().UnixNano())
 

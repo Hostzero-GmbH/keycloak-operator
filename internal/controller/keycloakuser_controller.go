@@ -117,7 +117,9 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		RecordError(controllerName, "invalid_identifier")
 		return r.updateStatus(ctx, user, false, InvalidIdentifierReason, err.Error(), "", false, "")
 	}
-	user.Status.Username = username
+	if err := persistResolvedIdentifier(ctx, r.Client, user, &user.Status.Username, username); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Prepare definition, injecting the resolved username.
 	definition := rawDef
@@ -208,7 +210,7 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealm(ctx context.Context, 
 	}
 
 	// Check if realm is ready
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 
@@ -229,7 +231,7 @@ func (r *KeycloakUserReconciler) getKeycloakClientFromClusterRealm(ctx context.C
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
@@ -336,6 +338,11 @@ func (r *KeycloakUserReconciler) reconcileServiceAccountUser(ctx context.Context
 	userID := *serviceAccountUser.ID
 	log.Info("found service account user", "userID", userID, "username", *serviceAccountUser.Username, "client", clientUUID)
 
+	// Service accounts have no spec.username; surface the Keycloak-derived one.
+	if err := persistResolvedIdentifier(ctx, r.Client, user, &user.Status.Username, *serviceAccountUser.Username); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// If a definition is provided, update the service account user with it
 	if user.Spec.Definition != nil && len(user.Spec.Definition.Raw) > 0 {
 		// Merge ID and username into the definition to preserve service account identity
@@ -399,7 +406,7 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealmFromClient(ctx context
 			return nil, "", "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmKey, err)
 		}
 
-		if !realm.Status.Ready {
+		if !realm.Status.Ready || realm.Status.RealmName == "" {
 			return nil, "", "", fmt.Errorf("KeycloakRealm %s is not ready", realmKey)
 		}
 

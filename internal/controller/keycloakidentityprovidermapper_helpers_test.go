@@ -30,6 +30,15 @@ func TestIdentityProviderAlias(t *testing.T) {
 		assert.Equal(t, "oidc", identityProviderAlias(idp))
 	})
 
+	t.Run("resolved status alias preferred over spec", func(t *testing.T) {
+		idp := &keycloakv1beta1.KeycloakIdentityProvider{
+			ObjectMeta: metav1.ObjectMeta{Name: "idp-resource"},
+			Spec:       keycloakv1beta1.KeycloakIdentityProviderSpec{Alias: strPtr("spec-alias")},
+			Status:     keycloakv1beta1.KeycloakIdentityProviderStatus{Alias: "status-alias"},
+		}
+		assert.Equal(t, "status-alias", identityProviderAlias(idp))
+	})
+
 	t.Run("empty when spec.alias unset", func(t *testing.T) {
 		idp := &keycloakv1beta1.KeycloakIdentityProvider{
 			ObjectMeta: metav1.ObjectMeta{Name: "github"},

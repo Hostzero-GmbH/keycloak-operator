@@ -7,6 +7,7 @@ import (
 
 // KeycloakGroupSpec defines the desired state of KeycloakGroup
 // +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
 type KeycloakGroupSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
@@ -22,7 +23,7 @@ type KeycloakGroupSpec struct {
 	// +optional
 	ParentGroupRef *ResourceRef `json:"parentGroupRef,omitempty"`
 
-	// Name is the group name in Keycloak.
+	// Name is the group name in Keycloak. Immutable once set.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Name *string `json:"name,omitempty"`

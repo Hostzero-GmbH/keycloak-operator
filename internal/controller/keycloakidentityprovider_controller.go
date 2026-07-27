@@ -210,7 +210,11 @@ func (r *KeycloakIdentityProviderReconciler) deleteIdentityProvider(ctx context.
 	}
 
 	// Use spec.alias so deletion targets the synchronized identity provider.
+	// Empty means never synchronized (unmigrated object).
 	alias := identifierValue(idp.Spec.Alias)
+	if alias == "" {
+		return nil
+	}
 	return kc.DeleteIdentityProvider(ctx, realmName, alias)
 }
 

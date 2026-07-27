@@ -25,7 +25,7 @@ spec:
       name: Ready
       type: boolean
     - description: Client ID in Keycloak
-      jsonPath: .status.clientID
+      jsonPath: .status.clientId
       name: ClientId
       type: string
     - description: Status message
@@ -61,7 +61,8 @@ spec:
             description: KeycloakClientSpec defines the desired state of KeycloakClient
             properties:
               clientId:
-                description: ClientId is the client ID in Keycloak.
+                description: ClientId is the client ID in Keycloak. Immutable once
+                  set.
                 minLength: 1
                 type: string
               clientSecretRef:
@@ -130,10 +131,12 @@ spec:
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set
               rule: has(self.realmRef) != has(self.clusterRealmRef)
+            - message: spec.clientId is immutable once set
+              rule: '!has(oldSelf.clientId) || self.clientId == oldSelf.clientId'
           status:
             description: KeycloakClientStatus defines the observed state of KeycloakClient
             properties:
-              clientID:
+              clientId:
                 description: ClientID is the resolved client ID (clientId) in Keycloak
                 type: string
               clientUUID:

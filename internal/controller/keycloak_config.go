@@ -494,7 +494,7 @@ func GetKeycloakClientFromClusterRealm(ctx context.Context, c client.Client, cli
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
@@ -576,7 +576,7 @@ func GetKeycloakClientAndRealmForIDP(ctx context.Context, c client.Client, clien
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
 	}
 

@@ -335,7 +335,7 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromUser(ctx context.Co
 		return nil, "", err
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("realm %s is not ready", realm.Name)
 	}
 
@@ -365,7 +365,7 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromGroup(ctx context.C
 		return nil, "", err
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("realm %s is not ready", realm.Name)
 	}
 
@@ -481,7 +481,7 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromClusterRealm(ctx co
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 

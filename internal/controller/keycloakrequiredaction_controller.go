@@ -151,7 +151,11 @@ func (r *KeycloakRequiredActionReconciler) deleteRequiredAction(ctx context.Cont
 	}
 
 	// Use spec.alias so deletion targets the synchronized required action.
+	// Empty means never synchronized (unmigrated object).
 	alias := identifierValue(ra.Spec.Alias)
+	if alias == "" {
+		return nil
+	}
 	return kc.DeleteRequiredAction(ctx, realmName, alias)
 }
 
@@ -174,7 +178,7 @@ func (r *KeycloakRequiredActionReconciler) getKeycloakClientAndRealm(ctx context
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmKey, err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmKey)
 	}
 
@@ -194,7 +198,7 @@ func (r *KeycloakRequiredActionReconciler) getKeycloakClientFromClusterRealm(ctx
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 

@@ -62,7 +62,8 @@ spec:
             description: KeycloakRequiredActionSpec defines the desired state of KeycloakRequiredAction
             properties:
               alias:
-                description: Alias is the required action alias in Keycloak.
+                description: Alias is the required action alias in Keycloak. Immutable
+                  once set.
                 minLength: 1
                 type: string
               clusterRealmRef:
@@ -100,6 +101,8 @@ spec:
             x-kubernetes-validations:
             - message: exactly one of realmRef or clusterRealmRef must be set
               rule: has(self.realmRef) != has(self.clusterRealmRef)
+            - message: spec.alias is immutable once set
+              rule: '!has(oldSelf.alias) || self.alias == oldSelf.alias'
           status:
             description: KeycloakRequiredActionStatus defines the observed state of
               KeycloakRequiredAction

@@ -1,6 +1,6 @@
 # KeycloakComponent
 
-> **Identifier field:** Set the component name in the `spec.name` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the component name in the `spec.name` field. It is required and immutable once set. A `name` inside `spec.definition` is tolerated only when it matches `spec.name`; a conflicting value is rejected.
 
 A `KeycloakComponent` manages Keycloak components such as LDAP user federation, custom storage providers, key providers, and other pluggable realm components.
 

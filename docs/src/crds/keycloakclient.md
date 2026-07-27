@@ -1,6 +1,6 @@
 # KeycloakClient
 
-> **Identifier field:** Set the client ID in the `spec.clientId` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the client ID in the `spec.clientId` field. It is required and immutable once set. A `clientId` inside `spec.definition` is tolerated only when it matches `spec.clientId`; a conflicting value is rejected.
 
 A `KeycloakClient` represents an OAuth2/OIDC client within a Keycloak realm.
 

@@ -195,7 +195,7 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClient(ctx context.Context
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm: %w", err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realm.Name)
 	}
 
@@ -216,7 +216,7 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClientFromClusterRealm(ctx
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
@@ -316,8 +316,12 @@ func (r *KeycloakUserCredentialReconciler) ensureSecret(ctx context.Context, cre
 		passwordKey = "password"
 	}
 
-	// The Keycloak username comes from the referenced user's spec.username.
-	username := identifierValue(user.Spec.Username)
+	// Prefer the resolved username from status; it also covers service-account
+	// users, whose username is derived by Keycloak and absent from spec.
+	username := user.Status.Username
+	if username == "" {
+		username = identifierValue(user.Spec.Username)
+	}
 
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

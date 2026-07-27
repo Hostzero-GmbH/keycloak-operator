@@ -1,6 +1,6 @@
 # KeycloakUser
 
-> **Identifier field:** Set the username in the `spec.username` field, not inside `spec.definition`. Required for regular users; omit it for service account users, which are identified by `clientRef`.
+> **Identifier field:** Set the username in the `spec.username` field. Required for regular users and immutable once set; omit it for service account users, which are identified by `clientRef`. A `username` inside `spec.definition` is tolerated only when it matches `spec.username`; a conflicting value is rejected.
 
 A `KeycloakUser` represents a user within a Keycloak realm, or a service account user associated with a client.
 

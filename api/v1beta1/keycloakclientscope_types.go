@@ -7,6 +7,7 @@ import (
 
 // KeycloakClientScopeSpec defines the desired state of KeycloakClientScope
 // +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
 type KeycloakClientScopeSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
@@ -18,7 +19,7 @@ type KeycloakClientScopeSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// Name is the client scope name in Keycloak.
+	// Name is the client scope name in Keycloak. Immutable once set.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	Name *string `json:"name,omitempty"`

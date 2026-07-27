@@ -1,6 +1,6 @@
 # KeycloakRealm
 
-> **Identifier field:** Set the realm name in the `spec.realmName` field, not inside `spec.definition`. It is required and immutable once set.
+> **Identifier field:** Set the realm name in the `spec.realmName` field. It is required and immutable once set. A `realm` key inside `spec.definition` is tolerated only when it matches `spec.realmName`; a conflicting value is rejected.
 
 > **`spec.realmName` is immutable once set.** A realm rename in Keycloak is destructive and would orphan the realm, so the value is locked after the first time it is set (the one-time migration from unset to a value is permitted).
 

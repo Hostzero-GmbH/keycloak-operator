@@ -1,6 +1,6 @@
 # KeycloakClientScope
 
-> **Identifier field:** Set the client scope name in the `spec.name` field, not inside `spec.definition`. It is required.
+> **Identifier field:** Set the client scope name in the `spec.name` field. It is required and immutable once set. A `name` inside `spec.definition` is tolerated only when it matches `spec.name`; a conflicting value is rejected.
 
 A `KeycloakClientScope` represents a client scope within a Keycloak realm.
 
