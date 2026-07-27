@@ -46,6 +46,8 @@ func TestKeycloakComponentAdoptsExistingUserProfileComponentE2E(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, components, 1, "precondition: Keycloak should have created one persisted user-profile component")
+	require.NotNil(t, components[0].ID)
+	existingComponentID := *components[0].ID
 
 	componentName := fmt.Sprintf("user-profile-component-%d", time.Now().UnixNano())
 	component := &keycloakv1beta1.KeycloakComponent{
@@ -55,8 +57,8 @@ func TestKeycloakComponentAdoptsExistingUserProfileComponentE2E(t *testing.T) {
 		},
 		Spec: keycloakv1beta1.KeycloakComponentSpec{
 			RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+			Name:     strPtr("declarative-user-profile"),
 			Definition: rawJSON(`{
-				"name": "declarative-user-profile",
 				"providerId": "declarative-user-profile",
 				"providerType": "org.keycloak.userprofile.UserProfileProvider",
 				"config": {
@@ -70,8 +72,8 @@ func TestKeycloakComponentAdoptsExistingUserProfileComponentE2E(t *testing.T) {
 		_ = k8sClient.Delete(ctx, component)
 	})
 
+	updated := &keycloakv1beta1.KeycloakComponent{}
 	err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
-		updated := &keycloakv1beta1.KeycloakComponent{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      component.Name,
 			Namespace: component.Namespace,
@@ -87,6 +89,7 @@ func TestKeycloakComponentAdoptsExistingUserProfileComponentE2E(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, components, 1, "operator should update/adopt the existing user-profile component instead of creating a duplicate")
+	require.Equal(t, existingComponentID, updated.Status.ComponentID, "operator should adopt the Keycloak-created component, not replace it")
 }
 
 func TestKeycloakComponentE2E(t *testing.T) {
