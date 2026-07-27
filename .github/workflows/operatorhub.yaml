@@ -20,10 +20,6 @@ on:
         description: 'Operator version to publish (without leading v, e.g. 0.8.0). Defaults to the Helm chart version.'
         required: false
         type: string
-      replaces:
-        description: 'Previous version that this release replaces (without leading v). Leave empty for the first release in a channel.'
-        required: false
-        type: string
       dry_run:
         description: 'Generate the bundle and upload it as an artifact without opening a PR.'
         required: false
@@ -62,20 +58,15 @@ jobs:
         run: |
           make bundle VERSION="$VERSION" OPERATOR_IMG="ghcr.io/hostzero-gmbh/keycloak-operator:v$VERSION"
 
-      - name: Inject createdAt and replaces into CSV
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          REPLACES: ${{ inputs.replaces }}
+      - name: Inject createdAt into CSV
         run: |
           CSV="bundle/manifests/hostzero-keycloak-operator.clusterserviceversion.yaml"
-          # operator-sdk emits the current date but using yq normalises formatting
-          # and lets us inject `spec.replaces` for upgrade graph correctness.
+          # operator-sdk emits the current date but using yq normalises formatting.
           CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) yq -i '.metadata.annotations.createdAt = strenv(CREATED_AT)' "$CSV"
-          if [ -n "$REPLACES" ]; then
-            REPLACES_NAME="hostzero-keycloak-operator.v$REPLACES" yq -i '.spec.replaces = strenv(REPLACES_NAME)' "$CSV"
-          fi
-          # Strip the testing-only `replaces` placeholder if no upgrade chain was supplied.
-          yq -i 'del(.spec.replaces | select(. == ""))' "$CSV"
+          # The operator runs in semver mode on OperatorHub (see ci.yaml in
+          # community-operators): the upgrade graph is derived from version
+          # numbers and a `replaces`/`skips` key in the CSV fails their CI.
+          yq -i 'del(.spec.replaces)' "$CSV"
 
       - name: Validate bundle
         run: ./bin/operator-sdk bundle validate ./bundle --select-optional name=operatorhub
