@@ -23,11 +23,10 @@ func TestKeycloakClientScopeE2E(t *testing.T) {
 
 	t.Run("BasicClientScope", func(t *testing.T) {
 		scopeName := fmt.Sprintf("test-scope-%d", time.Now().UnixNano())
-		scopeDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		scopeDef := rawJSON(`{
 			"description": "Test client scope",
 			"protocol": "openid-connect"
-		}`, scopeName))
+		}`)
 
 		clientScope := &keycloakv1beta1.KeycloakClientScope{
 			ObjectMeta: metav1.ObjectMeta{
@@ -36,6 +35,7 @@ func TestKeycloakClientScopeE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(scopeName),
 				Definition: scopeDef,
 			},
 		}
@@ -70,8 +70,7 @@ func TestKeycloakClientScopeE2E(t *testing.T) {
 
 	t.Run("ClientScopeWithProtocolMappers", func(t *testing.T) {
 		scopeName := fmt.Sprintf("scope-with-mappers-%d", time.Now().UnixNano())
-		scopeDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		scopeDef := rawJSON(`{
 			"description": "Scope with protocol mappers",
 			"protocol": "openid-connect",
 			"protocolMappers": [
@@ -88,7 +87,7 @@ func TestKeycloakClientScopeE2E(t *testing.T) {
 					}
 				}
 			]
-		}`, scopeName))
+		}`)
 
 		clientScope := &keycloakv1beta1.KeycloakClientScope{
 			ObjectMeta: metav1.ObjectMeta{
@@ -97,6 +96,7 @@ func TestKeycloakClientScopeE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(scopeName),
 				Definition: scopeDef,
 			},
 		}
@@ -121,10 +121,9 @@ func TestKeycloakClientScopeE2E(t *testing.T) {
 
 	t.Run("ClientScopeCleanup", func(t *testing.T) {
 		scopeName := fmt.Sprintf("cleanup-scope-%d", time.Now().UnixNano())
-		scopeDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		scopeDef := rawJSON(`{
 			"protocol": "openid-connect"
-		}`, scopeName))
+		}`)
 
 		clientScope := &keycloakv1beta1.KeycloakClientScope{
 			ObjectMeta: metav1.ObjectMeta{
@@ -133,6 +132,7 @@ func TestKeycloakClientScopeE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(scopeName),
 				Definition: scopeDef,
 			},
 		}

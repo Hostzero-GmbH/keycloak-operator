@@ -5,9 +5,10 @@ metadata:
   name: example-realm
   namespace: default
 spec:
-  instanceRef: keycloak-instance
+  instanceRef:
+    name: keycloak-instance
+  realmName: example-realm
   definition:
-    realm: example-realm
     displayName: "Example Realm"
     enabled: true
     registrationAllowed: false

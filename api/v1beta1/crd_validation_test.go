@@ -49,6 +49,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 
 	clientRef := &ResourceRef{Name: "client"}
 	clientID := "client-id"
+	mapperName := "mapper"
 
 	tests := []struct {
 		name        string
@@ -59,14 +60,14 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 			name: "KeycloakClient accepts exactly one realm reference",
 			object: &KeycloakClient{
 				ObjectMeta: metav1.ObjectMeta{Name: "client-valid", Namespace: namespace},
-				Spec:       KeycloakClientSpec{RealmRef: &ResourceRef{Name: "realm"}},
+				Spec:       KeycloakClientSpec{ClientId: &clientID, RealmRef: &ResourceRef{Name: "realm"}},
 			},
 		},
 		{
 			name: "KeycloakClient rejects missing realm reference",
 			object: &KeycloakClient{
 				ObjectMeta: metav1.ObjectMeta{Name: "client-missing", Namespace: namespace},
-				Spec:       KeycloakClientSpec{},
+				Spec:       KeycloakClientSpec{ClientId: &clientID},
 			},
 			wantErrText: "exactly one of realmRef or clusterRealmRef must be set",
 		},
@@ -75,6 +76,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 			object: &KeycloakClient{
 				ObjectMeta: metav1.ObjectMeta{Name: "client-both", Namespace: namespace},
 				Spec: KeycloakClientSpec{
+					ClientId:        &clientID,
 					RealmRef:        &ResourceRef{Name: "realm"},
 					ClusterRealmRef: &ClusterResourceRef{Name: "cluster-realm"},
 				},
@@ -104,6 +106,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 			object: &KeycloakProtocolMapper{
 				ObjectMeta: metav1.ObjectMeta{Name: "mapper-both", Namespace: namespace},
 				Spec: KeycloakProtocolMapperSpec{
+					Name:           &mapperName,
 					ClientRef:      clientRef,
 					ClientScopeRef: &ResourceRef{Name: "scope"},
 					Definition:     runtime.RawExtension{Raw: []byte(`{"name":"mapper"}`)},

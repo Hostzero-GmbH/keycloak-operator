@@ -6,6 +6,7 @@ import (
 )
 
 // KeycloakIdentityProviderMapperSpec defines the desired state of KeycloakIdentityProviderMapper
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
 type KeycloakIdentityProviderMapperSpec struct {
 	// IdentityProviderRef is a reference to a KeycloakIdentityProvider that owns
 	// this mapper. The realm and Keycloak instance are derived from the parent
@@ -13,10 +14,14 @@ type KeycloakIdentityProviderMapperSpec struct {
 	// +kubebuilder:validation:Required
 	IdentityProviderRef ResourceRef `json:"identityProviderRef"`
 
-	// Definition contains the Keycloak IdentityProviderMapperRepresentation.
-	// The identityProviderAlias field is auto-injected from the parent
-	// KeycloakIdentityProvider at reconcile time and does not need to be set
-	// here.
+	// Name is the mapper name in Keycloak. Immutable once set.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak IdentityProviderMapperRepresentation. The
+	// identityProviderAlias field is injected from the parent KeycloakIdentityProvider
+	// at reconcile time. Set the mapper name via spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

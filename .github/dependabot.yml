@@ -9,6 +9,11 @@ updates:
     labels:
       - "dependencies"
       - "go"
+    groups:
+      # Keep kubernetes client modules on the same version.
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
 
   - package-ecosystem: "docker"
     directory: "/"
@@ -29,3 +34,7 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

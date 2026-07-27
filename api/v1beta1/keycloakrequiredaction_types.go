@@ -7,6 +7,7 @@ import (
 
 // KeycloakRequiredActionSpec defines the desired state of KeycloakRequiredAction
 // +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.alias) || self.alias == oldSelf.alias",message="spec.alias is immutable once set"
 type KeycloakRequiredActionSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
@@ -18,7 +19,13 @@ type KeycloakRequiredActionSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// Definition contains the Keycloak RequiredActionProviderRepresentation
+	// Alias is the required action alias in Keycloak. Immutable once set.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Alias *string `json:"alias,omitempty"`
+
+	// Definition contains the Keycloak RequiredActionProviderRepresentation. Set
+	// the alias via spec.alias.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

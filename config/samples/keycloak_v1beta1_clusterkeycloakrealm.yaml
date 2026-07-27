@@ -5,7 +5,7 @@ metadata:
 spec:
   clusterInstanceRef:
     name: keycloak-cluster-instance
+  realmName: shared
   definition:
-    realm: shared
     enabled: true
     displayName: "Shared Realm"

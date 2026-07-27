@@ -97,8 +97,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 
 	t.Run("RSAKeyProvider", func(t *testing.T) {
 		componentName := fmt.Sprintf("rsa-key-%d", time.Now().UnixNano())
-		componentDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		componentDef := rawJSON(`{
 			"providerId": "rsa-generated",
 			"providerType": "org.keycloak.keys.KeyProvider",
 			"config": {
@@ -106,7 +105,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 				"keySize": ["2048"],
 				"algorithm": ["RS256"]
 			}
-		}`, componentName))
+		}`)
 
 		component := &keycloakv1beta1.KeycloakComponent{
 			ObjectMeta: metav1.ObjectMeta{
@@ -115,6 +114,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakComponentSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(componentName),
 				Definition: componentDef,
 			},
 		}
@@ -152,8 +152,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 
 	t.Run("HMACKeyProvider", func(t *testing.T) {
 		componentName := fmt.Sprintf("hmac-key-%d", time.Now().UnixNano())
-		componentDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		componentDef := rawJSON(`{
 			"providerId": "hmac-generated",
 			"providerType": "org.keycloak.keys.KeyProvider",
 			"config": {
@@ -161,7 +160,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 				"secretSize": ["64"],
 				"algorithm": ["HS256"]
 			}
-		}`, componentName))
+		}`)
 
 		component := &keycloakv1beta1.KeycloakComponent{
 			ObjectMeta: metav1.ObjectMeta{
@@ -170,6 +169,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakComponentSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(componentName),
 				Definition: componentDef,
 			},
 		}
@@ -195,15 +195,14 @@ func TestKeycloakComponentE2E(t *testing.T) {
 
 	t.Run("AESKeyProvider", func(t *testing.T) {
 		componentName := fmt.Sprintf("aes-key-%d", time.Now().UnixNano())
-		componentDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		componentDef := rawJSON(`{
 			"providerId": "aes-generated",
 			"providerType": "org.keycloak.keys.KeyProvider",
 			"config": {
 				"priority": ["100"],
 				"secretSize": ["16"]
 			}
-		}`, componentName))
+		}`)
 
 		component := &keycloakv1beta1.KeycloakComponent{
 			ObjectMeta: metav1.ObjectMeta{
@@ -212,6 +211,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakComponentSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(componentName),
 				Definition: componentDef,
 			},
 		}
@@ -237,15 +237,14 @@ func TestKeycloakComponentE2E(t *testing.T) {
 
 	t.Run("ComponentUpdate", func(t *testing.T) {
 		componentName := fmt.Sprintf("update-component-%d", time.Now().UnixNano())
-		componentDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		componentDef := rawJSON(`{
 			"providerId": "rsa-generated",
 			"providerType": "org.keycloak.keys.KeyProvider",
 			"config": {
 				"priority": ["100"],
 				"keySize": ["2048"]
 			}
-		}`, componentName))
+		}`)
 
 		component := &keycloakv1beta1.KeycloakComponent{
 			ObjectMeta: metav1.ObjectMeta{
@@ -254,6 +253,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakComponentSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(componentName),
 				Definition: componentDef,
 			},
 		}
@@ -282,15 +282,14 @@ func TestKeycloakComponentE2E(t *testing.T) {
 			Namespace: component.Namespace,
 		}, updated))
 
-		updatedDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		updatedDef := rawJSON(`{
 			"providerId": "rsa-generated",
 			"providerType": "org.keycloak.keys.KeyProvider",
 			"config": {
 				"priority": ["200"],
 				"keySize": ["2048"]
 			}
-		}`, componentName))
+		}`)
 		updated.Spec.Definition = updatedDef
 		require.NoError(t, k8sClient.Update(ctx, updated))
 
@@ -314,15 +313,14 @@ func TestKeycloakComponentE2E(t *testing.T) {
 
 	t.Run("ComponentCleanup", func(t *testing.T) {
 		componentName := fmt.Sprintf("cleanup-component-%d", time.Now().UnixNano())
-		componentDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		componentDef := rawJSON(`{
 			"providerId": "rsa-generated",
 			"providerType": "org.keycloak.keys.KeyProvider",
 			"config": {
 				"priority": ["100"],
 				"keySize": ["2048"]
 			}
-		}`, componentName))
+		}`)
 
 		component := &keycloakv1beta1.KeycloakComponent{
 			ObjectMeta: metav1.ObjectMeta{
@@ -331,6 +329,7 @@ func TestKeycloakComponentE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakComponentSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(componentName),
 				Definition: componentDef,
 			},
 		}

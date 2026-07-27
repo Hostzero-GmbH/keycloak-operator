@@ -701,6 +701,21 @@ func (c *Client) DeleteGroup(ctx context.Context, realmName, groupID string) err
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID))
 }
 
+// GetUserGroups lists all groups a user belongs to (paginated)
+func (c *Client) GetUserGroups(ctx context.Context, realmName, userID string) ([]GroupRepresentation, error) {
+	return listAll[GroupRepresentation](ctx, c, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/groups", nil)
+}
+
+// AddUserToGroup adds a user to a group
+func (c *Client) AddUserToGroup(ctx context.Context, realmName, userID, groupID string) error {
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/groups/"+url.PathEscape(groupID), json.RawMessage("{}"))
+}
+
+// RemoveUserFromGroup removes a user from a group
+func (c *Client) RemoveUserFromGroup(ctx context.Context, realmName, userID, groupID string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/groups/"+url.PathEscape(groupID))
+}
+
 // ============================================================================
 // Client Scope Operations
 // ============================================================================
@@ -1963,6 +1978,32 @@ func (c *Client) GetClientRolesRaw(ctx context.Context, realmName, clientUUID st
 // GetClientRoleRaw gets a client role by name as raw JSON
 func (c *Client) GetClientRoleRaw(ctx context.Context, realmName, clientUUID, roleName string) (json.RawMessage, error) {
 	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/clients/"+url.PathEscape(clientUUID)+"/roles/"+url.PathEscape(roleName))
+}
+
+// UserRoleMappingsComposite is returned by the composite GET /role-mappings endpoint.
+// It contains ALL role assignments (realm + per-client) for a user in one API call,
+// avoiding the N+1 problem of iterating every realm client.
+type UserRoleMappingsComposite struct {
+	RealmMappings  []RoleRepresentation               `json:"realmMappings"`
+	ClientMappings map[string]ClientRoleMappingsEntry `json:"clientMappings"`
+}
+
+// ClientRoleMappingsEntry is a single entry in the clientMappings map returned
+// by the composite /role-mappings endpoint.
+type ClientRoleMappingsEntry struct {
+	ID       string               `json:"id"`
+	Client   string               `json:"client"`
+	Mappings []RoleRepresentation `json:"mappings"`
+}
+
+// GetUserRoleMappingsComposite fetches ALL role mappings (realm + every client)
+// for a user in a single API call via the composite endpoint.
+func (c *Client) GetUserRoleMappingsComposite(ctx context.Context, realmName, userID string) (*UserRoleMappingsComposite, error) {
+	var result UserRoleMappingsComposite
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/users/"+url.PathEscape(userID)+"/role-mappings", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // GetUserRealmRoleMappings gets realm role mappings for a user

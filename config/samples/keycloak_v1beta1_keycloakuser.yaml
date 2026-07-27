@@ -5,19 +5,20 @@ metadata:
   name: example-user
   namespace: default
 spec:
-  realmRef: example-realm
+  realmRef:
+    name: example-realm
+  username: testuser
   definition:
-    username: testuser
     email: testuser@example.com
     emailVerified: true
     enabled: true
     firstName: Test
     lastName: User
-    groups:
-      - /users
-    realmRoles:
-      - offline_access
     credentials:
       - type: password
         value: changeme
         temporary: true
+  groups:
+    - users
+  realmRoles:
+    - offline_access

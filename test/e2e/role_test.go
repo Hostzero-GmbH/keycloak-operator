@@ -23,10 +23,9 @@ func TestKeycloakRoleE2E(t *testing.T) {
 
 	t.Run("RealmRole", func(t *testing.T) {
 		roleName := fmt.Sprintf("test-role-%d", time.Now().UnixNano())
-		roleDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		roleDef := rawJSON(`{
 			"description": "Test realm role"
-		}`, roleName))
+		}`)
 
 		role := &keycloakv1beta1.KeycloakRole{
 			ObjectMeta: metav1.ObjectMeta{
@@ -35,6 +34,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(roleName),
 				Definition: roleDef,
 			},
 		}
@@ -72,10 +72,9 @@ func TestKeycloakRoleE2E(t *testing.T) {
 	t.Run("ClientRole", func(t *testing.T) {
 		// First create a client
 		clientName := fmt.Sprintf("test-client-for-role-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true
-		}`, clientName))
+		}`)
 
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -84,6 +83,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -107,10 +107,9 @@ func TestKeycloakRoleE2E(t *testing.T) {
 
 		// Now create a client role
 		roleName := fmt.Sprintf("client-role-%d", time.Now().UnixNano())
-		roleDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		roleDef := rawJSON(`{
 			"description": "Test client role"
-		}`, roleName))
+		}`)
 
 		role := &keycloakv1beta1.KeycloakRole{
 			ObjectMeta: metav1.ObjectMeta{
@@ -120,6 +119,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
+				Name:       strPtr(roleName),
 				Definition: roleDef,
 			},
 		}
@@ -156,13 +156,12 @@ func TestKeycloakRoleE2E(t *testing.T) {
 
 	t.Run("RoleWithAttributes", func(t *testing.T) {
 		roleName := fmt.Sprintf("role-attrs-%d", time.Now().UnixNano())
-		roleDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		roleDef := rawJSON(`{
 			"description": "Role with attributes",
 			"attributes": {
 				"permission": ["read", "write"]
 			}
-		}`, roleName))
+		}`)
 
 		role := &keycloakv1beta1.KeycloakRole{
 			ObjectMeta: metav1.ObjectMeta{
@@ -171,6 +170,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(roleName),
 				Definition: roleDef,
 			},
 		}
@@ -198,10 +198,9 @@ func TestKeycloakRoleE2E(t *testing.T) {
 		// as an actual composite role in Keycloak, and the membership must be
 		// reconciled on update.
 		clientName := fmt.Sprintf("composite-target-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true
-		}`, clientName))
+		}`)
 		targetClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clientName,
@@ -209,6 +208,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -234,7 +234,8 @@ func TestKeycloakRoleE2E(t *testing.T) {
 				Spec: keycloakv1beta1.KeycloakRoleSpec{
 					RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 					ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
-					Definition: rawJSON(fmt.Sprintf(`{"name":"%s"}`, rn)),
+					Name:       strPtr(rn),
+					Definition: rawJSON(`{}`),
 				},
 			}
 			require.NoError(t, k8sClient.Create(ctx, cr))
@@ -254,7 +255,8 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: baseRealmRoleName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
-				Definition: rawJSON(fmt.Sprintf(`{"name":"%s"}`, baseRealmRoleName)),
+				Name:       strPtr(baseRealmRoleName),
+				Definition: rawJSON(`{}`),
 			},
 		}
 		require.NoError(t, k8sClient.Create(ctx, baseRealmRole))
@@ -270,7 +272,6 @@ func TestKeycloakRoleE2E(t *testing.T) {
 
 		compositeName := fmt.Sprintf("composite-%d", time.Now().UnixNano())
 		compositeDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"description": "Composite role under test",
 			"composite": true,
 			"composites": {
@@ -279,12 +280,13 @@ func TestKeycloakRoleE2E(t *testing.T) {
 					"%s": ["%s", "%s"]
 				}
 			}
-		}`, compositeName, baseRealmRoleName, clientName, clientRoleNames[0], clientRoleNames[1]))
+		}`, baseRealmRoleName, clientName, clientRoleNames[0], clientRoleNames[1]))
 
 		composite := &keycloakv1beta1.KeycloakRole{
 			ObjectMeta: metav1.ObjectMeta{Name: compositeName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(compositeName),
 				Definition: compositeDef,
 			},
 		}
@@ -324,7 +326,6 @@ func TestKeycloakRoleE2E(t *testing.T) {
 
 		// Drop one member and verify the operator removes it from Keycloak too.
 		compositeDef = rawJSON(fmt.Sprintf(`{
-			"name": "%s",
 			"description": "Composite role under test",
 			"composite": true,
 			"composites": {
@@ -333,7 +334,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 					"%s": ["%s"]
 				}
 			}
-		}`, compositeName, baseRealmRoleName, clientName, clientRoleNames[0]))
+		}`, baseRealmRoleName, clientName, clientRoleNames[0]))
 
 		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 			updated := &keycloakv1beta1.KeycloakRole{}
@@ -362,9 +363,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 
 	t.Run("RoleCleanup", func(t *testing.T) {
 		roleName := fmt.Sprintf("cleanup-role-%d", time.Now().UnixNano())
-		roleDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s"
-		}`, roleName))
+		roleDef := rawJSON(`{}`)
 
 		role := &keycloakv1beta1.KeycloakRole{
 			ObjectMeta: metav1.ObjectMeta{
@@ -373,6 +372,7 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(roleName),
 				Definition: roleDef,
 			},
 		}

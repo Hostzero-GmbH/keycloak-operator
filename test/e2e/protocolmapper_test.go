@@ -24,11 +24,10 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 	t.Run("ClientProtocolMapper", func(t *testing.T) {
 		// First create a client
 		clientName := fmt.Sprintf("test-client-pm-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true,
 			"protocol": "openid-connect"
-		}`, clientName))
+		}`)
 
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -37,6 +36,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -60,8 +60,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 
 		// Create protocol mapper
 		mapperName := fmt.Sprintf("test-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"protocol": "openid-connect",
 			"protocolMapper": "oidc-usermodel-attribute-mapper",
 			"config": {
@@ -72,7 +71,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 				"access.token.claim": "true",
 				"userinfo.token.claim": "true"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakProtocolMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -81,6 +80,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakProtocolMapperSpec{
 				ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
+				Name:       strPtr(mapperName),
 				Definition: mapperDef,
 			},
 		}
@@ -119,10 +119,9 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 	t.Run("ClientScopeProtocolMapper", func(t *testing.T) {
 		// First create a client scope
 		scopeName := fmt.Sprintf("test-scope-pm-%d", time.Now().UnixNano())
-		scopeDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		scopeDef := rawJSON(`{
 			"protocol": "openid-connect"
-		}`, scopeName))
+		}`)
 
 		scope := &keycloakv1beta1.KeycloakClientScope{
 			ObjectMeta: metav1.ObjectMeta{
@@ -131,6 +130,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(scopeName),
 				Definition: scopeDef,
 			},
 		}
@@ -154,8 +154,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 
 		// Create protocol mapper
 		mapperName := fmt.Sprintf("scope-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"protocol": "openid-connect",
 			"protocolMapper": "oidc-usermodel-attribute-mapper",
 			"config": {
@@ -165,7 +164,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 				"id.token.claim": "true",
 				"access.token.claim": "true"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakProtocolMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -174,6 +173,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakProtocolMapperSpec{
 				ClientScopeRef: &keycloakv1beta1.ResourceRef{Name: scopeName},
+				Name:           strPtr(mapperName),
 				Definition:     mapperDef,
 			},
 		}
@@ -208,11 +208,10 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 	t.Run("ProtocolMapperCleanup", func(t *testing.T) {
 		// First create a client
 		clientName := fmt.Sprintf("cleanup-client-%d", time.Now().UnixNano())
-		clientDef := rawJSON(fmt.Sprintf(`{
-			"clientId": "%s",
+		clientDef := rawJSON(`{
 			"enabled": true,
 			"protocol": "openid-connect"
-		}`, clientName))
+		}`)
 
 		kcClient := &keycloakv1beta1.KeycloakClient{
 			ObjectMeta: metav1.ObjectMeta{
@@ -221,6 +220,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakClientSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
 				Definition: &clientDef,
 			},
 		}
@@ -244,8 +244,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 
 		// Create mapper
 		mapperName := fmt.Sprintf("cleanup-mapper-%d", time.Now().UnixNano())
-		mapperDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		mapperDef := rawJSON(`{
 			"protocol": "openid-connect",
 			"protocolMapper": "oidc-hardcoded-claim-mapper",
 			"config": {
@@ -253,7 +252,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 				"claim.value": "test-value",
 				"id.token.claim": "true"
 			}
-		}`, mapperName))
+		}`)
 
 		mapper := &keycloakv1beta1.KeycloakProtocolMapper{
 			ObjectMeta: metav1.ObjectMeta{
@@ -262,6 +261,7 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakProtocolMapperSpec{
 				ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
+				Name:       strPtr(mapperName),
 				Definition: mapperDef,
 			},
 		}

@@ -96,10 +96,11 @@ func (r *KeycloakRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.updateStatus(ctx, role, false, "InvalidDefinition", fmt.Sprintf("Failed to parse role definition: %v", err), "", "", false, "")
 	}
 
-	// Ensure name is set
-	roleName := roleDef.Name
-	if roleName == "" {
-		roleName = role.Name
+	// Resolve the role name from spec.name.
+	roleName, err := resolveIdentifier("name", role.Spec.Name, roleDef.Name)
+	if err != nil {
+		RecordError(controllerName, "invalid_identifier")
+		return r.updateStatus(ctx, role, false, InvalidIdentifierReason, err.Error(), "", "", false, "")
 	}
 
 	definition := setFieldInDefinition(role.Spec.Definition.Raw, "name", roleName)
@@ -319,16 +320,8 @@ func (r *KeycloakRoleReconciler) getKeycloakClientAndRealm(ctx context.Context, 
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
-	}
-
-	// Get realm name from definition
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
 	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
@@ -336,7 +329,9 @@ func (r *KeycloakRoleReconciler) getKeycloakClientAndRealm(ctx context.Context, 
 		return nil, "", err
 	}
 
-	return kc, realmDef.Realm, nil
+	// The realm name is the referenced realm's resolved identifier (spec.realmName,
+	// surfaced via status); it is never read from the realm's definition.
+	return kc, realm.Status.RealmName, nil
 }
 
 func (r *KeycloakRoleReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {
@@ -346,21 +341,12 @@ func (r *KeycloakRoleReconciler) getKeycloakClientFromClusterRealm(ctx context.C
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
 	// Get realm name
 	realmName := clusterRealm.Status.RealmName
-	if realmName == "" {
-		var realmDef struct {
-			Realm string `json:"realm"`
-		}
-		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
-			return nil, "", fmt.Errorf("failed to parse cluster realm definition: %w", err)
-		}
-		realmName = realmDef.Realm
-	}
 
 	// Get Keycloak client from cluster instance
 	if clusterRealm.Spec.ClusterInstanceRef != nil {

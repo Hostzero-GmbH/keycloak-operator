@@ -7,6 +7,7 @@ import (
 
 // KeycloakProtocolMapperSpec defines the desired state of KeycloakProtocolMapper
 // +kubebuilder:validation:XValidation:rule="has(self.clientRef) != has(self.clientScopeRef)",message="exactly one of clientRef or clientScopeRef must be set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
 type KeycloakProtocolMapperSpec struct {
 	// ClientRef is a reference to a KeycloakClient
 	// One of clientRef or clientScopeRef must be specified
@@ -18,7 +19,13 @@ type KeycloakProtocolMapperSpec struct {
 	// +optional
 	ClientScopeRef *ResourceRef `json:"clientScopeRef,omitempty"`
 
-	// Definition contains the Keycloak ProtocolMapperRepresentation
+	// Name is the protocol mapper name in Keycloak. Immutable once set.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name *string `json:"name,omitempty"`
+
+	// Definition contains the Keycloak ProtocolMapperRepresentation. Set the
+	// mapper name via spec.name.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Definition runtime.RawExtension `json:"definition"`

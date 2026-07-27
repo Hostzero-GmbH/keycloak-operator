@@ -1,5 +1,7 @@
 # KeycloakUser
 
+> **Identifier field:** Set the username in the `spec.username` field. Required for regular users and immutable once set; omit it for service account users, which are identified by `clientRef`. A `username` inside `spec.definition` is tolerated only when it matches `spec.username`; a conflicting value is rejected.
+
 A `KeycloakUser` represents a user within a Keycloak realm, or a service account user associated with a client.
 
 ## Specification
@@ -26,13 +28,23 @@ spec:
   
   # User definition (Keycloak UserRepresentation)
   # Note: For service account users (clientRef), definition is optional
+  username: johndoe
   definition:
-    username: johndoe
     email: john.doe@example.com
     firstName: John
     lastName: Doe
     enabled: true
     # ... any other Keycloak user properties
+    # (must not contain realmRoles, clientRoles, or groups — see below)
+  
+  # Optional: role and group assignments (see "Roles and Groups")
+  realmRoles:
+    - offline_access
+  clientRoles:
+    my-app:
+      - admin
+  groups:
+    - developers
   
   # Optional: Initial password (only set on creation)
   initialPassword:
@@ -79,8 +91,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: admin
   definition:
-    username: admin
     email: admin@example.com
     firstName: Admin
     lastName: User
@@ -112,8 +124,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: johndoe
   definition:
-    username: johndoe
     email: john.doe@example.com
     firstName: John
     lastName: Doe
@@ -133,8 +145,8 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: jsmith
   definition:
-    username: jsmith
     email: jsmith@company.com
     firstName: Jane
     lastName: Smith
@@ -148,7 +160,7 @@ spec:
         - "jdoe"
 ```
 
-### User with Groups
+### User with Roles and Groups
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -158,13 +170,18 @@ metadata:
 spec:
   realmRef:
     name: my-realm
+  username: developer1
   definition:
-    username: developer1
     email: dev@example.com
     enabled: true
-    groups:
-      - /developers
-      - /team-alpha
+  realmRoles:
+    - offline_access
+  clientRoles:
+    my-app:
+      - viewer
+  groups:
+    - developers
+    - team-alpha
 ```
 
 ### Service Account User
@@ -189,12 +206,11 @@ spec:
         - Platform
 ```
 
-### Service Account with Role Mapping
+### Service Account with Roles
 
-Combine `KeycloakUser` (via `clientRef`) with `KeycloakRoleMapping` to assign roles to a service account:
+The typed role fields also work for service account users:
 
 ```yaml
-# First, define the service account user
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakUser
 metadata:
@@ -202,33 +218,27 @@ metadata:
 spec:
   clientRef:
     name: my-service-client
----
-# Assign a realm role to the service account
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakRoleMapping
-metadata:
-  name: my-service-sa-admin
-spec:
-  subject:
-    userRef:
-      name: my-service-sa
-  role:
-    name: admin
----
-# Assign a client role to the service account
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakRoleMapping
-metadata:
-  name: my-service-sa-manage-users
-spec:
-  subject:
-    userRef:
-      name: my-service-sa
-  role:
-    name: manage-users
-    clientRef:
-      name: realm-management
+  realmRoles:
+    - admin
+  clientRoles:
+    realm-management:
+      - manage-users
 ```
+
+Alternatively, assign individual roles with `KeycloakRoleMapping` using `serviceAccountRef` — without an intermediate `KeycloakUser` (see [KeycloakRoleMapping](./keycloakrolemapping.md)). Do not combine both mechanisms for the same user.
+
+## Roles and Groups
+
+`spec.realmRoles`, `spec.clientRoles`, and `spec.groups` are reconciled via Keycloak's dedicated role-mapping and group-membership endpoints. They must not appear inside `spec.definition` (Keycloak ignores them in the user representation anyway); the operator rejects such definitions.
+
+Each field is **authoritative when set**:
+
+- Omitted (`nil`): the operator does not touch that category of assignments.
+- Set (even to an empty list): the operator reconciles Keycloak to exactly that set, removing anything else. For `clientRoles`, roles on clients absent from the map are also removed.
+
+Groups are matched by top-level group name. Roles and groups must already exist in the realm (e.g. via `KeycloakRole` or `KeycloakGroup`); unknown names are skipped with a log message.
+
+Because these fields are authoritative, do not combine them with `KeycloakRoleMapping` resources targeting the same user — the user's reconciler would remove the mappings again.
 
 ## Definition Properties
 
@@ -243,8 +253,9 @@ Common properties from [Keycloak UserRepresentation](https://www.keycloak.org/do
 | `enabled` | boolean | Whether user is enabled |
 | `emailVerified` | boolean | Email verified flag |
 | `attributes` | map | Custom user attributes |
-| `groups` | string[] | Group paths to join |
 | `requiredActions` | string[] | Required actions on login |
+
+Role and group assignments (`realmRoles`, `clientRoles`, `groups`) are typed spec fields, not definition properties.
 
 ## Short Names
 
@@ -282,5 +293,4 @@ The `definition` field is optional for service account users since Keycloak crea
 
 - Passwords are only set on user creation
 - To update a password, delete and recreate the user, or use Keycloak's admin console
-- Group memberships specified in `groups` are resolved by path
 - For service account users, the username is automatically set by Keycloak (format: `service-account-<client-id>`)

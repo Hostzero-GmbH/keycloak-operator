@@ -24,6 +24,10 @@ spec:
       jsonPath: .status.ready
       name: Ready
       type: boolean
+    - description: Realm name in Keycloak
+      jsonPath: .status.realmName
+      name: Realm
+      type: string
     - description: Status message
       jsonPath: .status.status
       name: Status
@@ -68,7 +72,9 @@ spec:
                 - name
                 type: object
               definition:
-                description: Definition contains the Keycloak RealmRepresentation
+                description: |-
+                  Definition contains the Keycloak RealmRepresentation. Set the realm name
+                  via spec.realmName.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
               instanceRef:
@@ -83,8 +89,10 @@ spec:
                 - name
                 type: object
               realmName:
-                description: RealmName is the name of the realm in Keycloak (defaults
-                  to metadata.name)
+                description: |-
+                  RealmName is the name of the realm in Keycloak. It is immutable once set:
+                  renaming a realm in Keycloak is destructive and would orphan it.
+                minLength: 1
                 type: string
               smtpSecretRef:
                 description: |-
@@ -111,10 +119,13 @@ spec:
                 type: object
             required:
             - definition
+            - realmName
             type: object
             x-kubernetes-validations:
             - message: exactly one of instanceRef or clusterInstanceRef must be set
               rule: has(self.instanceRef) != has(self.clusterInstanceRef)
+            - message: spec.realmName is immutable once set
+              rule: '!has(oldSelf.realmName) || self.realmName == oldSelf.realmName'
           status:
             description: KeycloakRealmStatus defines the observed state of KeycloakRealm
             properties:
@@ -191,6 +202,9 @@ spec:
               ready:
                 description: Ready indicates if the realm is ready
                 type: boolean
+              realmName:
+                description: RealmName is the resolved realm name in Keycloak
+                type: string
               resourcePath:
                 description: ResourcePath is the Keycloak API path for this realm
                 type: string

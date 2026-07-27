@@ -23,9 +23,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 
 	t.Run("BasicGroup", func(t *testing.T) {
 		groupName := fmt.Sprintf("test-group-%d", time.Now().UnixNano())
-		groupDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s"
-		}`, groupName))
+		groupDef := rawJSON(`{}`)
 
 		group := &keycloakv1beta1.KeycloakGroup{
 			ObjectMeta: metav1.ObjectMeta{
@@ -34,6 +32,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(groupName),
 				Definition: groupDef,
 			},
 		}
@@ -69,13 +68,12 @@ func TestKeycloakGroupE2E(t *testing.T) {
 
 	t.Run("GroupWithAttributes", func(t *testing.T) {
 		groupName := fmt.Sprintf("group-attrs-%d", time.Now().UnixNano())
-		groupDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s",
+		groupDef := rawJSON(`{
 			"attributes": {
 				"department": ["engineering"],
 				"location": ["remote"]
 			}
-		}`, groupName))
+		}`)
 
 		group := &keycloakv1beta1.KeycloakGroup{
 			ObjectMeta: metav1.ObjectMeta{
@@ -84,6 +82,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(groupName),
 				Definition: groupDef,
 			},
 		}
@@ -109,9 +108,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 	t.Run("NestedGroups", func(t *testing.T) {
 		// Create parent group
 		parentName := fmt.Sprintf("parent-group-%d", time.Now().UnixNano())
-		parentDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s"
-		}`, parentName))
+		parentDef := rawJSON(`{}`)
 
 		parentGroup := &keycloakv1beta1.KeycloakGroup{
 			ObjectMeta: metav1.ObjectMeta{
@@ -120,6 +117,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(parentName),
 				Definition: parentDef,
 			},
 		}
@@ -143,9 +141,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 
 		// Create child group
 		childName := fmt.Sprintf("child-group-%d", time.Now().UnixNano())
-		childDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s"
-		}`, childName))
+		childDef := rawJSON(`{}`)
 
 		childGroup := &keycloakv1beta1.KeycloakGroup{
 			ObjectMeta: metav1.ObjectMeta{
@@ -155,6 +151,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
 				RealmRef:       &keycloakv1beta1.ResourceRef{Name: realmName},
 				ParentGroupRef: &keycloakv1beta1.ResourceRef{Name: parentName},
+				Name:           strPtr(childName),
 				Definition:     childDef,
 			},
 		}
@@ -180,9 +177,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 
 	t.Run("GroupCleanup", func(t *testing.T) {
 		groupName := fmt.Sprintf("cleanup-group-%d", time.Now().UnixNano())
-		groupDef := rawJSON(fmt.Sprintf(`{
-			"name": "%s"
-		}`, groupName))
+		groupDef := rawJSON(`{}`)
 
 		group := &keycloakv1beta1.KeycloakGroup{
 			ObjectMeta: metav1.ObjectMeta{
@@ -191,6 +186,7 @@ func TestKeycloakGroupE2E(t *testing.T) {
 			},
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
 				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(groupName),
 				Definition: groupDef,
 			},
 		}

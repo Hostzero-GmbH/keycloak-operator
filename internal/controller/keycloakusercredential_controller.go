@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -196,16 +195,8 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClient(ctx context.Context
 		return nil, "", fmt.Errorf("failed to get KeycloakRealm: %w", err)
 	}
 
-	if !realm.Status.Ready {
+	if !realm.Status.Ready || realm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realm.Name)
-	}
-
-	// Get realm name from definition
-	var realmDef struct {
-		Realm string `json:"realm"`
-	}
-	if err := json.Unmarshal(realm.Spec.Definition.Raw, &realmDef); err != nil {
-		return nil, "", fmt.Errorf("failed to parse realm definition: %w", err)
 	}
 
 	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
@@ -213,7 +204,9 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClient(ctx context.Context
 		return nil, "", err
 	}
 
-	return kc, realmDef.Realm, nil
+	// The realm name is the referenced realm's resolved identifier (spec.realmName,
+	// surfaced via status); it is never read from the realm's definition.
+	return kc, realm.Status.RealmName, nil
 }
 
 func (r *KeycloakUserCredentialReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {
@@ -223,21 +216,12 @@ func (r *KeycloakUserCredentialReconciler) getKeycloakClientFromClusterRealm(ctx
 		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
 	}
 
-	if !clusterRealm.Status.Ready {
+	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
 		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
 	}
 
 	// Get realm name
 	realmName := clusterRealm.Status.RealmName
-	if realmName == "" {
-		var realmDef struct {
-			Realm string `json:"realm"`
-		}
-		if err := json.Unmarshal(clusterRealm.Spec.Definition.Raw, &realmDef); err != nil {
-			return nil, "", fmt.Errorf("failed to parse cluster realm definition: %w", err)
-		}
-		realmName = realmDef.Realm
-	}
 
 	// Get Keycloak client from cluster instance
 	if clusterRealm.Spec.ClusterInstanceRef != nil {
@@ -332,8 +316,12 @@ func (r *KeycloakUserCredentialReconciler) ensureSecret(ctx context.Context, cre
 		passwordKey = "password"
 	}
 
-	// Get username from user definition (simplified - just use user.Name)
-	username := user.Name
+	// Prefer the resolved username from status; it also covers service-account
+	// users, whose username is derived by Keycloak and absent from spec.
+	username := user.Status.Username
+	if username == "" {
+		username = identifierValue(user.Spec.Username)
+	}
 
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
