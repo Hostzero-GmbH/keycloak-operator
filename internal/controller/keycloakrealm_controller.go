@@ -8,7 +8,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -282,69 +281,14 @@ func (r *KeycloakRealmReconciler) deleteRealm(ctx context.Context, realm *keyclo
 }
 
 func (r *KeycloakRealmReconciler) updateStatus(ctx context.Context, realm *keycloakv1beta1.KeycloakRealm, ready bool, status, message string, instanceRef *keycloakv1beta1.InstanceRef) (ctrl.Result, error) {
-	desiredConditionStatus := metav1.ConditionFalse
-	if ready {
-		desiredConditionStatus = metav1.ConditionTrue
-	}
-
-	// Detect whether any user-visible status field actually changed
-	statusChanged := realm.Status.Ready != ready ||
-		realm.Status.Status != status ||
-		realm.Status.Message != message
-
-	conditionChanged := true
-	for _, c := range realm.Status.Conditions {
-		if c.Type == "Ready" && c.Status == desiredConditionStatus && c.Reason == status && c.Message == message {
-			conditionChanged = false
-			break
-		}
-	}
-
-	if !statusChanged && !conditionChanged {
-		// Nothing changed — skip the API write to avoid triggering a watch-event reconcile loop
-		if ready {
-			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-		}
-		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
-	}
-
 	realm.Status.Ready = ready
 	realm.Status.Status = status
 	realm.Status.Message = message
 	realm.Status.Instance = instanceRef
 
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             desiredConditionStatus,
-		Reason:             status,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
+	realm.Status.Conditions = setReadyCondition(realm.Status.Conditions, ready, status, message)
 
-	found := false
-	for i, c := range realm.Status.Conditions {
-		if c.Type == "Ready" {
-			// Preserve LastTransitionTime if status did not flip
-			if c.Status == desiredConditionStatus {
-				condition.LastTransitionTime = c.LastTransitionTime
-			}
-			realm.Status.Conditions[i] = condition
-			found = true
-			break
-		}
-	}
-	if !found {
-		realm.Status.Conditions = append(realm.Status.Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, realm); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if ready {
-		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-	}
-	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	return writeStatusIfChanged(ctx, r.Client, realm, ready)
 }
 
 func (r *KeycloakRealmReconciler) resolveSmtpSecret(ctx context.Context, realm *keycloakv1beta1.KeycloakRealm) (string, string, error) {

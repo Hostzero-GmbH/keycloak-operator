@@ -1625,6 +1625,11 @@ func (c *Client) GetRequiredAction(ctx context.Context, realmName, alias string)
 	return &action, nil
 }
 
+// GetRequiredActionRaw gets a required action by alias as raw JSON
+func (c *Client) GetRequiredActionRaw(ctx context.Context, realmName, alias string) (json.RawMessage, error) {
+	return c.GetRaw(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/authentication/required-actions/"+url.PathEscape(alias))
+}
+
 // UpdateRequiredAction updates a required action
 func (c *Client) UpdateRequiredAction(ctx context.Context, realmName, alias string, action json.RawMessage) error {
 	cfg := DefaultRetryConfig()

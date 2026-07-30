@@ -495,24 +495,6 @@ func (r *KeycloakRoleMappingReconciler) removeRoleMapping(ctx context.Context, m
 }
 
 func (r *KeycloakRoleMappingReconciler) updateStatus(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping, ready bool, status, message, subjectType, subjectID, roleName, roleType string) (ctrl.Result, error) {
-	// Check if status actually changed
-	statusChanged := mapping.Status.Ready != ready ||
-		mapping.Status.Status != status ||
-		mapping.Status.Message != message ||
-		mapping.Status.SubjectType != subjectType ||
-		mapping.Status.SubjectID != subjectID ||
-		mapping.Status.RoleName != roleName ||
-		mapping.Status.RoleType != roleType
-
-	generationChanged := ready && mapping.Status.ObservedGeneration != mapping.Generation
-
-	if !statusChanged && !generationChanged {
-		if ready {
-			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-		}
-		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
-	}
-
 	mapping.Status.Ready = ready
 	mapping.Status.Status = status
 	mapping.Status.Message = message
@@ -527,15 +509,7 @@ func (r *KeycloakRoleMappingReconciler) updateStatus(ctx context.Context, mappin
 
 	mapping.Status.Conditions = setReadyCondition(mapping.Status.Conditions, ready, status, message)
 
-	if err := r.Status().Update(ctx, mapping); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if !ready {
-		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
-	}
-
-	return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
+	return writeStatusIfChanged(ctx, r.Client, mapping, ready)
 }
 
 func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {

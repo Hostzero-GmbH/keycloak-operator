@@ -8,37 +8,12 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
-
-const ReadyConditionType = "Ready"
-
-// setReadyCondition adds or updates the "Ready" condition in the supplied slice.
-func setReadyCondition(conditions []metav1.Condition, ready bool, reason, message string) []metav1.Condition {
-	condition := metav1.Condition{
-		Type:               ReadyConditionType,
-		Status:             metav1.ConditionFalse,
-		Reason:             reason,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
-	}
-
-	for i, c := range conditions {
-		if c.Type == ReadyConditionType {
-			conditions[i] = condition
-			return conditions
-		}
-	}
-	return append(conditions, condition)
-}
 
 // Default timing constants
 const (
