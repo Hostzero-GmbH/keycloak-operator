@@ -542,23 +542,25 @@ func (r *KeycloakUserReconciler) reconcileUserClientRoles(ctx context.Context, k
 	// that are no longer in the wanted set (client key removed from spec).
 	// Use the composite /role-mappings endpoint to get ALL client role mappings
 	// in a single API call, avoiding the N+1 problem of iterating every realm client.
+	// The response is keyed by clientId, so the UUID the role-mapping endpoints
+	// expect has to come from the entry itself.
 	composite, compErr := kc.GetUserRoleMappingsComposite(ctx, realmName, userID)
 	if compErr != nil {
 		reconcileErrs = append(reconcileErrs, fmt.Errorf("stale cleanup composite: %w", compErr))
 	} else {
-		for clientUUID, entry := range composite.ClientMappings {
-			if wantedUUIDs[clientUUID] {
+		for clientID, entry := range composite.ClientMappings {
+			if wantedUUIDs[entry.ID] {
 				continue
 			}
 			if len(entry.Mappings) == 0 {
 				continue
 			}
-			if err := kc.DeleteClientRolesFromUser(ctx, realmName, clientUUID, userID, entry.Mappings); err != nil {
-				log.Error(err, "failed to clean up stale client roles", "clientUUID", clientUUID)
-				reconcileErrs = append(reconcileErrs, fmt.Errorf("stale cleanup for client %s: %w", clientUUID, err))
+			if err := kc.DeleteClientRolesFromUser(ctx, realmName, entry.ID, userID, entry.Mappings); err != nil {
+				log.Error(err, "failed to clean up stale client roles", "client", clientID, "clientUUID", entry.ID)
+				reconcileErrs = append(reconcileErrs, fmt.Errorf("stale cleanup for client %s: %w", clientID, err))
 				continue
 			}
-			log.V(1).Info("cleaned up stale client roles", "count", len(entry.Mappings), "client", entry.Client)
+			log.V(1).Info("cleaned up stale client roles", "count", len(entry.Mappings), "client", clientID)
 		}
 	}
 

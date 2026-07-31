@@ -167,6 +167,146 @@ func TestKeycloakUserRolesGroupsE2E(t *testing.T) {
 		}), "group membership was not removed")
 	})
 
+	// Regression for #124. spec.clientRoles drives the composite role-mappings
+	// cleanup path, which no other subtest reaches. The user must reach Ready
+	// rather than RoleGroupReconcileError, and dropping a client from the map
+	// must actually remove its roles.
+	t.Run("ClientRoles", func(t *testing.T) {
+		if !canConnectToKeycloak() {
+			t.Skip("Skipping - cannot connect to Keycloak from test environment")
+		}
+
+		suffix := time.Now().UnixNano()
+		kc := getInternalKeycloakClient(t)
+
+		// Two clients, each carrying a role, so one can later go stale.
+		type testClient struct{ crName, clientID, role string }
+		clients := []testClient{
+			{fmt.Sprintf("cr-client-a-%d", suffix), fmt.Sprintf("client-a-%d", suffix), "role-a"},
+			{fmt.Sprintf("cr-client-b-%d", suffix), fmt.Sprintf("client-b-%d", suffix), "role-b"},
+		}
+		for _, c := range clients {
+			clientDef := rawJSON(`{"enabled": true, "serviceAccountsEnabled": true}`)
+			client := &keycloakv1beta1.KeycloakClient{
+				ObjectMeta: metav1.ObjectMeta{Name: c.crName, Namespace: testNamespace},
+				Spec: keycloakv1beta1.KeycloakClientSpec{
+					RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+					ClientId:   strPtr(c.clientID),
+					Definition: &clientDef,
+				},
+			}
+			require.NoError(t, k8sClient.Create(ctx, client))
+			t.Cleanup(func() { k8sClient.Delete(ctx, client) })
+
+			require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+				updated := &keycloakv1beta1.KeycloakClient{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: c.crName, Namespace: testNamespace}, updated); err != nil {
+					return false, nil
+				}
+				return updated.Status.Ready, nil
+			}), "KeycloakClient %s did not become ready", c.crName)
+
+			role := &keycloakv1beta1.KeycloakRole{
+				ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s-role", c.crName), Namespace: testNamespace},
+				Spec: keycloakv1beta1.KeycloakRoleSpec{
+					RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+					ClientRef:  &keycloakv1beta1.ResourceRef{Name: c.crName},
+					Name:       strPtr(c.role),
+					Definition: rawJSON(`{"description": "e2e client role"}`),
+				},
+			}
+			require.NoError(t, k8sClient.Create(ctx, role))
+			t.Cleanup(func() { k8sClient.Delete(ctx, role) })
+
+			require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+				updated := &keycloakv1beta1.KeycloakRole{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("%s-role", c.crName), Namespace: testNamespace}, updated); err != nil {
+					return false, nil
+				}
+				return updated.Status.Ready, nil
+			}), "KeycloakRole for %s did not become ready", c.crName)
+		}
+
+		userName := fmt.Sprintf("client-roles-user-%d", suffix)
+		userDef := rawJSON(`{"enabled": true}`)
+		kcUser := &keycloakv1beta1.KeycloakUser{
+			ObjectMeta: metav1.ObjectMeta{Name: userName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakUserSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
+				Definition: &userDef,
+				ClientRoles: &map[string][]string{
+					clients[0].clientID: {clients[0].role},
+					clients[1].clientID: {clients[1].role},
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcUser))
+		t.Cleanup(func() { k8sClient.Delete(ctx, kcUser) })
+
+		// Before the fix this never became Ready: the stale-cleanup pass treated
+		// every client mapping as orphaned and deleted it via a clientId-shaped
+		// path, so each reconcile ended in RoleGroupReconcileError.
+		updated := waitUserReady(t, userName)
+		userID := updated.Status.UserID
+		require.NotEmpty(t, userID)
+
+		clientRoleNames := func(clientID string) func(context.Context) ([]string, error) {
+			return func(ctx context.Context) ([]string, error) {
+				rep, err := kc.GetClientByClientID(ctx, realmName, clientID)
+				if err != nil {
+					return nil, err
+				}
+				mappings, err := kc.GetUserClientRoleMappings(ctx, realmName, userID, *rep.ID)
+				if err != nil {
+					return nil, err
+				}
+				var names []string
+				for _, m := range mappings {
+					if m.Name != nil {
+						names = append(names, *m.Name)
+					}
+				}
+				return names, nil
+			}
+		}
+
+		for _, c := range clients {
+			require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+				names, err := clientRoleNames(c.clientID)(ctx)
+				if err != nil {
+					return false, nil
+				}
+				return len(names) == 1 && names[0] == c.role, nil
+			}), "client role %s was not assigned on %s", c.role, c.clientID)
+		}
+
+		// Drop the second client from the map: its roles must be cleaned up while
+		// the first client keeps its own.
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: userName, Namespace: testNamespace}, kcUser))
+		kcUser.Spec.ClientRoles = &map[string][]string{
+			clients[0].clientID: {clients[0].role},
+		}
+		require.NoError(t, k8sClient.Update(ctx, kcUser))
+
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			names, err := clientRoleNames(clients[1].clientID)(ctx)
+			if err != nil {
+				return false, nil
+			}
+			return len(names) == 0, nil
+		}), "stale client roles on %s were not cleaned up", clients[1].clientID)
+
+		names, err := clientRoleNames(clients[0].clientID)(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{clients[0].role}, names, "roles on the still-wanted client must survive cleanup")
+
+		// The user stays Ready after the cleanup pass.
+		final := &keycloakv1beta1.KeycloakUser{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: userName, Namespace: testNamespace}, final))
+		require.True(t, final.Status.Ready, "user should remain ready (status: %s, message: %s)", final.Status.Status, final.Status.Message)
+	})
+
 	// Role/group keys inside spec.definition violate the one-home invariant.
 	t.Run("DefinitionRoleKeysRejected", func(t *testing.T) {
 		userName := fmt.Sprintf("def-roles-user-%d", time.Now().UnixNano())
