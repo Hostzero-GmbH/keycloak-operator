@@ -106,6 +106,16 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
+	// Protocol mappers have their own CRD. Keycloak does honour them on the client
+	// PUT, but allowing both homes would let a KeycloakProtocolMapper and this
+	// definition key fight over the same mapper.
+	if kcClient.Spec.Definition != nil {
+		if err := rejectDefinitionKey(kcClient.Spec.Definition.Raw, "protocolMappers", "KeycloakProtocolMapper"); err != nil {
+			RecordError(controllerName, "unsupported_definition_field")
+			return r.updateStatus(ctx, kcClient, false, UnsupportedDefinitionFieldReason, err.Error(), "", instanceRef, realmRef)
+		}
+	}
+
 	// Resolve the clientId from spec.clientId.
 	resolvedClientID, err := resolveIdentifier("clientId", kcClient.Spec.ClientId, clientDef.ClientID)
 	if err != nil {
@@ -690,11 +700,12 @@ func valuesMatch(desired, current interface{}) bool {
 		return true
 	}
 
-	// Arrays of objects (e.g. protocolMappers): match by "name" field, require same
-	// length so that extra objects in Keycloak (e.g. an orphaned protocolMapper that
-	// the CR no longer declares) are detected as drift and removed by the PUT.
-	// Within each matched object, fields are still subset-compared because Keycloak
-	// adds fields the CR omits (id, consentRequired, ...).
+	// Arrays of objects (e.g. authorizationSettings.resources): match by "name"
+	// field, require same length so that extra objects in Keycloak that the CR no
+	// longer declares are detected as drift and removed by the PUT. Within each
+	// matched object, fields are still subset-compared because Keycloak adds fields
+	// the CR omits (id, ...). Exact comparison would instead report perpetual drift
+	// and re-PUT on every reconcile.
 	desiredObjArr, dIsObjArr := toObjectSlice(desired)
 	currentObjArr, cIsObjArr := toObjectSlice(current)
 	if dIsObjArr && cIsObjArr {

@@ -116,19 +116,19 @@ func TestDefinitionsMatch_AttributeValueDiff(t *testing.T) {
 	}
 }
 
-func TestDefinitionsMatch_ProtocolMappersSubset(t *testing.T) {
-	// CR defines protocolMappers without id/consentRequired, KC adds those fields
+func TestDefinitionsMatch_ObjectArraySubset(t *testing.T) {
+	// CR defines an object array without the fields Keycloak adds on read (id, ...)
 	desired := json.RawMessage(`{
 		"clientId": "app",
-		"protocolMappers": [{"name": "test-mapper", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "config": {"claim.name": "test"}}]
+		"authorizationSettings": {"resources": [{"name": "res-a", "type": "urn:app:resources:default"}]}
 	}`)
 	current := json.RawMessage(`{
 		"clientId": "app",
-		"protocolMappers": [{"id": "abc-123", "name": "test-mapper", "protocol": "openid-connect", "protocolMapper": "oidc-usermodel-attribute-mapper", "consentRequired": false, "config": {"claim.name": "test"}}]
+		"authorizationSettings": {"resources": [{"id": "abc-123", "name": "res-a", "type": "urn:app:resources:default", "ownerManagedAccess": false}]}
 	}`)
 
 	if !definitionsMatch(desired, current) {
-		t.Error("expected match: CR protocolMapper is a subset of KC protocolMapper")
+		t.Error("expected match: CR object is a subset of the Keycloak object")
 	}
 }
 
@@ -167,42 +167,36 @@ func TestDefinitionsMatch_SkipsOptionalClientScopes(t *testing.T) {
 	}
 }
 
-func TestDefinitionsMatch_ProtocolMappersExtraInCurrent(t *testing.T) {
-	// Keycloak has an extra protocolMapper that the CR no longer declares.
+func TestDefinitionsMatch_ObjectArrayExtraInCurrent(t *testing.T) {
+	// Keycloak has an extra object that the CR no longer declares.
 	// definitionsMatch must report drift so the PUT removes it.
 	desired := json.RawMessage(`{
 		"clientId": "app",
-		"protocolMappers": [{"name": "keep", "protocol": "openid-connect"}]
+		"authorizationSettings": {"resources": [{"name": "keep"}]}
 	}`)
 	current := json.RawMessage(`{
 		"clientId": "app",
-		"protocolMappers": [
-			{"name": "keep", "protocol": "openid-connect"},
-			{"name": "orphan", "protocol": "openid-connect"}
-		]
+		"authorizationSettings": {"resources": [{"name": "keep"}, {"name": "orphan"}]}
 	}`)
 
 	if definitionsMatch(desired, current) {
-		t.Error("expected no match: orphan protocolMapper in current must surface as drift")
+		t.Error("expected no match: orphan object in current must surface as drift")
 	}
 }
 
-func TestDefinitionsMatch_ProtocolMappersExtraInDesired(t *testing.T) {
-	// CR adds a protocolMapper that Keycloak doesn't have yet — must surface as drift.
+func TestDefinitionsMatch_ObjectArrayExtraInDesired(t *testing.T) {
+	// CR adds an object that Keycloak doesn't have yet — must surface as drift.
 	desired := json.RawMessage(`{
 		"clientId": "app",
-		"protocolMappers": [
-			{"name": "existing", "protocol": "openid-connect"},
-			{"name": "new-one", "protocol": "openid-connect"}
-		]
+		"authorizationSettings": {"resources": [{"name": "existing"}, {"name": "new-one"}]}
 	}`)
 	current := json.RawMessage(`{
 		"clientId": "app",
-		"protocolMappers": [{"name": "existing", "protocol": "openid-connect"}]
+		"authorizationSettings": {"resources": [{"name": "existing"}]}
 	}`)
 
 	if definitionsMatch(desired, current) {
-		t.Error("expected no match: CR adds a protocolMapper that current lacks")
+		t.Error("expected no match: CR adds an object that current lacks")
 	}
 }
 
