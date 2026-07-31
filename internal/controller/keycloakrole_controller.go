@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -458,38 +457,9 @@ func (r *KeycloakRoleReconciler) updateStatus(ctx context.Context, role *keycloa
 		role.Status.ObservedGeneration = role.Generation
 	}
 
-	// Update conditions
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
-		Reason:             status,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
-	}
+	role.Status.Conditions = setReadyCondition(role.Status.Conditions, ready, status, message)
 
-	found := false
-	for i, c := range role.Status.Conditions {
-		if c.Type == "Ready" {
-			role.Status.Conditions[i] = condition
-			found = true
-			break
-		}
-	}
-	if !found {
-		role.Status.Conditions = append(role.Status.Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, role); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if ready {
-		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-	}
-	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	return writeStatusIfChanged(ctx, r.Client, role, ready)
 }
 
 // SetupWithManager sets up the controller with the Manager

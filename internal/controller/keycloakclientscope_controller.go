@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -286,38 +285,9 @@ func (r *KeycloakClientScopeReconciler) updateStatus(ctx context.Context, client
 	clientScope.Status.Status = status
 	clientScope.Status.Message = message
 
-	// Update conditions
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
-		Reason:             status,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
-	}
+	clientScope.Status.Conditions = setReadyCondition(clientScope.Status.Conditions, ready, status, message)
 
-	found := false
-	for i, c := range clientScope.Status.Conditions {
-		if c.Type == "Ready" {
-			clientScope.Status.Conditions[i] = condition
-			found = true
-			break
-		}
-	}
-	if !found {
-		clientScope.Status.Conditions = append(clientScope.Status.Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, clientScope); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if ready {
-		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-	}
-	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	return writeStatusIfChanged(ctx, r.Client, clientScope, ready)
 }
 
 // SetupWithManager sets up the controller with the Manager

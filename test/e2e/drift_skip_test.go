@@ -233,6 +233,47 @@ func TestDriftSkip(t *testing.T) {
 		require.True(t, final.Status.Ready, "realm should remain Ready after skipped reconcile")
 	})
 
+	t.Run("KeycloakRequiredAction_InSyncSkipsUpdate", func(t *testing.T) {
+		realmName := createTestRealm(t, instanceName, "drift-reqaction")
+
+		raName := fmt.Sprintf("drift-reqaction-%d", time.Now().UnixNano())
+		ra := &keycloakv1beta1.KeycloakRequiredAction{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      raName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakRequiredActionSpec{
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:    strPtr("UPDATE_PASSWORD"),
+				Definition: rawJSON(`{
+					"name": "Update Password",
+					"providerId": "UPDATE_PASSWORD",
+					"enabled": true,
+					"defaultAction": true,
+					"priority": 20
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, ra))
+		t.Cleanup(func() { k8sClient.Delete(ctx, ra) })
+
+		waitForRequiredActionReady(t, ra.Name, ra.Namespace)
+
+		// Without drift detection the controller PUTs on every pass, and each
+		// PUT produces a Keycloak admin event — the flood reported in #121.
+		updated := &keycloakv1beta1.KeycloakRequiredAction{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: ra.Name, Namespace: ra.Namespace}, updated))
+
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+
+		assertSkipLogged(t, since, "required action already in sync, skipping update", "alias", "UPDATE_PASSWORD")
+
+		final := &keycloakv1beta1.KeycloakRequiredAction{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: ra.Name, Namespace: ra.Namespace}, final))
+		require.True(t, final.Status.Ready, "required action should remain Ready after skipped reconcile")
+	})
+
 	t.Run("KeycloakOrganization_DomainsVerifiedNoLoop", func(t *testing.T) {
 		// Organizations require Keycloak 26+; skip on older instances.
 		instance := &keycloakv1beta1.KeycloakInstance{}
@@ -422,6 +463,19 @@ func waitForRealmReady(t *testing.T, name, namespace string) {
 		return updated.Status.Ready, nil
 	})
 	require.NoError(t, err, "KeycloakRealm %s/%s did not become ready", namespace, name)
+}
+
+// waitForRequiredActionReady waits for a KeycloakRequiredAction to reach Ready status.
+func waitForRequiredActionReady(t *testing.T, name, namespace string) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		updated := &keycloakv1beta1.KeycloakRequiredAction{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, updated); err != nil {
+			return false, nil
+		}
+		return updated.Status.Ready, nil
+	})
+	require.NoError(t, err, "KeycloakRequiredAction %s/%s did not become ready", namespace, name)
 }
 
 // waitForOrganizationReady waits for a KeycloakOrganization to reach Ready status.

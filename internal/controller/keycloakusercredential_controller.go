@@ -391,16 +391,7 @@ func (r *KeycloakUserCredentialReconciler) updateStatus(ctx context.Context, cre
 
 	cred.Status.Conditions = setReadyCondition(cred.Status.Conditions, ready, status, message)
 
-	if err := r.Status().Update(ctx, cred); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if !ready {
-		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
-	}
-
-	// Requeue after 5 minutes for periodic sync check
-	return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
+	return writeStatusIfChanged(ctx, r.Client, cred, ready)
 }
 
 // hashPassword creates a SHA256 hash of the password for change detection

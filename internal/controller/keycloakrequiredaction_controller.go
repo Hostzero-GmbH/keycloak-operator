@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -131,13 +130,24 @@ func (r *KeycloakRequiredActionReconciler) Reconcile(ctx context.Context, req ct
 		}
 		log.Info("required action registered and configured", "alias", alias)
 	} else {
-		// Required action exists -- update it
-		log.Info("updating required action", "alias", alias, "realm", realmName)
-		if err := kc.UpdateRequiredAction(ctx, realmName, alias, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, ra, false, "UpdateFailed", fmt.Sprintf("Failed to update required action: %v", err), alias)
+		// Required action exists -- update it only when it actually drifted.
+		// Every PUT produces a Keycloak admin event, so an unconditional write
+		// floods admin_event_entity for actions that never change.
+		needsUpdate := true
+		if currentRaw, fetchErr := kc.GetRequiredActionRaw(ctx, realmName, alias); fetchErr == nil {
+			needsUpdate = !definitionsMatch(definition, currentRaw)
 		}
-		log.Info("required action updated", "alias", alias)
+
+		if needsUpdate {
+			log.Info("updating required action", "alias", alias, "realm", realmName)
+			if err := kc.UpdateRequiredAction(ctx, realmName, alias, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, ra, false, "UpdateFailed", fmt.Sprintf("Failed to update required action: %v", err), alias)
+			}
+			log.Info("required action updated", "alias", alias)
+		} else {
+			log.V(1).Info("required action already in sync, skipping update", "alias", alias, "realm", realmName)
+		}
 	}
 
 	ra.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s/authentication/required-actions/%s", realmName, alias)
@@ -267,37 +277,9 @@ func (r *KeycloakRequiredActionReconciler) updateStatus(ctx context.Context, ra 
 		ra.Status.ObservedGeneration = ra.Generation
 	}
 
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
-		Reason:             status,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
-	}
+	ra.Status.Conditions = setReadyCondition(ra.Status.Conditions, ready, status, message)
 
-	found := false
-	for i, c := range ra.Status.Conditions {
-		if c.Type == "Ready" {
-			ra.Status.Conditions[i] = condition
-			found = true
-			break
-		}
-	}
-	if !found {
-		ra.Status.Conditions = append(ra.Status.Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, ra); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if ready {
-		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-	}
-	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	return writeStatusIfChanged(ctx, r.Client, ra, ready)
 }
 
 // SetupWithManager sets up the controller with the Manager

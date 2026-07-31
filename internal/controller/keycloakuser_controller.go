@@ -9,7 +9,6 @@ import (
 	stderrors "errors"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -780,37 +779,6 @@ func (r *KeycloakUserReconciler) getKeycloakClientAndRealmFromClient(ctx context
 }
 
 func (r *KeycloakUserReconciler) updateStatus(ctx context.Context, user *keycloakv1beta1.KeycloakUser, ready bool, status, message, userID string, isServiceAccount bool, clientID string) (ctrl.Result, error) {
-	// Determine desired condition status
-	desiredConditionStatus := metav1.ConditionFalse
-	if ready {
-		desiredConditionStatus = metav1.ConditionTrue
-	}
-
-	// Check if status actually changed
-	statusChanged := user.Status.Ready != ready ||
-		user.Status.Status != status ||
-		user.Status.Message != message ||
-		user.Status.IsServiceAccount != isServiceAccount ||
-		user.Status.ClientID != clientID ||
-		(userID != "" && user.Status.UserID != userID)
-
-	conditionChanged := true
-	for _, c := range user.Status.Conditions {
-		if c.Type == "Ready" && c.Status == desiredConditionStatus && c.Reason == status && c.Message == message {
-			conditionChanged = false
-			break
-		}
-	}
-
-	generationChanged := ready && user.Status.ObservedGeneration != user.Generation
-
-	if !statusChanged && !conditionChanged && !generationChanged {
-		if ready {
-			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-		}
-		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
-	}
-
 	user.Status.Ready = ready
 	user.Status.Status = status
 	user.Status.Message = message
@@ -824,37 +792,9 @@ func (r *KeycloakUserReconciler) updateStatus(ctx context.Context, user *keycloa
 		user.Status.ObservedGeneration = user.Generation
 	}
 
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             desiredConditionStatus,
-		Reason:             status,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
+	user.Status.Conditions = setReadyCondition(user.Status.Conditions, ready, status, message)
 
-	found := false
-	for i, c := range user.Status.Conditions {
-		if c.Type == "Ready" {
-			if c.Status == desiredConditionStatus {
-				condition.LastTransitionTime = c.LastTransitionTime
-			}
-			user.Status.Conditions[i] = condition
-			found = true
-			break
-		}
-	}
-	if !found {
-		user.Status.Conditions = append(user.Status.Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, user); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if ready {
-		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-	}
-	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	return writeStatusIfChanged(ctx, r.Client, user, ready)
 }
 
 // SetupWithManager sets up the controller with the Manager

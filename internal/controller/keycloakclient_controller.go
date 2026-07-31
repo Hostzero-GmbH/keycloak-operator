@@ -605,37 +605,6 @@ func (r *KeycloakClientReconciler) deleteClient(ctx context.Context, kcClient *k
 }
 
 func (r *KeycloakClientReconciler) updateStatus(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient, ready bool, status, message, clientUUID string, instanceRef *keycloakv1beta1.InstanceRef, realmRef *keycloakv1beta1.RealmRef) (ctrl.Result, error) {
-	// Determine desired condition status
-	desiredConditionStatus := metav1.ConditionFalse
-	if ready {
-		desiredConditionStatus = metav1.ConditionTrue
-	}
-
-	// Check if status actually changed
-	statusChanged := kcClient.Status.Ready != ready ||
-		kcClient.Status.Status != status ||
-		kcClient.Status.Message != message ||
-		kcClient.Status.ClientUUID != clientUUID
-
-	conditionChanged := true
-	for _, c := range kcClient.Status.Conditions {
-		if c.Type == "Ready" && c.Status == desiredConditionStatus && c.Reason == status && c.Message == message {
-			conditionChanged = false
-			break
-		}
-	}
-
-	// Check if observed generation changed
-	generationChanged := ready && kcClient.Status.ObservedGeneration != kcClient.Generation
-
-	if !statusChanged && !conditionChanged && !generationChanged {
-		// Nothing changed, just requeue without writing to API
-		if ready {
-			return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-		}
-		return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
-	}
-
 	kcClient.Status.Ready = ready
 	kcClient.Status.Status = status
 	kcClient.Status.Message = message
@@ -648,40 +617,9 @@ func (r *KeycloakClientReconciler) updateStatus(ctx context.Context, kcClient *k
 		kcClient.Status.ObservedGeneration = kcClient.Generation
 	}
 
-	// Update conditions
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             desiredConditionStatus,
-		Reason:             status,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
+	kcClient.Status.Conditions = setReadyCondition(kcClient.Status.Conditions, ready, status, message)
 
-	// Update or add condition
-	found := false
-	for i, c := range kcClient.Status.Conditions {
-		if c.Type == "Ready" {
-			// Preserve LastTransitionTime if status didn't change
-			if c.Status == desiredConditionStatus {
-				condition.LastTransitionTime = c.LastTransitionTime
-			}
-			kcClient.Status.Conditions[i] = condition
-			found = true
-			break
-		}
-	}
-	if !found {
-		kcClient.Status.Conditions = append(kcClient.Status.Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, kcClient); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if ready {
-		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-	}
-	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	return writeStatusIfChanged(ctx, r.Client, kcClient, ready)
 }
 
 // definitionsMatch compares desired definition against the current state in Keycloak.

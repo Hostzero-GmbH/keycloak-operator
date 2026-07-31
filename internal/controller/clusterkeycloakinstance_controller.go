@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -123,39 +122,9 @@ func (r *ClusterKeycloakInstanceReconciler) updateStatus(ctx context.Context, in
 		instance.Status.Version = version
 	}
 
-	// Update conditions
-	condition := metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
-		Reason:             status,
-		Message:            message,
-		LastTransitionTime: metav1.Now(),
-	}
-	if ready {
-		condition.Status = metav1.ConditionTrue
-	}
+	instance.Status.Conditions = setReadyCondition(instance.Status.Conditions, ready, status, message)
 
-	// Update or add condition
-	found := false
-	for i, c := range instance.Status.Conditions {
-		if c.Type == "Ready" {
-			instance.Status.Conditions[i] = condition
-			found = true
-			break
-		}
-	}
-	if !found {
-		instance.Status.Conditions = append(instance.Status.Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, instance); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if ready {
-		return ctrl.Result{RequeueAfter: GetSyncPeriod()}, nil
-	}
-	return ctrl.Result{RequeueAfter: ErrorRequeueDelay}, nil
+	return writeStatusIfChanged(ctx, r.Client, instance, ready)
 }
 
 // SetupWithManager sets up the controller with the Manager

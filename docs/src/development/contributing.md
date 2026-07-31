@@ -59,6 +59,7 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/):
 - Add comments for exported types/functions
 - Keep functions focused and small
 - When adding CRD fields, follow the [Spec Layout](../crds.md#spec-layout) rules for what goes in spec versus `definition`
+- Controllers must end `updateStatus` with `writeStatusIfChanged` and build the Ready condition with `setReadyCondition`. Writing status unconditionally re-triggers the controller's own watch and produces a reconcile hot loop instead of honouring the sync period
 
 ### Testing Requirements
 
