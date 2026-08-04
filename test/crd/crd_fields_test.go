@@ -150,6 +150,57 @@ func TestIdentifierPrinterColumnPresent(t *testing.T) {
 	}
 }
 
+// parentRefExclusivity lists CRDs whose parent references are mutually exclusive,
+// with every ref that participates in the choice. A resource that derives its
+// realm from a parent (a client role from its client) must not also accept a realm
+// ref, so the rule has to name all of them.
+var parentRefExclusivity = []struct {
+	file string
+	refs []string
+}{
+	{
+		file: "keycloak.hostzero.com_keycloakroles.yaml",
+		refs: []string{"realmRef", "clusterRealmRef", "clientRef"},
+	},
+	{
+		file: "keycloak.hostzero.com_keycloakusers.yaml",
+		refs: []string{"realmRef", "clusterRealmRef", "clientRef"},
+	},
+	{
+		file: "keycloak.hostzero.com_keycloakprotocolmappers.yaml",
+		refs: []string{"clientRef", "clientScopeRef"},
+	},
+}
+
+func TestParentRefExclusivityRule(t *testing.T) {
+	for _, exp := range parentRefExclusivity {
+		t.Run(exp.file, func(t *testing.T) {
+			crd := loadCRD(t, exp.file)
+			v := storageVersion(t, crd)
+			spec := v.Schema.OpenAPIV3Schema.Properties["spec"]
+
+			for _, ref := range exp.refs {
+				if _, ok := spec.Properties[ref]; !ok {
+					t.Errorf("%s: spec.%s not present in CRD schema", exp.file, ref)
+				}
+			}
+
+			for _, ref := range exp.refs {
+				found := false
+				for _, rule := range spec.XValidations {
+					if strings.Contains(rule.Rule, "self."+ref) && !strings.Contains(rule.Rule, "oldSelf") {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("%s: no spec-level CEL rule constrains spec.%s, so it can be combined with the other parent refs", exp.file, ref)
+				}
+			}
+		})
+	}
+}
+
 func TestIdentifierImmutabilityRule(t *testing.T) {
 	for _, exp := range expectations {
 		t.Run(exp.file, func(t *testing.T) {

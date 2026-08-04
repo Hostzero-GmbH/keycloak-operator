@@ -12,13 +12,13 @@ kind: KeycloakRole
 metadata:
   name: my-role
 spec:
-  # One of realmRef, clusterRealmRef, or clientRef must be specified
+  # Exactly one of realmRef, clusterRealmRef, or clientRef must be specified
   
   # For realm roles:
   realmRef:
     name: my-realm
   
-  # For client roles:
+  # For client roles (the realm comes from the client; do not also set realmRef):
   # clientRef:
   #   name: my-client
   
@@ -70,6 +70,8 @@ spec:
 
 ### Client Role
 
+The realm is derived from the referenced client, so no `realmRef` is given:
+
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakRole
@@ -94,7 +96,11 @@ A `KeycloakRole` can belong to one of three parent types:
 | `clusterRealmRef` | Realm role | For cluster-scoped realms |
 | `clientRef` | Client role | Specific to a single client |
 
-**Note:** Exactly one of these must be specified.
+**Note:** Exactly one of these must be specified; setting more than one is rejected.
+
+For a client role, use `clientRef` alone. The realm is taken from the referenced
+client, which already belongs to exactly one realm, so `realmRef` and
+`clusterRealmRef` must not be combined with `clientRef`.
 
 ## Definition Properties
 

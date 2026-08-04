@@ -523,7 +523,6 @@ func TestKeycloakRoleMappingRoleRefE2E(t *testing.T) {
 		role := &keycloakv1beta1.KeycloakRole{
 			ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: testNamespace},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
-				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
 				Name:       strPtr(roleName),
 				Definition: rawJSON(`{}`),
