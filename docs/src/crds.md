@@ -109,7 +109,7 @@ Fully typed CRDs without a `definition` (KeycloakInstance, KeycloakRoleMapping, 
 For contributors, the layer of a new field follows mechanically:
 
 - References a Kubernetes object or another CR? → typed spec field (layer 3).
-- Managed through a separate Keycloak API endpoint rather than the representation `PUT`? → its own CRD (like KeycloakRoleMapping) or a typed spec section — never keys inside `definition`.
+- Managed through a separate Keycloak API endpoint rather than the representation `PUT`? → its own CRD (like KeycloakRoleMapping or KeycloakProtocolMapper) or a typed spec section — never keys inside `definition`. Such a key is rejected with `Ready=False`, because Keycloak may accept the parent `PUT` while discarding the nested change.
 - Part of the Keycloak representation itself? → stays in `definition`, untyped.
 
 ### Status Tracking

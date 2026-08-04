@@ -67,6 +67,11 @@ spec:
 
 ### Scope with Protocol Mappers
 
+Protocol mappers are declared as separate [KeycloakProtocolMapper](keycloakprotocolmapper.md)
+resources. Keycloak ignores `protocolMappers` sent on the client scope update
+endpoint, so the operator rejects the key inside `definition` rather than
+accepting edits it cannot apply.
+
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
 kind: KeycloakClientScope
@@ -79,18 +84,26 @@ spec:
   definition:
     description: Department information
     protocol: openid-connect
-    protocolMappers:
-      - name: department
-        protocol: openid-connect
-        protocolMapper: oidc-usermodel-attribute-mapper
-        consentRequired: false
-        config:
-          claim.name: department
-          user.attribute: department
-          jsonType.label: String
-          id.token.claim: "true"
-          access.token.claim: "true"
-          userinfo.token.claim: "true"
+---
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakProtocolMapper
+metadata:
+  name: department
+spec:
+  clientScopeRef:
+    name: department-scope
+  name: department
+  definition:
+    protocol: openid-connect
+    protocolMapper: oidc-usermodel-attribute-mapper
+    consentRequired: false
+    config:
+      claim.name: department
+      user.attribute: department
+      jsonType.label: String
+      id.token.claim: "true"
+      access.token.claim: "true"
+      userinfo.token.claim: "true"
 ```
 
 ## Definition Properties
@@ -100,8 +113,9 @@ spec:
 | `name` | string | Scope name (required) |
 | `description` | string | Description |
 | `protocol` | string | Protocol (openid-connect, saml) |
-| `protocolMappers` | array | Protocol mapper configurations |
 | `attributes` | map | Additional attributes |
+
+`protocolMappers` is rejected here; use [KeycloakProtocolMapper](keycloakprotocolmapper.md).
 
 ## Short Names
 

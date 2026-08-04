@@ -95,6 +95,13 @@ func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.
 		return r.updateStatus(ctx, clientScope, false, "InvalidDefinition", fmt.Sprintf("Failed to parse client scope definition: %v", err), "")
 	}
 
+	// Keycloak's client scope PUT silently discards protocolMappers, so they are
+	// only ever managed through KeycloakProtocolMapper.
+	if err := rejectDefinitionKey(clientScope.Spec.Definition.Raw, "protocolMappers", "KeycloakProtocolMapper"); err != nil {
+		RecordError(controllerName, "unsupported_definition_field")
+		return r.updateStatus(ctx, clientScope, false, UnsupportedDefinitionFieldReason, err.Error(), "")
+	}
+
 	// Resolve the client scope name from spec.name.
 	scopeName, err := resolveIdentifier("name", clientScope.Spec.Name, scopeDef.Name)
 	if err != nil {
