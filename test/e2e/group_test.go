@@ -149,7 +149,6 @@ func TestKeycloakGroupE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakGroupSpec{
-				RealmRef:       &keycloakv1beta1.ResourceRef{Name: realmName},
 				ParentGroupRef: &keycloakv1beta1.ResourceRef{Name: parentName},
 				Name:           strPtr(childName),
 				Definition:     childDef,
@@ -173,6 +172,82 @@ func TestKeycloakGroupE2E(t *testing.T) {
 		})
 		require.NoError(t, err, "Child group did not become ready")
 		t.Logf("Nested groups created: parent=%s, child=%s", parentName, childName)
+	})
+
+	// A nested group inherits the realm from its parent chain, so pairing
+	// parentGroupRef with a realm ref states the realm twice and is rejected.
+	t.Run("ParentGroupRefWithRealmRefRejected", func(t *testing.T) {
+		groupName := fmt.Sprintf("both-refs-group-%d", time.Now().UnixNano())
+		group := &keycloakv1beta1.KeycloakGroup{
+			ObjectMeta: metav1.ObjectMeta{Name: groupName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakGroupSpec{
+				RealmRef:       &keycloakv1beta1.ResourceRef{Name: realmName},
+				ParentGroupRef: &keycloakv1beta1.ResourceRef{Name: "some-parent"},
+				Name:           strPtr(groupName),
+				Definition:     rawJSON(`{}`),
+			},
+		}
+		err := k8sClient.Create(ctx, group)
+		require.Error(t, err, "combining realmRef and parentGroupRef must be rejected")
+		require.Contains(t, err.Error(), "exactly one of realmRef, clusterRealmRef, or parentGroupRef")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, group) })
+		}
+	})
+
+	t.Run("NoParentRefRejected", func(t *testing.T) {
+		groupName := fmt.Sprintf("no-refs-group-%d", time.Now().UnixNano())
+		group := &keycloakv1beta1.KeycloakGroup{
+			ObjectMeta: metav1.ObjectMeta{Name: groupName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakGroupSpec{
+				Name:       strPtr(groupName),
+				Definition: rawJSON(`{}`),
+			},
+		}
+		err := k8sClient.Create(ctx, group)
+		require.Error(t, err, "a group without any parent ref must be rejected")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, group) })
+		}
+	})
+
+	// Three levels deep: the realm for the grandchild is only reachable by walking
+	// past its parent, which itself carries no realm ref.
+	t.Run("DeeplyNestedGroupInheritsRealm", func(t *testing.T) {
+		suffix := time.Now().UnixNano()
+		names := []string{
+			fmt.Sprintf("l1-%d", suffix),
+			fmt.Sprintf("l2-%d", suffix),
+			fmt.Sprintf("l3-%d", suffix),
+		}
+
+		for i, name := range names {
+			spec := keycloakv1beta1.KeycloakGroupSpec{
+				Name:       strPtr(name),
+				Definition: rawJSON(`{}`),
+			}
+			if i == 0 {
+				spec.RealmRef = &keycloakv1beta1.ResourceRef{Name: realmName}
+			} else {
+				spec.ParentGroupRef = &keycloakv1beta1.ResourceRef{Name: names[i-1]}
+			}
+
+			group := &keycloakv1beta1.KeycloakGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
+				Spec:       spec,
+			}
+			require.NoError(t, k8sClient.Create(ctx, group))
+			t.Cleanup(func() { k8sClient.Delete(ctx, group) })
+
+			require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+				updated := &keycloakv1beta1.KeycloakGroup{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, updated); err != nil {
+					return false, nil
+				}
+				return updated.Status.Ready && updated.Status.GroupID != "", nil
+			}), "group %s at nesting level %d did not become ready", name, i+1)
+		}
+		t.Logf("Three-level nesting resolved the realm through the parent chain: %v", names)
 	})
 
 	t.Run("GroupCleanup", func(t *testing.T) {

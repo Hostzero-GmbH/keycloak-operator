@@ -6,21 +6,23 @@ import (
 )
 
 // KeycloakRoleSpec defines the desired state of KeycloakRole
-// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.clientRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or clientRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
 type KeycloakRoleSpec struct {
-	// RealmRef is a reference to a KeycloakRealm
-	// One of realmRef or clusterRealmRef must be specified
+	// RealmRef is a reference to a KeycloakRealm for realm-level roles
+	// One of realmRef, clusterRealmRef, or clientRef must be specified
 	// +optional
 	RealmRef *ResourceRef `json:"realmRef,omitempty"`
 
-	// ClusterRealmRef is a reference to a ClusterKeycloakRealm
-	// One of realmRef or clusterRealmRef must be specified
+	// ClusterRealmRef is a reference to a ClusterKeycloakRealm for realm-level roles
+	// One of realmRef, clusterRealmRef, or clientRef must be specified
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// ClientRef is a reference to a KeycloakClient for client-level roles
-	// If not specified, the role is a realm-level role
+	// ClientRef is a reference to a KeycloakClient for client-level roles.
+	// The realm is derived from the referenced client, so realmRef and
+	// clusterRealmRef must not be set alongside it.
+	// One of realmRef, clusterRealmRef, or clientRef must be specified
 	// +optional
 	ClientRef *ResourceRef `json:"clientRef,omitempty"`
 

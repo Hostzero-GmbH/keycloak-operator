@@ -23,7 +23,7 @@ type KeycloakRoleMappingSpec struct {
 }
 
 // RoleMappingSubject defines the target of the role mapping
-// +kubebuilder:validation:XValidation:rule="has(self.userRef) != has(self.groupRef)",message="exactly one of userRef or groupRef must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.userRef) ? 1 : 0) + (has(self.groupRef) ? 1 : 0) + (has(self.serviceAccountRef) ? 1 : 0) == 1",message="exactly one of userRef, groupRef, or serviceAccountRef must be set"
 type RoleMappingSubject struct {
 	// UserRef references a KeycloakUser
 	// +optional

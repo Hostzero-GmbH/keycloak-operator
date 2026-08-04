@@ -50,6 +50,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 	clientRef := &ResourceRef{Name: "client"}
 	clientID := "client-id"
 	mapperName := "mapper"
+	groupName := "group"
 
 	tests := []struct {
 		name        string
@@ -138,7 +139,62 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 					Role: &RoleDefinition{Name: "role"},
 				},
 			},
-			wantErrText: "exactly one of userRef or groupRef must be set",
+			wantErrText: "exactly one of userRef, groupRef, or serviceAccountRef must be set",
+		},
+		{
+			name: "KeycloakRoleMapping accepts a service account subject alone",
+			object: &KeycloakRoleMapping{
+				ObjectMeta: metav1.ObjectMeta{Name: "mapping-sa-subject", Namespace: namespace},
+				Spec: KeycloakRoleMappingSpec{
+					Subject: RoleMappingSubject{ServiceAccountRef: clientRef},
+					Role:    &RoleDefinition{Name: "role"},
+				},
+			},
+		},
+		{
+			name: "KeycloakRoleMapping rejects a subject with no reference",
+			object: &KeycloakRoleMapping{
+				ObjectMeta: metav1.ObjectMeta{Name: "mapping-no-subject", Namespace: namespace},
+				Spec: KeycloakRoleMappingSpec{
+					Role: &RoleDefinition{Name: "role"},
+				},
+			},
+			wantErrText: "exactly one of userRef, groupRef, or serviceAccountRef must be set",
+		},
+		{
+			name: "KeycloakGroup accepts a parent group alone",
+			object: &KeycloakGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: "group-nested", Namespace: namespace},
+				Spec: KeycloakGroupSpec{
+					Name:           &groupName,
+					ParentGroupRef: &ResourceRef{Name: "parent"},
+					Definition:     runtime.RawExtension{Raw: []byte(`{}`)},
+				},
+			},
+		},
+		{
+			name: "KeycloakGroup rejects a parent group beside a realm reference",
+			object: &KeycloakGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: "group-both", Namespace: namespace},
+				Spec: KeycloakGroupSpec{
+					Name:           &groupName,
+					RealmRef:       &ResourceRef{Name: "realm"},
+					ParentGroupRef: &ResourceRef{Name: "parent"},
+					Definition:     runtime.RawExtension{Raw: []byte(`{}`)},
+				},
+			},
+			wantErrText: "exactly one of realmRef, clusterRealmRef, or parentGroupRef must be set",
+		},
+		{
+			name: "KeycloakGroup rejects no parent reference",
+			object: &KeycloakGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: "group-none", Namespace: namespace},
+				Spec: KeycloakGroupSpec{
+					Name:       &groupName,
+					Definition: runtime.RawExtension{Raw: []byte(`{}`)},
+				},
+			},
+			wantErrText: "exactly one of realmRef, clusterRealmRef, or parentGroupRef must be set",
 		},
 		{
 			name: "RoleDefinition rejects both client selectors",

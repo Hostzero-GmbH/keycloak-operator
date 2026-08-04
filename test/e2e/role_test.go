@@ -117,7 +117,6 @@ func TestKeycloakRoleE2E(t *testing.T) {
 				Namespace: testNamespace,
 			},
 			Spec: keycloakv1beta1.KeycloakRoleSpec{
-				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 				ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
 				Name:       strPtr(roleName),
 				Definition: roleDef,
@@ -232,7 +231,6 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			cr := &keycloakv1beta1.KeycloakRole{
 				ObjectMeta: metav1.ObjectMeta{Name: rn, Namespace: testNamespace},
 				Spec: keycloakv1beta1.KeycloakRoleSpec{
-					RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 					ClientRef:  &keycloakv1beta1.ResourceRef{Name: clientName},
 					Name:       strPtr(rn),
 					Definition: rawJSON(`{}`),
@@ -359,6 +357,44 @@ func TestKeycloakRoleE2E(t *testing.T) {
 			}
 			return len(members) == 2
 		}, timeout, interval, "expected composite member set to shrink to 2 after update")
+	})
+
+	// A client role takes its realm from the client, so pairing clientRef with a
+	// realm ref states the realm twice and is rejected at admission (#129).
+	t.Run("ClientRefWithRealmRefRejected", func(t *testing.T) {
+		roleName := fmt.Sprintf("both-refs-%d", time.Now().UnixNano())
+		role := &keycloakv1beta1.KeycloakRole{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakRoleSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientRef:  &keycloakv1beta1.ResourceRef{Name: "some-client"},
+				Name:       strPtr(roleName),
+				Definition: rawJSON(`{}`),
+			},
+		}
+		err := k8sClient.Create(ctx, role)
+		require.Error(t, err, "combining realmRef and clientRef must be rejected")
+		require.Contains(t, err.Error(), "exactly one of realmRef, clusterRealmRef, or clientRef")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, role) })
+		}
+	})
+
+	// Every parent ref omitted is equally invalid.
+	t.Run("NoParentRefRejected", func(t *testing.T) {
+		roleName := fmt.Sprintf("no-refs-%d", time.Now().UnixNano())
+		role := &keycloakv1beta1.KeycloakRole{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakRoleSpec{
+				Name:       strPtr(roleName),
+				Definition: rawJSON(`{}`),
+			},
+		}
+		err := k8sClient.Create(ctx, role)
+		require.Error(t, err, "a role without any parent ref must be rejected")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, role) })
+		}
 	})
 
 	t.Run("RoleCleanup", func(t *testing.T) {

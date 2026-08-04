@@ -82,8 +82,12 @@ func (r *KeycloakGroupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Get Keycloak client and realm info
 	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, group)
 	if err != nil {
-		RecordError(controllerName, "realm_not_ready")
-		return r.updateStatus(ctx, group, false, "RealmNotReady", err.Error(), "")
+		reason, metric := "RealmNotReady", "realm_not_ready"
+		if group.Spec.ParentGroupRef != nil {
+			reason, metric = "ParentNotReady", "parent_not_ready"
+		}
+		RecordError(controllerName, metric)
+		return r.updateStatus(ctx, group, false, reason, err.Error(), "")
 	}
 
 	// Parse group definition to extract name
@@ -197,20 +201,27 @@ func findTopLevelGroupByName(groups []keycloak.GroupRepresentation, name string)
 	return nil
 }
 
+// maxGroupNestingDepth caps the parentGroupRef walk. Keycloak imposes no limit on
+// nesting; the cap only turns an accidental reference cycle into an error rather
+// than an unbounded walk.
+const maxGroupNestingDepth = 100
+
 func (r *KeycloakGroupReconciler) getKeycloakClientAndRealm(ctx context.Context, group *keycloakv1beta1.KeycloakGroup) (*keycloak.Client, string, error) {
-	// Check if using cluster realm ref
-	if group.Spec.ClusterRealmRef != nil {
-		return r.getKeycloakClientFromClusterRealm(ctx, group.Spec.ClusterRealmRef.Name)
+	// A nested group names no realm of its own; it inherits the one carried by the
+	// root of its parent chain.
+	owner, err := r.resolveRealmOwner(ctx, group)
+	if err != nil {
+		return nil, "", err
 	}
 
-	// Use namespaced realm ref
-	if group.Spec.RealmRef == nil {
-		return nil, "", fmt.Errorf("either realmRef or clusterRealmRef must be specified")
+	// Check if using cluster realm ref
+	if owner.Spec.ClusterRealmRef != nil {
+		return r.getKeycloakClientFromClusterRealm(ctx, owner.Spec.ClusterRealmRef.Name)
 	}
 
 	realmName := types.NamespacedName{
-		Name:      group.Spec.RealmRef.Name,
-		Namespace: group.Namespace,
+		Name:      owner.Spec.RealmRef.Name,
+		Namespace: owner.Namespace,
 	}
 
 	// Get the KeycloakRealm
@@ -231,6 +242,40 @@ func (r *KeycloakGroupReconciler) getKeycloakClientAndRealm(ctx context.Context,
 	// The realm name is the referenced realm's resolved identifier (spec.realmName,
 	// surfaced via status); it is never read from the realm's definition.
 	return kc, realm.Status.RealmName, nil
+}
+
+// resolveRealmOwner walks parentGroupRef upwards and returns the ancestor that
+// carries the realm reference, which for a top-level group is the group itself.
+func (r *KeycloakGroupReconciler) resolveRealmOwner(ctx context.Context, group *keycloakv1beta1.KeycloakGroup) (*keycloakv1beta1.KeycloakGroup, error) {
+	current := group
+	seen := make(map[string]bool, 1)
+
+	for range maxGroupNestingDepth {
+		if current.Spec.ParentGroupRef == nil {
+			if current.Spec.RealmRef == nil && current.Spec.ClusterRealmRef == nil {
+				return nil, fmt.Errorf("KeycloakGroup %s/%s has no realmRef or clusterRealmRef", current.Namespace, current.Name)
+			}
+			return current, nil
+		}
+
+		key := current.Namespace + "/" + current.Name
+		if seen[key] {
+			return nil, fmt.Errorf("parentGroupRef cycle detected at KeycloakGroup %s", key)
+		}
+		seen[key] = true
+
+		parentKey := types.NamespacedName{
+			Name:      current.Spec.ParentGroupRef.Name,
+			Namespace: current.Namespace,
+		}
+		parent := &keycloakv1beta1.KeycloakGroup{}
+		if err := r.Get(ctx, parentKey, parent); err != nil {
+			return nil, fmt.Errorf("failed to get parent KeycloakGroup %s: %w", parentKey, err)
+		}
+		current = parent
+	}
+
+	return nil, fmt.Errorf("parentGroupRef chain from KeycloakGroup %s/%s exceeds %d levels", group.Namespace, group.Name, maxGroupNestingDepth)
 }
 
 func (r *KeycloakGroupReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {

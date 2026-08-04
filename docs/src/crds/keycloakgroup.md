@@ -12,17 +12,18 @@ kind: KeycloakGroup
 metadata:
   name: my-group
 spec:
-  # One of realmRef or clusterRealmRef must be specified
+  # Exactly one of realmRef, clusterRealmRef, or parentGroupRef must be specified
   
-  # Option 1: Reference to a namespaced KeycloakRealm
+  # Option 1: Reference to a namespaced KeycloakRealm (top-level group)
   realmRef:
     name: my-realm
   
-  # Option 2: Reference to a ClusterKeycloakRealm
+  # Option 2: Reference to a ClusterKeycloakRealm (top-level group)
   clusterRealmRef:
     name: my-cluster-realm
   
-  # Optional: Reference to parent group (for nested groups)
+  # Option 3: Reference to a parent group (nested group; the realm comes from
+  # the parent chain, so do not also set realmRef)
   parentGroupRef:
     name: parent-group
   
@@ -102,7 +103,8 @@ spec:
   definition: {}
 ```
 
-Then create child groups:
+Then create child groups. A nested group names only its parent; the realm is
+inherited from the parent chain:
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -110,13 +112,29 @@ kind: KeycloakGroup
 metadata:
   name: team-alpha
 spec:
-  realmRef:
-    name: my-realm
   parentGroupRef:
     name: organization
   name: team-alpha
   definition: {}
 ```
+
+Groups may nest arbitrarily deep. Each level names only its immediate parent, and
+the realm is resolved by following the chain up to the top-level group.
+
+## Parent Reference
+
+A `KeycloakGroup` belongs to one of three parents:
+
+| Reference | Scope | Use Case |
+|-----------|-------|----------|
+| `realmRef` | Top-level group | Group directly under a realm |
+| `clusterRealmRef` | Top-level group | For cluster-scoped realms |
+| `parentGroupRef` | Nested group | Subgroup of another `KeycloakGroup` |
+
+**Note:** Exactly one of these must be specified; setting more than one is rejected.
+
+For a nested group, use `parentGroupRef` alone. The realm is inherited from the
+parent chain, so `realmRef` and `clusterRealmRef` must not be combined with it.
 
 ## Definition Properties
 

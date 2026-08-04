@@ -146,13 +146,16 @@ func newGroupCR(t *testing.T, k8sName, realmName, parentK8sName, kcGroupName str
 			Namespace: testNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakGroupSpec{
-			RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
 			Name:       strPtr(kcGroupName),
 			Definition: rawJSON(string(def)),
 		},
 	}
+	// A nested group inherits its realm from the parent chain, so the two refs are
+	// mutually exclusive.
 	if parentK8sName != "" {
 		g.Spec.ParentGroupRef = &keycloakv1beta1.ResourceRef{Name: parentK8sName}
+	} else {
+		g.Spec.RealmRef = &keycloakv1beta1.ResourceRef{Name: realmName}
 	}
 	return g
 }

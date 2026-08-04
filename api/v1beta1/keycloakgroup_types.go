@@ -6,20 +6,23 @@ import (
 )
 
 // KeycloakGroupSpec defines the desired state of KeycloakGroup
-// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.parentGroupRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or parentGroupRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
 type KeycloakGroupSpec struct {
-	// RealmRef is a reference to a KeycloakRealm
-	// One of realmRef or clusterRealmRef must be specified
+	// RealmRef is a reference to a KeycloakRealm for top-level groups
+	// One of realmRef, clusterRealmRef, or parentGroupRef must be specified
 	// +optional
 	RealmRef *ResourceRef `json:"realmRef,omitempty"`
 
-	// ClusterRealmRef is a reference to a ClusterKeycloakRealm
-	// One of realmRef or clusterRealmRef must be specified
+	// ClusterRealmRef is a reference to a ClusterKeycloakRealm for top-level groups
+	// One of realmRef, clusterRealmRef, or parentGroupRef must be specified
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
-	// ParentGroupRef is a reference to a parent KeycloakGroup (for nested groups)
+	// ParentGroupRef is a reference to a parent KeycloakGroup for nested groups.
+	// The realm is derived from the parent chain, so realmRef and clusterRealmRef
+	// must not be set alongside it.
+	// One of realmRef, clusterRealmRef, or parentGroupRef must be specified
 	// +optional
 	ParentGroupRef *ResourceRef `json:"parentGroupRef,omitempty"`
 
