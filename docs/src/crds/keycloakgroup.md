@@ -118,6 +118,24 @@ spec:
   definition: {}
 ```
 
+Groups may nest arbitrarily deep. Each level names only its immediate parent, and
+the realm is resolved by following the chain up to the top-level group.
+
+## Parent Reference
+
+A `KeycloakGroup` belongs to one of three parents:
+
+| Reference | Scope | Use Case |
+|-----------|-------|----------|
+| `realmRef` | Top-level group | Group directly under a realm |
+| `clusterRealmRef` | Top-level group | For cluster-scoped realms |
+| `parentGroupRef` | Nested group | Subgroup of another `KeycloakGroup` |
+
+**Note:** Exactly one of these must be specified; setting more than one is rejected.
+
+For a nested group, use `parentGroupRef` alone. The realm is inherited from the
+parent chain, so `realmRef` and `clusterRealmRef` must not be combined with it.
+
 ## Definition Properties
 
 | Property | Type | Description |

@@ -112,6 +112,25 @@ For contributors, the layer of a new field follows mechanically:
 - Managed through a separate Keycloak API endpoint rather than the representation `PUT`? → its own CRD (like KeycloakRoleMapping) or a typed spec section — never keys inside `definition`.
 - Part of the Keycloak representation itself? → stays in `definition`, untyped.
 
+### Placement References
+
+**A resource names exactly one parent, and if that parent implies the realm, the realm is not named again.** Setting more than one, or none, is rejected at admission.
+
+| CRD | Placement refs |
+|-----|----------------|
+| `KeycloakRealm`, `ClusterKeycloakRealm` | `instanceRef` / `clusterInstanceRef` |
+| `KeycloakClient`, `KeycloakClientScope`, `KeycloakComponent`, `KeycloakOrganization`, `KeycloakIdentityProvider`, `KeycloakRequiredAction`, `KeycloakAuthenticationFlow` | `realmRef` / `clusterRealmRef` |
+| `KeycloakRole`, `KeycloakUser` | `realmRef` / `clusterRealmRef` / `clientRef` |
+| `KeycloakGroup` | `realmRef` / `clusterRealmRef` / `parentGroupRef` |
+| `KeycloakProtocolMapper` | `clientRef` / `clientScopeRef` |
+| `KeycloakRoleMapping` | `subject.userRef` / `subject.groupRef` / `subject.serviceAccountRef` |
+| `KeycloakIdentityProviderMapper` | `identityProviderRef` |
+| `KeycloakUserCredential` | `userRef` |
+
+Where a ref points at something below the realm, the realm is derived from it: a client role reads the realm of its `clientRef`, and a nested group inherits the realm carried by the root of its `parentGroupRef` chain. Restating it alongside would allow the two to disagree, which is why it is rejected rather than merely redundant.
+
+Secret and ConfigMap references (`clientSecretRef`, `smtpSecretRef`, `configSecretRef`, …) are layer 3, not placement, and are unaffected by this rule.
+
 ### Status Tracking
 
 All resources expose status information:
