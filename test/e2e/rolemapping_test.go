@@ -725,4 +725,88 @@ func TestKeycloakClientRoleMapping(t *testing.T) {
 		require.Equal(t, "view-users", updatedMapping.Status.RoleName)
 		t.Logf("Client role mapping %s is ready, role type: %s", mappingName, updatedMapping.Status.RoleType)
 	})
+
+	// serviceAccountRef is a subject in its own right. It had no e2e coverage, which
+	// is how a CEL rule that required userRef or groupRef alongside it — making the
+	// subject unusable — went unnoticed.
+	t.Run("MapRoleToServiceAccount", func(t *testing.T) {
+		suffix := time.Now().UnixNano()
+		clientName := fmt.Sprintf("sa-subject-client-%d", suffix)
+		clientDef := rawJSON(`{
+			"enabled": true,
+			"protocol": "openid-connect",
+			"publicClient": false,
+			"serviceAccountsEnabled": true
+		}`)
+
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{Name: clientName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
+				Definition: &clientDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() { k8sClient.Delete(ctx, kcClient) })
+
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clientName, Namespace: testNamespace}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		}), "KeycloakClient did not become ready")
+
+		mappingName := fmt.Sprintf("sa-role-mapping-%d", suffix)
+		realmMgmtClientId := "realm-management"
+		roleMapping := &keycloakv1beta1.KeycloakRoleMapping{
+			ObjectMeta: metav1.ObjectMeta{Name: mappingName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+				Subject: keycloakv1beta1.RoleMappingSubject{
+					ServiceAccountRef: &keycloakv1beta1.ResourceRef{Name: clientName},
+				},
+				Role: &keycloakv1beta1.RoleDefinition{
+					Name:     "view-users",
+					ClientID: &realmMgmtClientId,
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, roleMapping), "a serviceAccountRef subject must be accepted on its own")
+		t.Cleanup(func() { k8sClient.Delete(ctx, roleMapping) })
+
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakRoleMapping{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: mappingName, Namespace: testNamespace}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		}), "service account role mapping did not become ready")
+
+		updated := &keycloakv1beta1.KeycloakRoleMapping{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: mappingName, Namespace: testNamespace}, updated))
+		require.Equal(t, "user", updated.Status.SubjectType, "a service account resolves to a user subject")
+		require.Equal(t, "view-users", updated.Status.RoleName)
+	})
+
+	// Two subject refs at once is ambiguous.
+	t.Run("MultipleSubjectRefsRejected", func(t *testing.T) {
+		mappingName := fmt.Sprintf("two-subjects-%d", time.Now().UnixNano())
+		roleMapping := &keycloakv1beta1.KeycloakRoleMapping{
+			ObjectMeta: metav1.ObjectMeta{Name: mappingName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+				Subject: keycloakv1beta1.RoleMappingSubject{
+					UserRef:           &keycloakv1beta1.ResourceRef{Name: "some-user"},
+					ServiceAccountRef: &keycloakv1beta1.ResourceRef{Name: "some-client"},
+				},
+				RoleRef: &keycloakv1beta1.ResourceRef{Name: "some-role"},
+			},
+		}
+		err := k8sClient.Create(ctx, roleMapping)
+		require.Error(t, err, "setting two subject refs must be rejected")
+		require.Contains(t, err.Error(), "exactly one of userRef, groupRef, or serviceAccountRef")
+		if err == nil {
+			t.Cleanup(func() { k8sClient.Delete(ctx, roleMapping) })
+		}
+	})
 }

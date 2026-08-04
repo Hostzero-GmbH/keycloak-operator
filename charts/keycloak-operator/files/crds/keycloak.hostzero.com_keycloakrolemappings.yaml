@@ -140,8 +140,10 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-validations:
-                - message: exactly one of userRef or groupRef must be set
-                  rule: has(self.userRef) != has(self.groupRef)
+                - message: exactly one of userRef, groupRef, or serviceAccountRef
+                    must be set
+                  rule: '(has(self.userRef) ? 1 : 0) + (has(self.groupRef) ? 1 : 0)
+                    + (has(self.serviceAccountRef) ? 1 : 0) == 1'
             required:
             - subject
             type: object

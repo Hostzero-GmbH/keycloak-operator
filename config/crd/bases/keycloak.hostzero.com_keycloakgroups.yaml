@@ -62,8 +62,8 @@ spec:
             properties:
               clusterRealmRef:
                 description: |-
-                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  ClusterRealmRef is a reference to a ClusterKeycloakRealm for top-level groups
+                  One of realmRef, clusterRealmRef, or parentGroupRef must be specified
                 properties:
                   name:
                     description: Name of the cluster-scoped resource
@@ -82,8 +82,11 @@ spec:
                 minLength: 1
                 type: string
               parentGroupRef:
-                description: ParentGroupRef is a reference to a parent KeycloakGroup
-                  (for nested groups)
+                description: |-
+                  ParentGroupRef is a reference to a parent KeycloakGroup for nested groups.
+                  The realm is derived from the parent chain, so realmRef and clusterRealmRef
+                  must not be set alongside it.
+                  One of realmRef, clusterRealmRef, or parentGroupRef must be specified
                 properties:
                   name:
                     description: Name of the resource
@@ -93,8 +96,8 @@ spec:
                 type: object
               realmRef:
                 description: |-
-                  RealmRef is a reference to a KeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  RealmRef is a reference to a KeycloakRealm for top-level groups
+                  One of realmRef, clusterRealmRef, or parentGroupRef must be specified
                 properties:
                   name:
                     description: Name of the resource
@@ -107,8 +110,10 @@ spec:
             - name
             type: object
             x-kubernetes-validations:
-            - message: exactly one of realmRef or clusterRealmRef must be set
-              rule: has(self.realmRef) != has(self.clusterRealmRef)
+            - message: exactly one of realmRef, clusterRealmRef, or parentGroupRef
+                must be set
+              rule: '(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1
+                : 0) + (has(self.parentGroupRef) ? 1 : 0) == 1'
             - message: spec.name is immutable once set
               rule: '!has(oldSelf.name) || self.name == oldSelf.name'
           status:
