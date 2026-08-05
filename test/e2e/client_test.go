@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"testing"
@@ -923,6 +924,196 @@ func TestKeycloakClientE2E(t *testing.T) {
 		require.NoError(t, err, "Client with browserFlowAlias did not become ready")
 		t.Logf("Client %s with browserFlowAlias is ready", clientName)
 	})
+
+	// SAML clients are not modelled by any typed field — spec.definition is the
+	// verbatim ClientRepresentation, so the protocol and its saml.* attributes
+	// reach Keycloak untouched. These cases pin that pass-through down.
+	t.Run("SamlClient", func(t *testing.T) {
+		skipIfNoKeycloakAccess(t)
+		kc := getInternalKeycloakClient(t)
+
+		clientName := fmt.Sprintf("saml-client-%d", time.Now().UnixNano())
+		clientDef := rawJSON(`{
+			"name": "SAML Client",
+			"enabled": true,
+			"protocol": "saml",
+			"redirectUris": ["https://app.example.com/saml/*"],
+			"attributes": {
+				"saml_name_id_format": "username",
+				"saml.assertion.signature": "true"
+			}
+		}`)
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{Name: clientName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
+				Definition: &clientDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() { k8sClient.Delete(ctx, kcClient) })
+
+		clientUUID := waitClientReadyAndGetUUID(t, kcClient)
+
+		current := getSamlClientState(t, kc, realmName, clientUUID)
+		require.Equal(t, "saml", current.Protocol, "protocol must reach Keycloak unchanged")
+		require.Equal(t, "username", current.Attributes["saml_name_id_format"])
+		require.Equal(t, "true", current.Attributes["saml.assertion.signature"])
+		require.Equal(t, []string{"https://app.example.com/saml/*"}, current.RedirectUris)
+		t.Logf("SAML client %s created with %d attributes", clientName, len(current.Attributes))
+	})
+
+	// Keycloak generates signing material of its own for a SAML client. The CR
+	// never mentions it, so an update that carried only the declared attributes
+	// would drop it if Keycloak replaced rather than merged the map.
+	t.Run("SamlClientReReconcile", func(t *testing.T) {
+		skipIfNoKeycloakAccess(t)
+		kc := getInternalKeycloakClient(t)
+
+		clientName := fmt.Sprintf("saml-rereconcile-%d", time.Now().UnixNano())
+		clientDef := rawJSON(`{
+			"enabled": true,
+			"protocol": "saml",
+			"attributes": {"saml_name_id_format": "username"}
+		}`)
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{Name: clientName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
+				Definition: &clientDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() { k8sClient.Delete(ctx, kcClient) })
+
+		clientUUID := waitClientReadyAndGetUUID(t, kcClient)
+
+		initial := getSamlClientState(t, kc, realmName, clientUUID)
+		signingCert := initial.Attributes["saml.signing.certificate"]
+		require.NotEmpty(t, signingCert, "Keycloak should have generated a signing certificate")
+
+		// Change the definition so the operator issues a real update.
+		updated := &keycloakv1beta1.KeycloakClient{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: clientName, Namespace: testNamespace}, updated))
+		newDef := rawJSON(`{
+			"enabled": true,
+			"protocol": "saml",
+			"description": "updated",
+			"attributes": {"saml_name_id_format": "username"}
+		}`)
+		updated.Spec.Definition = &newDef
+		require.NoError(t, k8sClient.Update(ctx, updated))
+
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			return getSamlClientState(t, kc, realmName, clientUUID).Description == "updated", nil
+		}), "description change did not reach Keycloak")
+
+		after := getSamlClientState(t, kc, realmName, clientUUID)
+		require.Equal(t, "saml", after.Protocol, "protocol must survive an update")
+		require.Equal(t, "username", after.Attributes["saml_name_id_format"])
+		require.Equal(t, signingCert, after.Attributes["saml.signing.certificate"],
+			"Keycloak's generated signing certificate must survive an update that does not mention it")
+
+		final := &keycloakv1beta1.KeycloakClient{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: clientName, Namespace: testNamespace}, final))
+		require.True(t, final.Status.Ready, "client should settle back to Ready")
+	})
+
+	// A SAML client is confidential as far as Keycloak is concerned, so it does
+	// have a client secret and clientSecretRef behaves as it does for OIDC.
+	t.Run("SamlClientWithSecretRef", func(t *testing.T) {
+		clientName := fmt.Sprintf("saml-secretref-%d", time.Now().UnixNano())
+		clientDef := rawJSON(`{
+			"enabled": true,
+			"protocol": "saml",
+			"attributes": {"saml_name_id_format": "username"}
+		}`)
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{Name: clientName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name: clientName + "-secret",
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() { k8sClient.Delete(ctx, kcClient) })
+
+		waitClientReadyAndGetUUID(t, kcClient)
+
+		secret := &corev1.Secret{}
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: clientName + "-secret", Namespace: testNamespace}, secret)
+			return err == nil, nil
+		}), "Secret was not created for the SAML client")
+		require.Contains(t, secret.Data, "client-id")
+		require.Contains(t, secret.Data, "client-secret")
+
+		// The second pass reads the Secret back. It must not trip over the
+		// client-secret key the way a genuinely secretless client would.
+		trigger := &keycloakv1beta1.KeycloakClient{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: clientName, Namespace: testNamespace}, trigger))
+		if trigger.Annotations == nil {
+			trigger.Annotations = map[string]string{}
+		}
+		trigger.Annotations["test/reconcile-trigger"] = fmt.Sprintf("%d", time.Now().UnixNano())
+		require.NoError(t, k8sClient.Update(ctx, trigger))
+
+		require.Never(t, func() bool {
+			check := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clientName, Namespace: testNamespace}, check); err != nil {
+				return false
+			}
+			return !check.Status.Ready
+		}, 10*time.Second, time.Second, "SAML client with clientSecretRef must stay Ready across reconciles")
+	})
+}
+
+// waitClientReadyAndGetUUID waits for a KeycloakClient to be Ready and returns the
+// Keycloak-side UUID recorded in its status.
+func waitClientReadyAndGetUUID(t *testing.T, kcClient *keycloakv1beta1.KeycloakClient) string {
+	t.Helper()
+	var uuid string
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		updated := &keycloakv1beta1.KeycloakClient{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      kcClient.Name,
+			Namespace: kcClient.Namespace,
+		}, updated); err != nil {
+			return false, nil
+		}
+		if !updated.Status.Ready || updated.Status.ClientUUID == "" {
+			return false, nil
+		}
+		uuid = updated.Status.ClientUUID
+		return true, nil
+	})
+	require.NoError(t, err, "client %s did not become ready", kcClient.Name)
+	return uuid
+}
+
+// samlClientState is the part of the Keycloak ClientRepresentation these tests
+// assert on. It is read from the raw representation because the operator's
+// ClientRepresentation is a narrow projection that omits protocol and attributes.
+type samlClientState struct {
+	Protocol     string            `json:"protocol"`
+	Description  string            `json:"description"`
+	RedirectUris []string          `json:"redirectUris"`
+	Attributes   map[string]string `json:"attributes"`
+}
+
+func getSamlClientState(t *testing.T, kc *keycloak.Client, realmName, clientUUID string) samlClientState {
+	t.Helper()
+	raw, err := kc.GetClientRaw(ctx, realmName, clientUUID)
+	require.NoError(t, err, "failed to read client %s from Keycloak", clientUUID)
+	var state samlClientState
+	require.NoError(t, json.Unmarshal(raw, &state), "failed to parse client representation")
+	return state
 }
 
 func scopeNames(scopes []keycloak.ClientScopeRepresentation) []string {

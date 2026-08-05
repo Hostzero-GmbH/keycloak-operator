@@ -2,7 +2,7 @@
 
 > **Identifier field:** Set the client ID in the `spec.clientId` field. It is required and immutable once set. A `clientId` inside `spec.definition` is tolerated only when it matches `spec.clientId`; a conflicting value is rejected.
 
-A `KeycloakClient` represents an OAuth2/OIDC client within a Keycloak realm.
+A `KeycloakClient` represents a client within a Keycloak realm. Both OpenID Connect and SAML clients are supported; the protocol is selected with `definition.protocol` and defaults to `openid-connect`.
 
 ## Specification
 
@@ -177,6 +177,41 @@ spec:
     name: my-service-credentials
 ```
 
+### SAML Client
+
+Set `protocol: saml` in the definition. SAML-specific settings are ordinary
+`attributes` entries, exactly as in the Keycloak `ClientRepresentation`:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClient
+metadata:
+  name: my-saml-app
+spec:
+  realmRef:
+    name: my-realm
+  clientId: my-saml-app
+  definition:
+    name: My SAML Application
+    enabled: true
+    protocol: saml
+    redirectUris:
+      - "https://app.example.com/saml/*"
+    attributes:
+      saml_name_id_format: username
+      saml.assertion.signature: "true"
+      saml.client.signature: "false"
+```
+
+Keycloak generates signing material of its own (`saml.signing.certificate`,
+`saml.signing.private.key`) and fills in defaults for attributes the definition
+omits. The operator leaves those alone: it only compares the properties the
+definition declares, and Keycloak merges attributes on update rather than
+replacing them.
+
+Claim mappers for a SAML client are [`KeycloakProtocolMapper`](keycloakprotocolmapper.md)
+resources with `protocol: saml`.
+
 ### Using Pre-existing Secret (Sealed Secrets / External Secrets)
 
 ```yaml
@@ -287,13 +322,21 @@ If the specified alias does not match any authentication flow in the realm, the 
 
 ## Definition Properties
 
-Common properties from [Keycloak ClientRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#ClientRepresentation):
+`definition` is the Keycloak [ClientRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#ClientRepresentation),
+passed through verbatim. Any property Keycloak accepts can be set here, not just
+the ones listed below. Three keys are handled specially: `clientId` belongs in
+`spec.clientId`, `defaultClientScopes` and `optionalClientScopes` are applied
+through Keycloak's scope-assignment endpoints instead of the client update, and
+`protocolMappers` is rejected in favour of
+[KeycloakProtocolMapper](keycloakprotocolmapper.md).
+
+Commonly used properties:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `clientId` | string | Client identifier (required) |
 | `name` | string | Display name |
 | `enabled` | boolean | Whether client is enabled |
+| `protocol` | string | `openid-connect` (default) or `saml` |
 | `publicClient` | boolean | Public or confidential client |
 | `standardFlowEnabled` | boolean | Enable Authorization Code flow |
 | `directAccessGrantsEnabled` | boolean | Enable Resource Owner Password flow |
@@ -301,6 +344,7 @@ Common properties from [Keycloak ClientRepresentation](https://www.keycloak.org/
 | `redirectUris` | string[] | Valid redirect URIs |
 | `webOrigins` | string[] | Allowed CORS origins |
 | `rootUrl` | string | Root URL for relative URIs |
+| `attributes` | map[string]string | Protocol-specific settings, including all `saml.*` options |
 
 ## Short Names
 

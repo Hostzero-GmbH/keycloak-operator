@@ -43,7 +43,7 @@ This operator manages Keycloak instances and their resources (realms, clients, u
 
 - **KeycloakInstance / ClusterKeycloakInstance**: Connection to a Keycloak server
 - **KeycloakRealm / ClusterKeycloakRealm**: Realm configuration
-- **KeycloakClient**: OAuth2/OIDC client configuration
+- **KeycloakClient**: OIDC or SAML client configuration
 - **KeycloakClientScope**: Client scope configuration
 - **KeycloakProtocolMapper**: Token claim mappers
 - **KeycloakUser**: User management
@@ -210,7 +210,7 @@ spec:
 
 ### KeycloakClient
 
-Defines an OAuth2/OIDC client within a realm.
+Defines an OIDC or SAML client within a realm.
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1

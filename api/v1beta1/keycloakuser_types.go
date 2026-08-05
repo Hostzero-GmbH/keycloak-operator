@@ -101,63 +101,6 @@ type UserSecretSpec struct {
 	GeneratePassword *bool `json:"generatePassword,omitempty"`
 }
 
-// UserDefinition represents the Keycloak UserRepresentation
-// This is a subset - use runtime.RawExtension for full flexibility.
-// Role and group assignments are not part of the definition; they live in the
-// typed spec fields (realmRoles, clientRoles, groups).
-type UserDefinition struct {
-	// Username is the unique username
-	// +kubebuilder:validation:Required
-	Username string `json:"username"`
-
-	// Email address
-	// +optional
-	Email string `json:"email,omitempty"`
-
-	// EmailVerified indicates if email is verified
-	// +optional
-	EmailVerified *bool `json:"emailVerified,omitempty"`
-
-	// FirstName of the user
-	// +optional
-	FirstName string `json:"firstName,omitempty"`
-
-	// LastName of the user
-	// +optional
-	LastName string `json:"lastName,omitempty"`
-
-	// Enabled indicates if the user is enabled
-	// +optional
-	Enabled *bool `json:"enabled,omitempty"`
-
-	// RequiredActions for the user
-	// +optional
-	RequiredActions []string `json:"requiredActions,omitempty"`
-
-	// Attributes for custom user attributes
-	// +optional
-	Attributes map[string][]string `json:"attributes,omitempty"`
-
-	// Credentials for the user (e.g., password)
-	// +optional
-	Credentials []CredentialRepresentation `json:"credentials,omitempty"`
-}
-
-// CredentialRepresentation represents user credentials
-type CredentialRepresentation struct {
-	// Type of credential (e.g., "password")
-	// +kubebuilder:validation:Required
-	Type string `json:"type"`
-
-	// Value of the credential
-	// +optional
-	Value string `json:"value,omitempty"`
-
-	// Temporary indicates if the credential is temporary
-	// +optional
-	Temporary *bool `json:"temporary,omitempty"`
-}
-
 // KeycloakUserStatus defines the observed state of KeycloakUser
 type KeycloakUserStatus struct {
 	// Ready indicates if the user is ready

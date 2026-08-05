@@ -50,15 +50,14 @@
    spec:
      realmRef:
        name: my-realm
+     clientId: my-app
      definition:
-       clientId: my-app
        enabled: true
        protocol: openid-connect
        publicClient: false
        standardFlowEnabled: true
-     clientSecret:
-       secretName: my-app-credentials
-       key: clientSecret
+     clientSecretRef:
+       name: my-app-credentials
    EOF
 
 5. Check the status of your resources:
