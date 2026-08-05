@@ -31,45 +31,6 @@ type KeycloakOrganizationSpec struct {
 	Definition runtime.RawExtension `json:"definition"`
 }
 
-// OrganizationDefinition represents the Keycloak OrganizationRepresentation
-// This is a subset - use runtime.RawExtension for full flexibility
-type OrganizationDefinition struct {
-	// Name is the organization name (required)
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// Alias is the URL-friendly identifier for the organization
-	// +optional
-	Alias string `json:"alias,omitempty"`
-
-	// Description of the organization
-	// +optional
-	Description string `json:"description,omitempty"`
-
-	// Enabled indicates whether the organization is enabled
-	// +optional
-	Enabled *bool `json:"enabled,omitempty"`
-
-	// Domains associated with the organization
-	// +optional
-	Domains []OrganizationDomain `json:"domains,omitempty"`
-
-	// Attributes for custom organization attributes
-	// +optional
-	Attributes map[string][]string `json:"attributes,omitempty"`
-}
-
-// OrganizationDomain represents a domain associated with an organization
-type OrganizationDomain struct {
-	// Name is the domain name
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// Verified indicates if the domain is verified
-	// +optional
-	Verified bool `json:"verified,omitempty"`
-}
-
 // KeycloakOrganizationStatus defines the observed state of KeycloakOrganization
 type KeycloakOrganizationStatus struct {
 	// Ready indicates if the organization is ready

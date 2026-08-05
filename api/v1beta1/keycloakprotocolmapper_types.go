@@ -31,31 +31,6 @@ type KeycloakProtocolMapperSpec struct {
 	Definition runtime.RawExtension `json:"definition"`
 }
 
-// ProtocolMapperDefinition represents the Keycloak ProtocolMapperRepresentation
-// This is a subset - use runtime.RawExtension for full flexibility
-type ProtocolMapperDefinition struct {
-	// Name is the mapper name (required)
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// Protocol is the protocol (openid-connect or saml)
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=openid-connect;saml
-	Protocol string `json:"protocol"`
-
-	// ProtocolMapper is the mapper type
-	// +kubebuilder:validation:Required
-	ProtocolMapper string `json:"protocolMapper"`
-
-	// ConsentRequired indicates if consent is required
-	// +optional
-	ConsentRequired *bool `json:"consentRequired,omitempty"`
-
-	// Config contains mapper configuration
-	// +optional
-	Config map[string]string `json:"config,omitempty"`
-}
-
 // KeycloakProtocolMapperStatus defines the observed state of KeycloakProtocolMapper
 type KeycloakProtocolMapperStatus struct {
 	// Ready indicates if the protocol mapper is ready

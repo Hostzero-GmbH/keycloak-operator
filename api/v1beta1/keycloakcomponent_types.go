@@ -32,35 +32,6 @@ type KeycloakComponentSpec struct {
 	Definition runtime.RawExtension `json:"definition"`
 }
 
-// ComponentDefinition represents the Keycloak ComponentRepresentation
-// This is a subset - use runtime.RawExtension for full flexibility
-type ComponentDefinition struct {
-	// Name is the component name (required)
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
-
-	// ProviderID is the provider ID (required)
-	// +kubebuilder:validation:Required
-	ProviderID string `json:"providerId"`
-
-	// ProviderType is the provider type (required)
-	// Examples: org.keycloak.storage.UserStorageProvider, org.keycloak.keys.KeyProvider
-	// +kubebuilder:validation:Required
-	ProviderType string `json:"providerType"`
-
-	// ParentID is the parent component ID (usually the realm ID)
-	// +optional
-	ParentId string `json:"parentId,omitempty"`
-
-	// SubType is an optional subtype
-	// +optional
-	SubType string `json:"subType,omitempty"`
-
-	// Config contains component configuration
-	// +optional
-	Config map[string][]string `json:"config,omitempty"`
-}
-
 // KeycloakComponentStatus defines the observed state of KeycloakComponent
 type KeycloakComponentStatus struct {
 	// Ready indicates if the component is ready

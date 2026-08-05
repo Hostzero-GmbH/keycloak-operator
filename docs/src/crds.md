@@ -46,7 +46,7 @@ KeycloakInstance / ClusterKeycloakInstance
 
 | CRD | Description | Parent |
 |-----|-------------|--------|
-| [KeycloakClient](./crds/keycloakclient.md) | OAuth2/OIDC client | KeycloakRealm |
+| [KeycloakClient](./crds/keycloakclient.md) | OIDC or SAML client | KeycloakRealm |
 | [KeycloakClientScope](./crds/keycloakclientscope.md) | Client scope configuration | KeycloakRealm |
 | [KeycloakProtocolMapper](./crds/keycloakprotocolmapper.md) | Token claim mappers | KeycloakClient or KeycloakClientScope |
 
