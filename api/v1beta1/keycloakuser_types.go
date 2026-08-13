@@ -63,13 +63,10 @@ type KeycloakUserSpec struct {
 	// +optional
 	Groups *[]string `json:"groups,omitempty"`
 
-	// InitialPassword sets the initial password for the user (only on creation)
+	// InitialPassword sets the initial password for the user (only on creation).
+	// For managed credentials stored in a Kubernetes secret, use KeycloakUserCredential.
 	// +optional
 	InitialPassword *InitialPassword `json:"initialPassword,omitempty"`
-
-	// UserSecret configures where to store user credentials
-	// +optional
-	UserSecret *UserSecretSpec `json:"userSecret,omitempty"`
 }
 
 // InitialPassword defines the initial password for a user
@@ -80,25 +77,6 @@ type InitialPassword struct {
 	// Temporary indicates if the user must change password on first login
 	// +optional
 	Temporary bool `json:"temporary,omitempty"`
-}
-
-// UserSecretSpec defines where to store user credentials
-type UserSecretSpec struct {
-	// SecretName is the name of the Kubernetes secret to create
-	// +kubebuilder:validation:Required
-	SecretName string `json:"secretName"`
-
-	// UsernameKey is the key for the username in the secret (defaults to "username")
-	// +optional
-	UsernameKey *string `json:"usernameKey,omitempty"`
-
-	// PasswordKey is the key for the password (defaults to "password")
-	// +optional
-	PasswordKey *string `json:"passwordKey,omitempty"`
-
-	// GeneratePassword indicates whether to generate a password
-	// +optional
-	GeneratePassword *bool `json:"generatePassword,omitempty"`
 }
 
 // KeycloakUserStatus defines the observed state of KeycloakUser

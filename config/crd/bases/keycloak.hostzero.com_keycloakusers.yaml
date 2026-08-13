@@ -111,8 +111,9 @@ spec:
                   type: string
                 type: array
               initialPassword:
-                description: InitialPassword sets the initial password for the user
-                  (only on creation)
+                description: |-
+                  InitialPassword sets the initial password for the user (only on creation).
+                  For managed credentials stored in a Kubernetes secret, use KeycloakUserCredential.
                 properties:
                   temporary:
                     description: Temporary indicates if the user must change password
@@ -146,28 +147,6 @@ spec:
                 items:
                   type: string
                 type: array
-              userSecret:
-                description: UserSecret configures where to store user credentials
-                properties:
-                  generatePassword:
-                    description: GeneratePassword indicates whether to generate a
-                      password
-                    type: boolean
-                  passwordKey:
-                    description: PasswordKey is the key for the password (defaults
-                      to "password")
-                    type: string
-                  secretName:
-                    description: SecretName is the name of the Kubernetes secret to
-                      create
-                    type: string
-                  usernameKey:
-                    description: UsernameKey is the key for the username in the secret
-                      (defaults to "username")
-                    type: string
-                required:
-                - secretName
-                type: object
               username:
                 description: |-
                   Username is the username in Keycloak. Required for regular realm users;

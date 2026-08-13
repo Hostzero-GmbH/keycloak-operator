@@ -50,14 +50,9 @@ spec:
   initialPassword:
     value: "temporary-password"
     temporary: true  # User must change on first login
-  
-  # Optional: Password configuration via Kubernetes Secret
-  userSecret:
-    secretName: john-doe-password
-    usernameKey: username   # Default: username
-    passwordKey: password   # Default: password
-    generatePassword: true  # Auto-generate a password
 ```
+
+To manage credentials in a Kubernetes Secret (including password generation), use [KeycloakUserCredential](./keycloakusercredential.md).
 
 ## Status
 
@@ -100,21 +95,9 @@ spec:
     emailVerified: true
 ```
 
-### User with Credentials
+### User with Managed Credentials
 
-First, create a secret with the password:
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: john-password
-type: Opaque
-stringData:
-  password: "secure-password-123"
-```
-
-Then create the user:
+Create the user, then attach a `KeycloakUserCredential` that generates a password, stores it in a Secret, and syncs it into Keycloak:
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -131,9 +114,20 @@ spec:
     lastName: Doe
     enabled: true
     emailVerified: true
+---
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakUserCredential
+metadata:
+  name: john-doe-credential
+spec:
+  userRef:
+    name: john-doe
   userSecret:
-    secretName: john-password
+    secretName: john-doe-password
+    create: true  # Generate a password and create the secret
 ```
+
+See [KeycloakUserCredential](./keycloakusercredential.md) for existing secrets, key names, and password policy.
 
 ### User with Attributes
 
@@ -291,6 +285,6 @@ The `definition` field is optional for service account users since Keycloak crea
 
 ## Notes
 
-- Passwords are only set on user creation
-- To update a password, delete and recreate the user, or use Keycloak's admin console
+- `spec.initialPassword` is only set on user creation
+- To manage or rotate a password declaratively, use [KeycloakUserCredential](./keycloakusercredential.md)
 - For service account users, the username is automatically set by Keycloak (format: `service-account-<client-id>`)
