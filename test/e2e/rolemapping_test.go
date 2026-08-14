@@ -186,6 +186,64 @@ func TestKeycloakRoleMappingE2E(t *testing.T) {
 		t.Logf("Group role mapping %s is ready", mappingName)
 	})
 
+	// Regression test for https://github.com/Hostzero-GmbH/keycloak-operator/issues/134:
+	// a nested group carries only parentGroupRef, so the mapping controller must
+	// resolve the realm by walking the parent chain instead of failing with
+	// "group ... has no realmRef or clusterRealmRef".
+	t.Run("MapRoleToNestedGroup", func(t *testing.T) {
+		suffix := time.Now().UnixNano()
+
+		parent := newGroupCR(t, fmt.Sprintf("rm-parent-%d", suffix), realmName, "", fmt.Sprintf("rm-parent-%d", suffix), nil)
+		require.NoError(t, k8sClient.Create(ctx, parent))
+		t.Cleanup(func() { k8sClient.Delete(ctx, parent) })
+		waitGroupReadyAndGetID(t, parent)
+
+		child := newGroupCR(t, fmt.Sprintf("rm-child-%d", suffix), realmName, parent.Name, fmt.Sprintf("rm-child-%d", suffix), nil)
+		require.NoError(t, k8sClient.Create(ctx, child))
+		t.Cleanup(func() { k8sClient.Delete(ctx, child) })
+		childID := waitGroupReadyAndGetID(t, child)
+
+		mappingName := fmt.Sprintf("uma-auth-to-nested-%d", suffix)
+		roleMapping := &keycloakv1beta1.KeycloakRoleMapping{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      mappingName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+				Subject: keycloakv1beta1.RoleMappingSubject{
+					GroupRef: &keycloakv1beta1.ResourceRef{Name: child.Name},
+				},
+				Role: &keycloakv1beta1.RoleDefinition{
+					Name: "uma_authorization", // Built-in Keycloak realm role
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, roleMapping))
+		t.Cleanup(func() { k8sClient.Delete(ctx, roleMapping) })
+
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakRoleMapping{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      roleMapping.Name,
+				Namespace: roleMapping.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "KeycloakRoleMapping for nested group did not become ready")
+
+		updatedMapping := &keycloakv1beta1.KeycloakRoleMapping{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
+			Name:      roleMapping.Name,
+			Namespace: roleMapping.Namespace,
+		}, updatedMapping))
+		require.Equal(t, "group", updatedMapping.Status.SubjectType)
+		require.Equal(t, "realm", updatedMapping.Status.RoleType)
+		require.Equal(t, childID, updatedMapping.Status.SubjectID, "mapping must target the nested child group")
+		t.Logf("Nested group role mapping %s is ready", mappingName)
+	})
+
 	t.Run("InvalidSubjectRef", func(t *testing.T) {
 		// Create role mapping with non-existent user
 		mappingName := fmt.Sprintf("invalid-mapping-%d", time.Now().UnixNano())

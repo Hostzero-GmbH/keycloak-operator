@@ -209,7 +209,7 @@ const maxGroupNestingDepth = 100
 func (r *KeycloakGroupReconciler) getKeycloakClientAndRealm(ctx context.Context, group *keycloakv1beta1.KeycloakGroup) (*keycloak.Client, string, error) {
 	// A nested group names no realm of its own; it inherits the one carried by the
 	// root of its parent chain.
-	owner, err := r.resolveRealmOwner(ctx, group)
+	owner, err := resolveGroupRealmOwner(ctx, r.Client, group)
 	if err != nil {
 		return nil, "", err
 	}
@@ -244,9 +244,10 @@ func (r *KeycloakGroupReconciler) getKeycloakClientAndRealm(ctx context.Context,
 	return kc, realm.Status.RealmName, nil
 }
 
-// resolveRealmOwner walks parentGroupRef upwards and returns the ancestor that
-// carries the realm reference, which for a top-level group is the group itself.
-func (r *KeycloakGroupReconciler) resolveRealmOwner(ctx context.Context, group *keycloakv1beta1.KeycloakGroup) (*keycloakv1beta1.KeycloakGroup, error) {
+// resolveGroupRealmOwner walks parentGroupRef upwards and returns the ancestor
+// that carries the realm reference, which for a top-level group is the group
+// itself. Shared by every controller that needs to resolve a group's realm.
+func resolveGroupRealmOwner(ctx context.Context, c client.Client, group *keycloakv1beta1.KeycloakGroup) (*keycloakv1beta1.KeycloakGroup, error) {
 	current := group
 	seen := make(map[string]bool, 1)
 
@@ -269,7 +270,7 @@ func (r *KeycloakGroupReconciler) resolveRealmOwner(ctx context.Context, group *
 			Namespace: current.Namespace,
 		}
 		parent := &keycloakv1beta1.KeycloakGroup{}
-		if err := r.Get(ctx, parentKey, parent); err != nil {
+		if err := c.Get(ctx, parentKey, parent); err != nil {
 			return nil, fmt.Errorf("failed to get parent KeycloakGroup %s: %w", parentKey, err)
 		}
 		current = parent

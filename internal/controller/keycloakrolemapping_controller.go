@@ -368,18 +368,20 @@ func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromUser(ctx context.Co
 }
 
 func (r *KeycloakRoleMappingReconciler) getKeycloakClientFromGroup(ctx context.Context, group *keycloakv1beta1.KeycloakGroup) (*keycloak.Client, string, error) {
-	// Check if using cluster realm ref
-	if group.Spec.ClusterRealmRef != nil {
-		return r.getKeycloakClientFromClusterRealm(ctx, group.Spec.ClusterRealmRef.Name)
+	// A nested group carries no realm ref of its own; the realm is held by the
+	// root of its parent chain.
+	owner, err := resolveGroupRealmOwner(ctx, r.Client, group)
+	if err != nil {
+		return nil, "", err
 	}
 
-	// Use namespaced realm ref
-	if group.Spec.RealmRef == nil {
-		return nil, "", fmt.Errorf("group %s has no realmRef or clusterRealmRef", group.Name)
+	// Check if using cluster realm ref
+	if owner.Spec.ClusterRealmRef != nil {
+		return r.getKeycloakClientFromClusterRealm(ctx, owner.Spec.ClusterRealmRef.Name)
 	}
 
 	realm := &keycloakv1beta1.KeycloakRealm{}
-	if err := r.Get(ctx, types.NamespacedName{Name: group.Spec.RealmRef.Name, Namespace: group.Namespace}, realm); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: owner.Spec.RealmRef.Name, Namespace: owner.Namespace}, realm); err != nil {
 		return nil, "", err
 	}
 

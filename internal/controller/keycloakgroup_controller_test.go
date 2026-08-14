@@ -51,18 +51,16 @@ func nestedGroup(name, parent, realm string) *keycloakv1beta1.KeycloakGroup {
 
 // A nested group carries no realm ref, so the realm is only reachable by walking
 // parentGroupRef to the root of the chain.
-func TestResolveRealmOwner_WalksToRoot(t *testing.T) {
+func TestResolveGroupRealmOwner_WalksToRoot(t *testing.T) {
 	root := nestedGroup("root", "", "my-realm")
 	mid := nestedGroup("mid", "root", "")
 	leaf := nestedGroup("leaf", "mid", "")
 
-	r := &KeycloakGroupReconciler{
-		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(root, mid, leaf).Build(),
-	}
+	c := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(root, mid, leaf).Build()
 
-	owner, err := r.resolveRealmOwner(context.Background(), leaf)
+	owner, err := resolveGroupRealmOwner(context.Background(), c, leaf)
 	if err != nil {
-		t.Fatalf("resolveRealmOwner: %v", err)
+		t.Fatalf("resolveGroupRealmOwner: %v", err)
 	}
 	if owner.Name != "root" {
 		t.Errorf("owner = %q, want root", owner.Name)
@@ -72,15 +70,13 @@ func TestResolveRealmOwner_WalksToRoot(t *testing.T) {
 	}
 }
 
-func TestResolveRealmOwner_TopLevelIsItsOwnOwner(t *testing.T) {
+func TestResolveGroupRealmOwner_TopLevelIsItsOwnOwner(t *testing.T) {
 	root := nestedGroup("root", "", "my-realm")
-	r := &KeycloakGroupReconciler{
-		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(root).Build(),
-	}
+	c := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(root).Build()
 
-	owner, err := r.resolveRealmOwner(context.Background(), root)
+	owner, err := resolveGroupRealmOwner(context.Background(), c, root)
 	if err != nil {
-		t.Fatalf("resolveRealmOwner: %v", err)
+		t.Fatalf("resolveGroupRealmOwner: %v", err)
 	}
 	if owner.Name != "root" {
 		t.Errorf("owner = %q, want root", owner.Name)
@@ -88,15 +84,13 @@ func TestResolveRealmOwner_TopLevelIsItsOwnOwner(t *testing.T) {
 }
 
 // A cycle must surface as an error rather than walk until the depth cap.
-func TestResolveRealmOwner_CycleIsRejected(t *testing.T) {
+func TestResolveGroupRealmOwner_CycleIsRejected(t *testing.T) {
 	a := nestedGroup("a", "b", "")
 	b := nestedGroup("b", "a", "")
 
-	r := &KeycloakGroupReconciler{
-		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(a, b).Build(),
-	}
+	c := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(a, b).Build()
 
-	_, err := r.resolveRealmOwner(context.Background(), a)
+	_, err := resolveGroupRealmOwner(context.Background(), c, a)
 	if err == nil {
 		t.Fatal("expected an error for a parentGroupRef cycle, got nil")
 	}
@@ -105,13 +99,11 @@ func TestResolveRealmOwner_CycleIsRejected(t *testing.T) {
 	}
 }
 
-func TestResolveRealmOwner_MissingParentIsReported(t *testing.T) {
+func TestResolveGroupRealmOwner_MissingParentIsReported(t *testing.T) {
 	leaf := nestedGroup("leaf", "gone", "")
-	r := &KeycloakGroupReconciler{
-		Client: fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(leaf).Build(),
-	}
+	c := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(leaf).Build()
 
-	_, err := r.resolveRealmOwner(context.Background(), leaf)
+	_, err := resolveGroupRealmOwner(context.Background(), c, leaf)
 	if err == nil {
 		t.Fatal("expected an error when the parent group is absent, got nil")
 	}
