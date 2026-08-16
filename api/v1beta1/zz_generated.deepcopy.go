@@ -1516,6 +1516,11 @@ func (in *KeycloakIdentityProviderSpec) DeepCopyInto(out *KeycloakIdentityProvid
 		*out = new(ClusterResourceRef)
 		**out = **in
 	}
+	if in.OrganizationRef != nil {
+		in, out := &in.OrganizationRef, &out.OrganizationRef
+		*out = new(ResourceRef)
+		**out = **in
+	}
 	if in.ConfigSecretRef != nil {
 		in, out := &in.ConfigSecretRef, &out.ConfigSecretRef
 		*out = new(IDPConfigSecretRef)

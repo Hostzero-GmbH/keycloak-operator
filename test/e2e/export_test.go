@@ -277,7 +277,8 @@ func TestTransformerRemovesServerManagedFields(t *testing.T) {
 		"id": "12345678-1234-1234-1234-123456789012",
 		"clientId": "my-client",
 		"secret": "super-secret-value",
-		"name": "My Client"
+		"name": "My Client",
+		"protocolMappers": [{"name": "username"}]
 	}`)
 
 	resource, err := transformer.TransformClient(rawClient, "my-client")
@@ -289,6 +290,7 @@ func TestTransformerRemovesServerManagedFields(t *testing.T) {
 
 	assert.NotContains(t, string(objBytes), "12345678-1234-1234-1234-123456789012")
 	assert.NotContains(t, string(objBytes), "super-secret-value")
+	assert.NotContains(t, string(objBytes), "protocolMappers")
 }
 
 func TestFilterIncludeExclude(t *testing.T) {

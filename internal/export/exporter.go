@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
@@ -461,10 +462,13 @@ func (e *Exporter) exportIdentityProviders(ctx context.Context) ([]ExportedResou
 		return nil, fmt.Errorf("failed to get identity providers: %w", err)
 	}
 
+	e.transformer.SetOrganizationNames(e.loadOrganizationNames(ctx))
+
 	var resources []ExportedResource
 	for _, raw := range rawIDPs {
 		var idp struct {
-			Alias string `json:"alias"`
+			Alias          string `json:"alias"`
+			OrganizationID string `json:"organizationId"`
 		}
 		if err := json.Unmarshal(raw, &idp); err != nil {
 			continue
@@ -474,6 +478,11 @@ func (e *Exporter) exportIdentityProviders(ctx context.Context) ([]ExportedResou
 		if err != nil {
 			e.log.Error(err, "Failed to transform identity provider", "alias", idp.Alias)
 			continue
+		}
+		if idp.OrganizationID != "" {
+			if exported, ok := resource.Object.(*keycloakv1beta1.KeycloakIdentityProvider); !ok || exported.Spec.OrganizationRef == nil {
+				e.log.Info("dropping unresolved organizationId on identity provider", "alias", idp.Alias, "organizationId", idp.OrganizationID)
+			}
 		}
 		resources = append(resources, resource)
 
@@ -545,6 +554,33 @@ func (e *Exporter) exportComponents(ctx context.Context) ([]ExportedResource, er
 	}
 
 	return resources, nil
+}
+
+// loadOrganizationNames fetches organizations independently of include/exclude
+// filters so identity-provider export can resolve organizationRef even when
+// organizations themselves are not being exported.
+func (e *Exporter) loadOrganizationNames(ctx context.Context) map[string]string {
+	rawOrgs, err := e.client.GetOrganizationsRaw(ctx, e.opts.Realm)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "Not Found") {
+			return nil
+		}
+		e.log.Error(err, "Failed to list organizations for identity provider organizationRef resolution")
+		return nil
+	}
+
+	names := make(map[string]string, len(rawOrgs))
+	for _, raw := range rawOrgs {
+		var org struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(raw, &org); err != nil || org.ID == "" || org.Name == "" {
+			continue
+		}
+		names[org.ID] = sanitizeName(org.Name)
+	}
+	return names
 }
 
 func (e *Exporter) exportOrganizations(ctx context.Context) ([]ExportedResource, error) {

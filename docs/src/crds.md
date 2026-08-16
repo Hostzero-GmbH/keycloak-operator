@@ -87,7 +87,7 @@ Every CRD that mirrors a Keycloak representation is built from the same four lay
 
 1. **Placement refs** — typed references that anchor the resource in the hierarchy: `realmRef`, `clusterRealmRef`, `clientRef`, `clientScopeRef`, `parentGroupRef`, `identityProviderRef`, …
 2. **Identity** — one typed, required, immutable field naming the object in Keycloak: `realmName`, `clientId`, `username`, `alias`, or `name`. It is mirrored to status and shown as a printer column.
-3. **Kubernetes integration** — typed fields for anything that touches cluster objects or other CRs: Secret references (`clientSecretRef`, `smtpSecretRef`, `configSecretRef`), `initialPassword`, `tokenExchange`. The operator injects these into the payload or applies them through separate Keycloak API calls.
+3. **Kubernetes integration** — typed fields for anything that touches cluster objects or other CRs: Secret references (`clientSecretRef`, `smtpSecretRef`, `configSecretRef`), `organizationRef`, `initialPassword`, `tokenExchange`. The operator injects these into the payload or applies them through separate Keycloak API calls.
 4. **Payload** — `spec.definition`, the verbatim Keycloak API representation. The operator writes into it (identifier, secret merges) but never reads configuration out of it; everything else passes through unchanged. This is what lets you configure any Keycloak property, even ones the CRD does not model.
 
 ```yaml

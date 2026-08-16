@@ -98,6 +98,19 @@ spec:
                   alias via spec.alias.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              organizationRef:
+                description: |-
+                  OrganizationRef references a KeycloakOrganization in the same namespace.
+                  The organization's status.organizationID is injected as organizationId
+                  on the identity provider. Requires Keycloak 26 or later. Do not set
+                  organizationId in definition; use this field instead.
+                properties:
+                  name:
+                    description: Name of the resource
+                    type: string
+                required:
+                - name
+                type: object
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm
@@ -218,6 +231,11 @@ spec:
                 type: object
               message:
                 description: Message contains additional information
+                type: string
+              organizationID:
+                description: |-
+                  OrganizationID is the resolved Keycloak organization ID when
+                  spec.organizationRef is set.
                 type: string
               ready:
                 description: Ready indicates if the identity provider is ready

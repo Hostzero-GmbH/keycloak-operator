@@ -19,6 +19,13 @@ type KeycloakIdentityProviderSpec struct {
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 
+	// OrganizationRef references a KeycloakOrganization in the same namespace.
+	// The organization's status.organizationID is injected as organizationId
+	// on the identity provider. Requires Keycloak 26 or later. Do not set
+	// organizationId in definition; use this field instead.
+	// +optional
+	OrganizationRef *ResourceRef `json:"organizationRef,omitempty"`
+
 	// ConfigSecretRef is a reference to a Kubernetes Secret whose data entries
 	// are merged into definition.config before syncing to Keycloak. This allows
 	// sensitive configuration values (e.g. clientId, clientSecret) to be stored
@@ -125,6 +132,11 @@ type KeycloakIdentityProviderStatus struct {
 	// Alias is the resolved identity provider alias in Keycloak
 	// +optional
 	Alias string `json:"alias,omitempty"`
+
+	// OrganizationID is the resolved Keycloak organization ID when
+	// spec.organizationRef is set.
+	// +optional
+	OrganizationID string `json:"organizationID,omitempty"`
 
 	// TokenExchange contains the observed state of the token-exchange
 	// permission wiring, populated only when spec.tokenExchange is set.

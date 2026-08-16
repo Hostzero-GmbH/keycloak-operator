@@ -310,6 +310,45 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 		t.Logf("TE soft-wait surfaced: %s", updated.Status.TokenExchange.Message)
 	})
 
+	t.Run("RejectsInlineOrganizationID", func(t *testing.T) {
+		idpName := fmt.Sprintf("inline-org-idp-%d", time.Now().UnixNano())
+		idpDef := rawJSON(`{
+			"providerId": "oidc",
+			"enabled": true,
+			"organizationId": "should-be-rejected",
+			"config": {
+				"clientId": "test",
+				"clientSecret": "test",
+				"authorizationUrl": "https://test.example.com/auth",
+				"tokenUrl": "https://test.example.com/token"
+			}
+		}`)
+
+		idp := &keycloakv1beta1.KeycloakIdentityProvider{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      idpName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:      strPtr(idpName),
+				Definition: idpDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, idp))
+		t.Cleanup(func() { _ = k8sClient.Delete(ctx, idp) })
+
+		var updated keycloakv1beta1.KeycloakIdentityProvider
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}, &updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Status == "InvalidDefinition", nil
+		}), "IdP with inline organizationId should be rejected")
+		require.False(t, updated.Status.Ready)
+		require.Contains(t, updated.Status.Message, "organizationRef")
+	})
+
 	t.Run("IdentityProviderCleanup", func(t *testing.T) {
 		idpName := fmt.Sprintf("cleanup-idp-%d", time.Now().UnixNano())
 		idpDef := rawJSON(`{
@@ -364,4 +403,77 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 		require.NoError(t, err, "Identity provider was not deleted")
 		t.Logf("Identity provider %s cleanup verified", idpName)
 	})
+}
+
+func TestKeycloakIdentityProviderOrganizationRefE2E(t *testing.T) {
+	skipIfNoCluster(t)
+
+	instanceName, instanceNS := getOrCreateInstance(t)
+	instance := &keycloakv1beta1.KeycloakInstance{}
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: instanceName, Namespace: instanceNS}, instance))
+	if instance.Status.Version == "" || instance.Status.Version[0:2] < "26" {
+		t.Skip("Organizations require Keycloak 26.0.0 or later")
+	}
+
+	realmName := createTestRealmWithOrganizations(t, instanceName, "idp-org")
+	orgName := fmt.Sprintf("idp-org-%d", time.Now().UnixNano())
+	orgDef := rawJSON(fmt.Sprintf(`{
+		"alias": "%s",
+		"enabled": true,
+		"domains": [{"name": "%s.example.com", "verified": false}]
+	}`, orgName, orgName))
+	org := &keycloakv1beta1.KeycloakOrganization{
+		ObjectMeta: metav1.ObjectMeta{Name: orgName, Namespace: testNamespace},
+		Spec: keycloakv1beta1.KeycloakOrganizationSpec{
+			RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+			Name:       strPtr(orgName),
+			Definition: orgDef,
+		},
+	}
+	require.NoError(t, k8sClient.Create(ctx, org))
+	t.Cleanup(func() { _ = k8sClient.Delete(ctx, org) })
+
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		updated := &keycloakv1beta1.KeycloakOrganization{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, updated); err != nil {
+			return false, nil
+		}
+		return updated.Status.Ready && updated.Status.OrganizationID != "", nil
+	}), "organization did not become ready")
+
+	updatedOrg := &keycloakv1beta1.KeycloakOrganization{}
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, updatedOrg))
+
+	idpName := fmt.Sprintf("org-linked-idp-%d", time.Now().UnixNano())
+	idpDef := rawJSON(`{
+		"displayName": "Org Linked IdP",
+		"providerId": "oidc",
+		"enabled": true,
+		"config": {
+			"clientId": "org-idp",
+			"clientSecret": "org-idp-secret",
+			"authorizationUrl": "https://idp.example.com/auth",
+			"tokenUrl": "https://idp.example.com/token"
+		}
+	}`)
+	idp := &keycloakv1beta1.KeycloakIdentityProvider{
+		ObjectMeta: metav1.ObjectMeta{Name: idpName, Namespace: testNamespace},
+		Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
+			RealmRef:        &keycloakv1beta1.ResourceRef{Name: realmName},
+			OrganizationRef: &keycloakv1beta1.ResourceRef{Name: orgName},
+			Alias:           strPtr(idpName),
+			Definition:      idpDef,
+		},
+	}
+	require.NoError(t, k8sClient.Create(ctx, idp))
+	t.Cleanup(func() { _ = k8sClient.Delete(ctx, idp) })
+
+	var updatedIDP keycloakv1beta1.KeycloakIdentityProvider
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}, &updatedIDP); err != nil {
+			return false, nil
+		}
+		return updatedIDP.Status.Ready && updatedIDP.Status.OrganizationID != "", nil
+	}), "org-linked identity provider did not become ready")
+	require.Equal(t, updatedOrg.Status.OrganizationID, updatedIDP.Status.OrganizationID)
 }

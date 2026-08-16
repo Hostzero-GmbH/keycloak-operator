@@ -206,7 +206,7 @@ var refContracts = []refContract{
 	{
 		file:      "keycloak.hostzero.com_keycloakidentityproviders.yaml",
 		exclusive: []string{"realmRef", "clusterRealmRef"},
-		data:      []string{"configSecretRef"},
+		data:      []string{"configSecretRef", "organizationRef"},
 	},
 	{
 		file:      "keycloak.hostzero.com_keycloakorganizations.yaml",

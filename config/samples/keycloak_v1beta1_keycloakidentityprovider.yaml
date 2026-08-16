@@ -86,3 +86,23 @@ spec:
     allowedClients:
       - example-backend-client
       - example-app-client
+---
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakIdentityProvider
+metadata:
+  name: example-org-idp
+  namespace: default
+spec:
+  realmRef:
+    name: example-realm
+  organizationRef:
+    name: example-org
+  alias: example-org-idp
+  definition:
+    displayName: "Organization SSO"
+    providerId: oidc
+    enabled: true
+    config:
+      authorizationUrl: "https://sso.example.com/oauth/authorize"
+      tokenUrl: "https://sso.example.com/oauth/token"
+      defaultScope: "openid profile email"

@@ -167,10 +167,12 @@ Available resource types for filtering:
 | `groups` | User groups |
 | `roles` | Realm and client roles |
 | `role-mappings` | Role assignments to users/groups |
-| `identity-providers` | External identity providers (SAML, OIDC, etc.) |
+| `identity-providers` | External identity providers (SAML, OIDC, etc.). Org-linked IdPs emit `spec.organizationRef` instead of `definition.organizationId`. |
 | `components` | LDAP federation, key providers, etc. |
 | `protocol-mappers` | Token claim mappers |
 | `organizations` | Organizations (Keycloak 26+) |
+
+Identity providers linked to an organization are exported with `spec.organizationRef` pointing at the generated `KeycloakOrganization` (named from the organization name). The Keycloak `organizationId` UUID is stripped from `definition` so the exported manifest applies without being rejected. If the organization cannot be resolved (for example it was deleted), the field is dropped and a warning is logged.
 
 ### Skip Built-in Resources
 

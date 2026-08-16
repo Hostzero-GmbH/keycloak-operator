@@ -21,11 +21,20 @@ type TransformerOptions struct {
 // Transformer transforms Keycloak JSON to CRD structs
 type Transformer struct {
 	opts TransformerOptions
+	// organizationNames maps Keycloak organization IDs to the Kubernetes
+	// object name that TransformOrganization would emit (sanitizeName(org.name)).
+	organizationNames map[string]string
 }
 
 // NewTransformer creates a new transformer
 func NewTransformer(opts TransformerOptions) *Transformer {
 	return &Transformer{opts: opts}
+}
+
+// SetOrganizationNames supplies a Keycloak organization ID → CR name map used
+// to emit spec.organizationRef on identity providers.
+func (t *Transformer) SetOrganizationNames(names map[string]string) {
+	t.organizationNames = names
 }
 
 // TransformRealm transforms a realm JSON to KeycloakRealm
@@ -46,6 +55,7 @@ func (t *Transformer) TransformRealm(raw json.RawMessage, realmName string) (Exp
 			InstanceRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.InstanceRef,
 			},
+			RealmName:  strPtr(realmName),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -69,8 +79,8 @@ func (t *Transformer) TransformClient(raw json.RawMessage, clientID string) (Exp
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields and secrets
-	definition := removeServerFields(raw, "id", "secret", "registrationAccessToken")
+	// Remove server-managed fields, secrets, and protocolMappers (own CRD).
+	definition := removeServerFields(raw, "id", "secret", "registrationAccessToken", "protocolMappers")
 
 	client := &keycloakv1beta1.KeycloakClient{
 		TypeMeta: metav1.TypeMeta{
@@ -85,6 +95,7 @@ func (t *Transformer) TransformClient(raw json.RawMessage, clientID string) (Exp
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			ClientId:   strPtr(clientID),
 			Definition: &runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -113,8 +124,8 @@ func (t *Transformer) TransformClientScope(raw json.RawMessage) (ExportedResourc
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields
-	definition := removeServerFields(raw, "id")
+	// Remove server-managed fields and protocolMappers (own CRD).
+	definition := removeServerFields(raw, "id", "protocolMappers")
 
 	scope := &keycloakv1beta1.KeycloakClientScope{
 		TypeMeta: metav1.TypeMeta{
@@ -129,6 +140,7 @@ func (t *Transformer) TransformClientScope(raw json.RawMessage) (ExportedResourc
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -150,8 +162,8 @@ func (t *Transformer) TransformUser(raw json.RawMessage) (ExportedResource, erro
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields and sensitive data
-	definition := removeServerFields(raw, "id", "createdTimestamp", "credentials", "federatedIdentities", "access")
+	// Remove server-managed fields, secrets, and role/group keys (typed spec fields).
+	definition := removeServerFields(raw, "id", "createdTimestamp", "credentials", "federatedIdentities", "access", "realmRoles", "clientRoles", "groups")
 
 	user := &keycloakv1beta1.KeycloakUser{
 		TypeMeta: metav1.TypeMeta{
@@ -166,6 +178,7 @@ func (t *Transformer) TransformUser(raw json.RawMessage) (ExportedResource, erro
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			Username:   strPtr(parsed.Username),
 			Definition: &runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -208,6 +221,7 @@ func (t *Transformer) TransformGroup(raw json.RawMessage, parentGroupName string
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -257,6 +271,7 @@ func (t *Transformer) TransformRole(raw json.RawMessage, clientID, clientUUID st
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -279,14 +294,16 @@ func (t *Transformer) TransformRole(raw json.RawMessage, clientID, clientUUID st
 // TransformIdentityProvider transforms an identity provider JSON to KeycloakIdentityProvider
 func (t *Transformer) TransformIdentityProvider(raw json.RawMessage) (ExportedResource, error) {
 	var parsed struct {
-		Alias string `json:"alias"`
+		Alias          string `json:"alias"`
+		OrganizationID string `json:"organizationId"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return ExportedResource{}, err
 	}
 
-	// Remove sensitive config fields
-	definition := removeServerFields(raw, "internalId", "config.clientSecret")
+	// Remove sensitive/server-managed fields. organizationId is a Keycloak UUID
+	// and is expressed as spec.organizationRef instead.
+	definition := removeServerFields(raw, "internalId", "config.clientSecret", "organizationId")
 
 	idp := &keycloakv1beta1.KeycloakIdentityProvider{
 		TypeMeta: metav1.TypeMeta{
@@ -301,8 +318,15 @@ func (t *Transformer) TransformIdentityProvider(raw json.RawMessage) (ExportedRe
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			Alias:      strPtr(parsed.Alias),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
+	}
+
+	if parsed.OrganizationID != "" {
+		if name, ok := t.organizationNames[parsed.OrganizationID]; ok {
+			idp.Spec.OrganizationRef = &keycloakv1beta1.ResourceRef{Name: name}
+		}
 	}
 
 	return ExportedResource{
@@ -338,6 +362,7 @@ func (t *Transformer) TransformIdentityProviderMapper(raw json.RawMessage, alias
 			IdentityProviderRef: keycloakv1beta1.ResourceRef{
 				Name: sanitizeName(alias),
 			},
+			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -385,6 +410,7 @@ func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource,
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -422,6 +448,7 @@ func (t *Transformer) TransformOrganization(raw json.RawMessage) (ExportedResour
 			RealmRef: &keycloakv1beta1.ResourceRef{
 				Name: t.opts.RealmRef,
 			},
+			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -467,6 +494,7 @@ func (t *Transformer) TransformProtocolMapper(raw json.RawMessage, clientID, sco
 			Namespace: t.opts.TargetNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakProtocolMapperSpec{
+			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
@@ -606,4 +634,8 @@ func removeServerFields(raw json.RawMessage, fields ...string) json.RawMessage {
 	}
 
 	return result
+}
+
+func strPtr(s string) *string {
+	return &s
 }

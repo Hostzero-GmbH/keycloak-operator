@@ -169,6 +169,10 @@ kubectl get kcorg
 
 Reconciliation is idempotent. On each periodic resync the operator fetches the current organization from Keycloak and compares it against the spec; the update PUT is skipped when they already match, so an unchanged organization does not generate redundant writes or log noise. `domains[].verified` is set by Keycloak on read and is ignored in the comparison, so leaving it unset (or out of sync with the server) does not trigger a perpetual update loop.
 
+## Linking Identity Providers
+
+To map an identity provider exclusively to this organization, set `organizationRef` on the [KeycloakIdentityProvider](./keycloakidentityprovider.md) to this CR's name. The operator injects `status.organizationID` into the identity provider; do not copy the ID by hand.
+
 ## Notes
 
 - Organizations are immutable by ID - once created, the `id` field cannot be changed

@@ -31,6 +31,7 @@ type KeycloakIdentityProviderReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakidentityproviders,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakidentityproviders/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakidentityproviders/finalizers,verbs=update
+// +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakorganizations,verbs=get;list;watch
 
 // Reconcile handles KeycloakIdentityProvider reconciliation
 func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -99,13 +100,18 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		return r.updateStatus(ctx, idp, false, "RealmNotReady", err.Error(), "")
 	}
 
-	// Parse identity provider definition to extract alias
+	// Parse identity provider definition to extract alias and reject inline organizationId
 	var idpDef struct {
-		Alias string `json:"alias"`
+		Alias          string `json:"alias"`
+		OrganizationID string `json:"organizationId"`
 	}
 	if err := json.Unmarshal(idp.Spec.Definition.Raw, &idpDef); err != nil {
 		RecordError(controllerName, "invalid_definition")
 		return r.updateStatus(ctx, idp, false, "InvalidDefinition", fmt.Sprintf("Failed to parse identity provider definition: %v", err), "")
+	}
+	if idpDef.OrganizationID != "" {
+		RecordError(controllerName, "invalid_definition")
+		return r.updateStatus(ctx, idp, false, "InvalidDefinition", "definition.organizationId is not supported; use spec.organizationRef", "")
 	}
 
 	// Resolve the alias from spec.alias.
@@ -127,6 +133,20 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 			return r.updateStatus(ctx, idp, false, "ConfigSecretError", err.Error(), alias)
 		}
 		definition = mergeIDPConfig(definition, secretData)
+	}
+
+	orgID, err := r.resolveOrganization(ctx, idp)
+	if err != nil {
+		if isOrganizationRealmMismatch(err) {
+			RecordError(controllerName, "organization_realm_mismatch")
+			return r.updateStatus(ctx, idp, false, "OrganizationRealmMismatch", err.Error(), alias)
+		}
+		RecordError(controllerName, "organization_not_ready")
+		return r.updateStatus(ctx, idp, false, "OrganizationNotReady", err.Error(), alias)
+	}
+	idp.Status.OrganizationID = orgID
+	if orgID != "" {
+		definition = setFieldInDefinition(definition, "organizationId", orgID)
 	}
 
 	// Check if identity provider exists by alias
@@ -202,6 +222,55 @@ func (r *KeycloakIdentityProviderReconciler) getKeycloakClientAndRealm(ctx conte
 	return GetKeycloakClientAndRealmForIDP(ctx, r.Client, r.ClientManager, idp)
 }
 
+type organizationRealmMismatchError struct {
+	org types.NamespacedName
+	idp types.NamespacedName
+}
+
+func (e organizationRealmMismatchError) Error() string {
+	return fmt.Sprintf("KeycloakOrganization %s is not in the same realm as identity provider %s", e.org, e.idp)
+}
+
+func isOrganizationRealmMismatch(err error) bool {
+	_, ok := err.(organizationRealmMismatchError)
+	return ok
+}
+
+// resolveOrganization returns the Keycloak organization ID for spec.organizationRef.
+// An empty string means the IdP is not linked to an organization.
+func (r *KeycloakIdentityProviderReconciler) resolveOrganization(ctx context.Context, idp *keycloakv1beta1.KeycloakIdentityProvider) (string, error) {
+	if idp.Spec.OrganizationRef == nil {
+		return "", nil
+	}
+
+	orgKey := types.NamespacedName{
+		Name:      idp.Spec.OrganizationRef.Name,
+		Namespace: idp.Namespace,
+	}
+	org := &keycloakv1beta1.KeycloakOrganization{}
+	if err := r.Get(ctx, orgKey, org); err != nil {
+		return "", fmt.Errorf("failed to get KeycloakOrganization %s: %w", orgKey, err)
+	}
+	if !org.Status.Ready || org.Status.OrganizationID == "" {
+		return "", fmt.Errorf("KeycloakOrganization %s is not ready", orgKey)
+	}
+	if !sameRealmPlacement(idp, org) {
+		return "", organizationRealmMismatchError{org: orgKey, idp: types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}}
+	}
+	return org.Status.OrganizationID, nil
+}
+
+// sameRealmPlacement reports whether the IdP and organization reference the same realm CR.
+func sameRealmPlacement(idp *keycloakv1beta1.KeycloakIdentityProvider, org *keycloakv1beta1.KeycloakOrganization) bool {
+	if idp.Spec.RealmRef != nil && org.Spec.RealmRef != nil {
+		return idp.Spec.RealmRef.Name == org.Spec.RealmRef.Name
+	}
+	if idp.Spec.ClusterRealmRef != nil && org.Spec.ClusterRealmRef != nil {
+		return idp.Spec.ClusterRealmRef.Name == org.Spec.ClusterRealmRef.Name
+	}
+	return false
+}
+
 func (r *KeycloakIdentityProviderReconciler) deleteIdentityProvider(ctx context.Context, idp *keycloakv1beta1.KeycloakIdentityProvider) error {
 	kc, realmName, err := r.getKeycloakClientAndRealm(ctx, idp)
 	if err != nil {
@@ -250,6 +319,10 @@ func (r *KeycloakIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) 
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findIDPsForSecret),
 		).
+		Watches(
+			&keycloakv1beta1.KeycloakOrganization{},
+			handler.EnqueueRequestsFromMapFunc(r.findIDPsForOrganization),
+		).
 		Complete(r)
 }
 
@@ -265,6 +338,30 @@ func (r *KeycloakIdentityProviderReconciler) findIDPsForSecret(ctx context.Conte
 	var requests []reconcile.Request
 	for _, idp := range idpList.Items {
 		if idp.Spec.ConfigSecretRef != nil && idp.Spec.ConfigSecretRef.Name == secret.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      idp.Name,
+					Namespace: idp.Namespace,
+				},
+			})
+		}
+	}
+	return requests
+}
+
+// findIDPsForOrganization maps a KeycloakOrganization to the identity providers
+// that reference it via organizationRef.
+func (r *KeycloakIdentityProviderReconciler) findIDPsForOrganization(ctx context.Context, obj client.Object) []reconcile.Request {
+	org := obj.(*keycloakv1beta1.KeycloakOrganization)
+
+	var idpList keycloakv1beta1.KeycloakIdentityProviderList
+	if err := r.List(ctx, &idpList, client.InNamespace(org.Namespace)); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, idp := range idpList.Items {
+		if idp.Spec.OrganizationRef != nil && idp.Spec.OrganizationRef.Name == org.Name {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      idp.Name,

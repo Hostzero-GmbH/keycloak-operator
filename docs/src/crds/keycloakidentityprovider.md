@@ -25,6 +25,10 @@ spec:
   # Optional: Reference to a Secret with config values (e.g. clientId, clientSecret)
   configSecretRef:
     name: my-idp-credentials
+
+  # Optional: Link this IdP exclusively to a KeycloakOrganization (Keycloak 26+)
+  organizationRef:
+    name: acme-corp
   
   # Required: Identity provider definition
   alias: my-idp
@@ -42,6 +46,7 @@ status:
   status: "Ready"
   message: "Identity provider synchronized successfully"
   resourcePath: "/admin/realms/my-realm/identity-provider/instances/my-idp"
+  organizationID: "12345678-1234-1234-1234-123456789abc"
   instance:
     instanceRef: my-keycloak
   realm:
@@ -145,6 +150,33 @@ spec:
       wantAssertionsSigned: "true"
       wantAuthnRequestsSigned: "true"
 ```
+
+## Organization Link
+
+To map an identity provider exclusively to an organization, set `organizationRef` to a `KeycloakOrganization` in the same namespace and realm. The operator waits until the organization is ready, then injects its `status.organizationID` as `organizationId` on the identity provider.
+
+This requires **Keycloak 26.0.0 or later**. Do not set `organizationId` inside `definition` — that field is rejected with `Ready=False` and reason `InvalidDefinition`. Organizations created outside the operator can be adopted with a `KeycloakOrganization` CR, then referenced here.
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakIdentityProvider
+metadata:
+  name: acme-sso
+spec:
+  realmRef:
+    name: my-realm
+  organizationRef:
+    name: acme-corp
+  alias: acme-sso
+  definition:
+    providerId: oidc
+    enabled: true
+    config:
+      authorizationUrl: https://sso.acme.example.com/auth
+      tokenUrl: https://sso.acme.example.com/token
+```
+
+The organization and identity provider must reference the same realm CR (`realmRef` or `clusterRealmRef`). A mismatch sets `Ready=False` with reason `OrganizationRealmMismatch`. If the organization is missing or not yet ready, the identity provider soft-waits with reason `OrganizationNotReady`.
 
 ## Config from Secret
 
@@ -268,5 +300,6 @@ kubectl get kcidp
 ## Notes
 
 - Use `configSecretRef` to store sensitive values like `clientId` and `clientSecret` in a Kubernetes Secret (see [Config from Secret](#config-from-secret))
+- Use `organizationRef` to bind the identity provider to a [KeycloakOrganization](./keycloakorganization.md) (Keycloak 26+). Do not set `organizationId` in `definition`.
 - Consider using `syncMode: IMPORT` to import users on first login
 - Mappers must be managed via [KeycloakIdentityProviderMapper](./keycloakidentityprovidermapper.md). Embedding `mappers` inside this CR's `definition` is silently ignored by Keycloak on update — the field is only consumed during realm import.
