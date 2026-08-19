@@ -241,138 +241,19 @@ func (r *KeycloakProtocolMapperReconciler) getFromClientScope(ctx context.Contex
 }
 
 func (r *KeycloakProtocolMapperReconciler) getKeycloakClientAndRealmFromClient(ctx context.Context, kcClient *keycloakv1beta1.KeycloakClient) (*keycloak.Client, string, error) {
-	// Check if using cluster realm ref
-	if kcClient.Spec.ClusterRealmRef != nil {
-		return r.getKeycloakClientFromClusterRealm(ctx, kcClient.Spec.ClusterRealmRef.Name)
-	}
-
-	// Use namespaced realm ref
-	if kcClient.Spec.RealmRef == nil {
-		return nil, "", fmt.Errorf("client has no realmRef or clusterRealmRef")
-	}
-
-	realmName := types.NamespacedName{
-		Name:      kcClient.Spec.RealmRef.Name,
-		Namespace: kcClient.Namespace,
-	}
-
-	realm := &keycloakv1beta1.KeycloakRealm{}
-	if err := r.Get(ctx, realmName, realm); err != nil {
-		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
-	}
-
-	if !realm.Status.Ready || realm.Status.RealmName == "" {
-		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
-	}
-
-	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	res, err := ResolveRealm(ctx, r.Client, r.ClientManager, kcClient.Namespace, kcClient.Spec.RealmRef, kcClient.Spec.ClusterRealmRef)
 	if err != nil {
 		return nil, "", err
 	}
-
-	// The realm name is the referenced realm's resolved identifier (spec.realmName,
-	// surfaced via status); it is never read from the realm's definition.
-	return kc, realm.Status.RealmName, nil
+	return res.Client, res.RealmName, nil
 }
 
 func (r *KeycloakProtocolMapperReconciler) getKeycloakClientAndRealmFromScope(ctx context.Context, scope *keycloakv1beta1.KeycloakClientScope) (*keycloak.Client, string, error) {
-	// Check if using cluster realm ref
-	if scope.Spec.ClusterRealmRef != nil {
-		return r.getKeycloakClientFromClusterRealm(ctx, scope.Spec.ClusterRealmRef.Name)
-	}
-
-	// Use namespaced realm ref
-	if scope.Spec.RealmRef == nil {
-		return nil, "", fmt.Errorf("scope has no realmRef or clusterRealmRef")
-	}
-
-	realmName := types.NamespacedName{
-		Name:      scope.Spec.RealmRef.Name,
-		Namespace: scope.Namespace,
-	}
-
-	realm := &keycloakv1beta1.KeycloakRealm{}
-	if err := r.Get(ctx, realmName, realm); err != nil {
-		return nil, "", fmt.Errorf("failed to get KeycloakRealm %s: %w", realmName, err)
-	}
-
-	if !realm.Status.Ready || realm.Status.RealmName == "" {
-		return nil, "", fmt.Errorf("KeycloakRealm %s is not ready", realmName)
-	}
-
-	kc, _, err := GetKeycloakClientFromRealmInstance(ctx, r.Client, r.ClientManager, realm)
+	res, err := ResolveRealm(ctx, r.Client, r.ClientManager, scope.Namespace, scope.Spec.RealmRef, scope.Spec.ClusterRealmRef)
 	if err != nil {
 		return nil, "", err
 	}
-
-	// The realm name is the referenced realm's resolved identifier (spec.realmName,
-	// surfaced via status); it is never read from the realm's definition.
-	return kc, realm.Status.RealmName, nil
-}
-
-func (r *KeycloakProtocolMapperReconciler) getKeycloakClientFromClusterRealm(ctx context.Context, clusterRealmName string) (*keycloak.Client, string, error) {
-	clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{}
-	if err := r.Get(ctx, types.NamespacedName{Name: clusterRealmName}, clusterRealm); err != nil {
-		return nil, "", fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmName, err)
-	}
-
-	if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
-		return nil, "", fmt.Errorf("ClusterKeycloakRealm %s is not ready", clusterRealmName)
-	}
-
-	realmName := clusterRealm.Status.RealmName
-
-	if clusterRealm.Spec.ClusterInstanceRef != nil {
-		clusterInstance := &keycloakv1beta1.ClusterKeycloakInstance{}
-		if err := r.Get(ctx, types.NamespacedName{Name: clusterRealm.Spec.ClusterInstanceRef.Name}, clusterInstance); err != nil {
-			return nil, "", fmt.Errorf("failed to get ClusterKeycloakInstance %s: %w", clusterRealm.Spec.ClusterInstanceRef.Name, err)
-		}
-
-		if !clusterInstance.Status.Ready {
-			return nil, "", fmt.Errorf("ClusterKeycloakInstance %s is not ready", clusterRealm.Spec.ClusterInstanceRef.Name)
-		}
-
-		cfg, err := GetKeycloakConfigFromClusterInstance(ctx, r.Client, clusterInstance)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get Keycloak config: %w", err)
-		}
-
-		kc := r.ClientManager.GetOrCreateClient(clusterInstanceKey(clusterRealm.Spec.ClusterInstanceRef.Name), cfg)
-		if kc == nil {
-			return nil, "", fmt.Errorf("Keycloak client not available for cluster instance %s", clusterRealm.Spec.ClusterInstanceRef.Name)
-		}
-		return kc, realmName, nil
-	}
-
-	if clusterRealm.Spec.InstanceRef == nil {
-		return nil, "", fmt.Errorf("cluster realm %s has no instanceRef or clusterInstanceRef", clusterRealmName)
-	}
-
-	instanceName := types.NamespacedName{
-		Name:      clusterRealm.Spec.InstanceRef.Name,
-		Namespace: clusterRealm.Spec.InstanceRef.Namespace,
-	}
-
-	instance := &keycloakv1beta1.KeycloakInstance{}
-	if err := r.Get(ctx, instanceName, instance); err != nil {
-		return nil, "", fmt.Errorf("failed to get KeycloakInstance %s: %w", instanceName, err)
-	}
-
-	if !instance.Status.Ready {
-		return nil, "", fmt.Errorf("KeycloakInstance %s is not ready", instanceName)
-	}
-
-	cfg, err := GetKeycloakConfigFromInstance(ctx, r.Client, instance)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get Keycloak config: %w", err)
-	}
-
-	kc := r.ClientManager.GetOrCreateClient(instanceName.String(), cfg)
-	if kc == nil {
-		return nil, "", fmt.Errorf("Keycloak client not available for instance %s", instanceName)
-	}
-
-	return kc, realmName, nil
+	return res.Client, res.RealmName, nil
 }
 
 func (r *KeycloakProtocolMapperReconciler) deleteMapper(ctx context.Context, mapper *keycloakv1beta1.KeycloakProtocolMapper) error {
