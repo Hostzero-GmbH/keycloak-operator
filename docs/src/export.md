@@ -244,9 +244,9 @@ The export command **never exports secrets**. This includes:
 - Client secrets
 - User passwords
 - Identity provider client secrets
-- LDAP bind credentials
+- LDAP bind credentials (`config.bindCredential`)
 
-You must create these secrets separately and configure the CRs to reference them.
+You must create these secrets separately and set the matching reference on the CR (`clientSecretRef`, `configSecretRef`, `userSecret`). Export does not emit `configSecretRef`; wire it after creating the Secret. See [Secret references](./crds/secrets.md).
 
 ### Password Handling
 
@@ -293,6 +293,11 @@ vim manifests/clients/my-app.yaml
 kubectl create secret generic my-app-credentials \
   --namespace keycloak \
   --from-literal=client-secret=your-client-secret
+
+# LDAP bind credentials (then set spec.configSecretRef on the exported Component)
+kubectl create secret generic ldap-credentials \
+  --namespace keycloak \
+  --from-literal=bindCredential=your-ldap-password
 ```
 
 4. **Deploy the operator (if not already installed):**

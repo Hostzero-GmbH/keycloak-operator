@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -294,5 +295,97 @@ func TestKeycloakProtocolMapperE2E(t *testing.T) {
 		})
 		require.NoError(t, err, "Protocol mapper was not deleted")
 		t.Logf("Protocol mapper %s cleanup verified", mapperName)
+	})
+
+	t.Run("ConfigSecretRef", func(t *testing.T) {
+		clientName := fmt.Sprintf("test-client-pm-secret-%d", time.Now().UnixNano())
+		clientDef := rawJSON(`{"enabled": true, "protocol": "openid-connect"}`)
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      clientName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				ClientId:   strPtr(clientName),
+				Definition: &clientDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, kcClient)
+		})
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: kcClient.Name, Namespace: kcClient.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready && updated.Status.ClientUUID != "", nil
+		})
+		require.NoError(t, err, "Client did not become ready")
+
+		mapperName := fmt.Sprintf("secret-claim-%d", time.Now().UnixNano())
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      mapperName + "-creds",
+				Namespace: testNamespace,
+			},
+			StringData: map[string]string{
+				"claim.value": "from-secret",
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, secret))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, secret)
+		})
+
+		mapper := &keycloakv1beta1.KeycloakProtocolMapper{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      mapperName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakProtocolMapperSpec{
+				ClientRef:       &keycloakv1beta1.ResourceRef{Name: clientName},
+				Name:            strPtr(mapperName),
+				ConfigSecretRef: &keycloakv1beta1.ConfigSecretRef{Name: secret.Name},
+				Definition: rawJSON(`{
+					"protocol": "openid-connect",
+					"protocolMapper": "oidc-hardcoded-claim-mapper",
+					"config": {
+						"claim.name": "secret-claim",
+						"id.token.claim": "true",
+						"access.token.claim": "true"
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, mapper))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, mapper)
+		})
+
+		updated := &keycloakv1beta1.KeycloakProtocolMapper{}
+		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: mapper.Name, Namespace: mapper.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "Protocol mapper with configSecretRef did not become ready: %s", updated.Status.Message)
+
+		if canConnectToKeycloak() {
+			readyClient := &keycloakv1beta1.KeycloakClient{}
+			require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
+				Name: kcClient.Name, Namespace: kcClient.Namespace,
+			}, readyClient))
+			kc := getInternalKeycloakClient(t)
+			got, err := kc.GetClientProtocolMapper(ctx, realmName, readyClient.Status.ClientUUID, updated.Status.MapperID)
+			require.NoError(t, err)
+			require.Equal(t, "from-secret", got.Config["claim.value"])
+		}
 	})
 }

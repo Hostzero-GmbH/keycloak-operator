@@ -543,10 +543,11 @@ func GetKeycloakClientAndRealmForIDP(ctx context.Context, c client.Client, clien
 	return res.Client, res.RealmName, nil
 }
 
-// mergeIDPConfig merges the given key-value pairs into definition.config.
-// If the config map doesn't exist yet, it is created. Values in secretData
-// take precedence over existing entries in definition.config.
-func mergeIDPConfig(definition json.RawMessage, secretData map[string]string) json.RawMessage {
+// mergeDefinitionConfig merges secretData into definition.config. If the
+// config map doesn't exist yet, it is created. Values in secretData take
+// precedence over existing entries. When wrapAsList is true (Component
+// representations), each value is stored as a single-element string array.
+func mergeDefinitionConfig(definition json.RawMessage, secretData map[string]string, wrapAsList bool) json.RawMessage {
 	if len(secretData) == 0 {
 		return definition
 	}
@@ -561,7 +562,11 @@ func mergeIDPConfig(definition json.RawMessage, secretData map[string]string) js
 		cfg = make(map[string]interface{})
 	}
 	for k, v := range secretData {
-		cfg[k] = v
+		if wrapAsList {
+			cfg[k] = []string{v}
+		} else {
+			cfg[k] = v
+		}
 	}
 	defMap["config"] = cfg
 

@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
@@ -27,6 +30,7 @@ type KeycloakRequiredActionReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakrequiredactions,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakrequiredactions/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakrequiredactions/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile handles KeycloakRequiredAction reconciliation
 func (r *KeycloakRequiredActionReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -100,6 +104,12 @@ func (r *KeycloakRequiredActionReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	definition := setFieldInDefinition(ra.Spec.Definition.Raw, "alias", alias)
+
+	definition, err = applyConfigSecret(ctx, r.Client, ra.Namespace, ra.Spec.ConfigSecretRef, definition, false)
+	if err != nil {
+		RecordError(controllerName, "secret_error")
+		return r.updateStatus(ctx, ra, false, "ConfigSecretError", err.Error(), alias)
+	}
 
 	// Check if the required action already exists
 	existing, err := kc.GetRequiredAction(ctx, realmName, alias)
@@ -195,5 +205,15 @@ func (r *KeycloakRequiredActionReconciler) updateStatus(ctx context.Context, ra 
 func (r *KeycloakRequiredActionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakRequiredAction{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findRequiredActionsForSecret),
+		).
 		Complete(r)
+}
+
+func (r *KeycloakRequiredActionReconciler) findRequiredActionsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	return findForConfigSecret(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakRequiredActionList{}, func(o client.Object) *keycloakv1beta1.ConfigSecretRef {
+		return o.(*keycloakv1beta1.KeycloakRequiredAction).Spec.ConfigSecretRef
+	})
 }

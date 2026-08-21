@@ -32,7 +32,7 @@ type KeycloakIdentityProviderSpec struct {
 	// in a Secret rather than in plaintext in the CR. Secret values take
 	// precedence over values specified inline in definition.config.
 	// +optional
-	ConfigSecretRef *IDPConfigSecretRef `json:"configSecretRef,omitempty"`
+	ConfigSecretRef *ConfigSecretRef `json:"configSecretRef,omitempty"`
 
 	// TokenExchange configures fine-grained-authz so that exactly the listed
 	// clients (and no others) may exchange tokens with this IdP as
@@ -69,14 +69,6 @@ type IDPTokenExchangeSpec struct {
 	// untouched.
 	// +kubebuilder:validation:Required
 	AllowedClients []string `json:"allowedClients"`
-}
-
-// IDPConfigSecretRef references a Kubernetes Secret containing identity provider
-// configuration values to be merged into definition.config.
-type IDPConfigSecretRef struct {
-	// Name of the Kubernetes Secret
-	// +kubebuilder:validation:Required
-	Name string `json:"name"`
 }
 
 // IDPTokenExchangeStatus records the observed wiring of the token-exchange

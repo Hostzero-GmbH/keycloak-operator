@@ -19,6 +19,16 @@ type ClusterResourceRef struct {
 	Name string `json:"name"`
 }
 
+// ConfigSecretRef references a Kubernetes Secret whose data entries are
+// merged into definition.config before syncing to Keycloak. Secret keys
+// must match Keycloak config names. Secret values take precedence over
+// values specified inline in definition.config.
+type ConfigSecretRef struct {
+	// Name of the Kubernetes Secret in the same namespace as the CR
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+}
+
 // KeycloakRealmSpec defines the desired state of KeycloakRealm
 // +kubebuilder:validation:XValidation:rule="has(self.instanceRef) != has(self.clusterInstanceRef)",message="exactly one of instanceRef or clusterInstanceRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.realmName) || self.realmName == oldSelf.realmName",message="spec.realmName is immutable once set"

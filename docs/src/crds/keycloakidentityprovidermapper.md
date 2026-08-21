@@ -19,6 +19,10 @@ spec:
   identityProviderRef:
     name: oidc
 
+  # Optional: Secret whose keys are merged into definition.config
+  # configSecretRef:
+  #   name: mapper-secrets
+
   # Required: mapper definition (Keycloak IdentityProviderMapperRepresentation).
   # `identityProviderAlias` is auto-injected from the parent IdP and does not
   # need to be set here.
@@ -141,6 +145,7 @@ kubectl get kcidpm
 
 - Mapper names must be unique within an identity provider.
 - All `config` values are strings (including boolean values like `"true"`/`"false"`).
+- Sensitive config values can come from a Secret via `configSecretRef` ([Secret references](./secrets.md)).
 - The `syncMode` config key controls when the mapper runs: `IMPORT` (only on first login), `FORCE` (every login), or `INHERIT` (use the IdP's own setting).
 - Mappers embedded in the `definition` of `KeycloakRealm` or `KeycloakIdentityProvider` are silently dropped by Keycloak on update — always use this CRD to declaratively manage mappers on existing realms.
 - Setting the `keycloak.hostzero.com/preserve-resource: "true"` annotation prevents the operator from deleting the mapper in Keycloak when the CR is removed.

@@ -24,6 +24,12 @@ type KeycloakProtocolMapperSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Name *string `json:"name,omitempty"`
 
+	// ConfigSecretRef is a reference to a Kubernetes Secret whose data entries
+	// are merged into definition.config before syncing to Keycloak. Secret
+	// values take precedence over values specified inline in definition.config.
+	// +optional
+	ConfigSecretRef *ConfigSecretRef `json:"configSecretRef,omitempty"`
+
 	// Definition contains the Keycloak ProtocolMapperRepresentation. Set the
 	// mapper name via spec.name.
 	// +kubebuilder:validation:Required

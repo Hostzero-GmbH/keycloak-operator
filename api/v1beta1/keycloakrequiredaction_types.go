@@ -24,6 +24,12 @@ type KeycloakRequiredActionSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	Alias *string `json:"alias,omitempty"`
 
+	// ConfigSecretRef is a reference to a Kubernetes Secret whose data entries
+	// are merged into definition.config before syncing to Keycloak. Secret
+	// values take precedence over values specified inline in definition.config.
+	// +optional
+	ConfigSecretRef *ConfigSecretRef `json:"configSecretRef,omitempty"`
+
 	// Definition contains the Keycloak RequiredActionProviderRepresentation. Set
 	// the alias via spec.alias.
 	// +kubebuilder:validation:Required

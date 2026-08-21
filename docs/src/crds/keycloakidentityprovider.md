@@ -212,6 +212,8 @@ Every key-value pair in the referenced Secret is merged into `definition.config`
 
 The Secret must exist in the same namespace as the `KeycloakIdentityProvider`. When the Secret changes, the operator automatically re-reconciles the identity provider to pick up the new values.
 
+The same `configSecretRef` field is available on other CRs that have `definition.config`. See [Secret references](./secrets.md).
+
 ## Token Exchange Permission
 
 When this identity provider should also act as a [Trusted Token Issuer](https://www.keycloak.org/securing-apps/token-exchange) — i.e. clients in the realm exchange a JWT from the upstream IdP for a Keycloak token using RFC 8693 Token Exchange with `subject_issuer=<alias>` — Keycloak needs a fine-grained-authz policy listing which clients are allowed to do so. Without that policy, any client in the realm could perform the exchange.
@@ -299,7 +301,7 @@ kubectl get kcidp
 
 ## Notes
 
-- Use `configSecretRef` to store sensitive values like `clientId` and `clientSecret` in a Kubernetes Secret (see [Config from Secret](#config-from-secret))
+- Use `configSecretRef` to store sensitive values like `clientId` and `clientSecret` in a Kubernetes Secret (see [Config from Secret](#config-from-secret) and [Secret references](./secrets.md))
 - Use `organizationRef` to bind the identity provider to a [KeycloakOrganization](./keycloakorganization.md) (Keycloak 26+). Do not set `organizationId` in `definition`.
 - Consider using `syncMode: IMPORT` to import users on first login
 - Mappers must be managed via [KeycloakIdentityProviderMapper](./keycloakidentityprovidermapper.md). Embedding `mappers` inside this CR's `definition` is silently ignored by Keycloak on update — the field is only consumed during realm import.

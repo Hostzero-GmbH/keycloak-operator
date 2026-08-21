@@ -10,6 +10,7 @@
   - [Environment Variables](./configuration/environment.md)
   - [Helm Values](./configuration/helm-values.md)
 - [Custom Resource Definitions](./crds.md)
+  - [Secret References](./crds/secrets.md)
   - [KeycloakInstance](./crds/keycloakinstance.md)
   - [ClusterKeycloakInstance](./crds/clusterkeycloakinstance.md)
   - [KeycloakRealm](./crds/keycloakrealm.md)

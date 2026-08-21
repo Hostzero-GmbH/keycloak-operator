@@ -386,7 +386,7 @@ func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource,
 	}
 
 	// Remove server-managed fields and sensitive config
-	definition := removeServerFields(raw, "id", "parentId")
+	definition := removeServerFields(raw, "id", "parentId", "config.bindCredential")
 
 	// Create unique name combining name and provider type
 	name := parsed.Name

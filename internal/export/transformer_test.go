@@ -78,6 +78,48 @@ func TestTransformIdentityProviderDropsUnresolvedOrganizationID(t *testing.T) {
 	require.False(t, hasOrgID)
 }
 
+func TestTransformComponentStripsBindCredential(t *testing.T) {
+	t.Parallel()
+
+	transformer := NewTransformer(TransformerOptions{
+		TargetNamespace: "ns",
+		RealmRef:        "my-realm",
+	})
+
+	raw := json.RawMessage(`{
+		"id": "comp-id",
+		"parentId": "realm-id",
+		"name": "corporate-ldap",
+		"providerId": "ldap",
+		"providerType": "org.keycloak.storage.UserStorageProvider",
+		"config": {
+			"enabled": ["true"],
+			"bindCredential": ["super-secret"]
+		}
+	}`)
+
+	resource, err := transformer.TransformComponent(raw)
+	require.NoError(t, err)
+
+	component := resource.Object.(*keycloakv1beta1.KeycloakComponent)
+	require.NotNil(t, component.Spec.Name)
+	require.Equal(t, "corporate-ldap", *component.Spec.Name)
+	require.Nil(t, component.Spec.ConfigSecretRef)
+
+	var def map[string]interface{}
+	require.NoError(t, json.Unmarshal(component.Spec.Definition.Raw, &def))
+	_, hasID := def["id"]
+	require.False(t, hasID)
+	_, hasParent := def["parentId"]
+	require.False(t, hasParent)
+	cfg, _ := def["config"].(map[string]interface{})
+	_, hasBind := cfg["bindCredential"]
+	require.False(t, hasBind, "bindCredential must be stripped from exported definition")
+	enabled, ok := cfg["enabled"].([]interface{})
+	require.True(t, ok)
+	require.Equal(t, []interface{}{"true"}, enabled)
+}
+
 func TestTransformOrganizationSetsName(t *testing.T) {
 	t.Parallel()
 

@@ -20,6 +20,10 @@ spec:
   # clientScopeRef:
   #   name: my-scope
   
+  # Optional: Secret whose keys are merged into definition.config
+  # configSecretRef:
+  #   name: mapper-secrets
+
   # Required: Mapper definition
   name: department
   definition:
@@ -160,4 +164,5 @@ kubectl get kcpm
 
 - Mapper names must be unique within the client or client scope
 - The `config` values are all strings (including boolean values like "true"/"false")
+- Sensitive config values can come from a Secret via `configSecretRef` ([Secret references](./secrets.md))
 - Changes to mappers affect all tokens issued after the change

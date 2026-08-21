@@ -2,11 +2,13 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -365,5 +367,131 @@ func TestKeycloakComponentE2E(t *testing.T) {
 		})
 		require.NoError(t, err, "Component was not deleted")
 		t.Logf("Component %s cleanup verified", componentName)
+	})
+
+	t.Run("ConfigSecretRef", func(t *testing.T) {
+		componentName := fmt.Sprintf("ldap-secret-%d", time.Now().UnixNano())
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName + "-creds",
+				Namespace: testNamespace,
+			},
+			StringData: map[string]string{
+				"bindCredential": "ldap-bind-password",
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, secret))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, secret)
+		})
+
+		component := &keycloakv1beta1.KeycloakComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakComponentSpec{
+				RealmRef:        &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:            strPtr(componentName),
+				ConfigSecretRef: &keycloakv1beta1.ConfigSecretRef{Name: secret.Name},
+				Definition: rawJSON(`{
+					"providerId": "ldap",
+					"providerType": "org.keycloak.storage.UserStorageProvider",
+					"config": {
+						"enabled": ["true"],
+						"vendor": ["other"],
+						"connectionUrl": ["ldap://ldap.example.com:389"],
+						"bindDn": ["cn=admin,dc=example,dc=com"],
+						"usersDn": ["ou=users,dc=example,dc=com"],
+						"usernameLDAPAttribute": ["uid"],
+						"rdnLDAPAttribute": ["uid"],
+						"uuidLDAPAttribute": ["entryUUID"],
+						"userObjectClasses": ["inetOrgPerson, organizationalPerson"],
+						"editMode": ["READ_ONLY"]
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, component))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, component)
+		})
+
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      component.Name,
+				Namespace: component.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "LDAP component with configSecretRef did not become ready: %s", updated.Status.Message)
+
+		if canConnectToKeycloak() {
+			kc := getInternalKeycloakClient(t)
+			raw, err := kc.GetComponentRaw(ctx, realmName, updated.Status.ComponentID)
+			require.NoError(t, err)
+			var parsed struct {
+				Config map[string][]string `json:"config"`
+			}
+			require.NoError(t, json.Unmarshal(raw, &parsed))
+			require.NotEmpty(t, parsed.Config["bindCredential"], "bindCredential should be present after secret merge")
+		}
+
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, secret))
+		secret.Data = map[string][]byte{"bindCredential": []byte("rotated-password")}
+		require.NoError(t, k8sClient.Update(ctx, secret))
+		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			check := &keycloakv1beta1.KeycloakComponent{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      component.Name,
+				Namespace: component.Namespace,
+			}, check); err != nil {
+				return false, nil
+			}
+			return check.Status.Ready, nil
+		})
+		require.NoError(t, err, "component should stay Ready after secret update")
+	})
+
+	t.Run("ConfigSecretRefMissingSecret", func(t *testing.T) {
+		componentName := fmt.Sprintf("ldap-missing-secret-%d", time.Now().UnixNano())
+		component := &keycloakv1beta1.KeycloakComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakComponentSpec{
+				RealmRef:        &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:            strPtr(componentName),
+				ConfigSecretRef: &keycloakv1beta1.ConfigSecretRef{Name: componentName + "-missing"},
+				Definition: rawJSON(`{
+					"providerId": "ldap",
+					"providerType": "org.keycloak.storage.UserStorageProvider",
+					"config": {
+						"enabled": ["true"]
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, component))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, component)
+		})
+
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      component.Name,
+				Namespace: component.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Status == "ConfigSecretError", nil
+		})
+		require.NoError(t, err, "missing config secret should set ConfigSecretError, got %q: %s", updated.Status.Status, updated.Status.Message)
+		require.False(t, updated.Status.Ready)
 	})
 }

@@ -176,11 +176,12 @@ func TestMergeSmtpCredentials(t *testing.T) {
 	}
 }
 
-func TestMergeIDPConfig(t *testing.T) {
+func TestMergeDefinitionConfig(t *testing.T) {
 	tests := []struct {
 		name       string
 		definition json.RawMessage
 		secretData map[string]string
+		wrapAsList bool
 		wantSame   bool
 		check      func(t *testing.T, result json.RawMessage)
 	}{
@@ -262,11 +263,49 @@ func TestMergeIDPConfig(t *testing.T) {
 			secretData: map[string]string{"clientId": "test"},
 			wantSame:   true,
 		},
+		{
+			name:       "wrapAsList stores values as string arrays",
+			definition: json.RawMessage(`{"config":{"enabled":["true"],"vendor":["ad"]}}`),
+			secretData: map[string]string{"bindCredential": "s3cret"},
+			wrapAsList: true,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				cfg := m["config"].(map[string]interface{})
+				got, ok := cfg["bindCredential"].([]interface{})
+				if !ok || len(got) != 1 || got[0] != "s3cret" {
+					t.Errorf("bindCredential: got %v, want [s3cret]", cfg["bindCredential"])
+				}
+				enabled := cfg["enabled"].([]interface{})
+				if len(enabled) != 1 || enabled[0] != "true" {
+					t.Errorf("enabled should be preserved, got %v", cfg["enabled"])
+				}
+			},
+		},
+		{
+			name:       "wrapAsList overrides inline list value",
+			definition: json.RawMessage(`{"config":{"bindCredential":["inline"]}}`),
+			secretData: map[string]string{"bindCredential": "from-secret"},
+			wrapAsList: true,
+			check: func(t *testing.T, result json.RawMessage) {
+				var m map[string]interface{}
+				if err := json.Unmarshal(result, &m); err != nil {
+					t.Fatal(err)
+				}
+				cfg := m["config"].(map[string]interface{})
+				got := cfg["bindCredential"].([]interface{})
+				if len(got) != 1 || got[0] != "from-secret" {
+					t.Errorf("bindCredential: got %v, want [from-secret]", cfg["bindCredential"])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mergeIDPConfig(tt.definition, tt.secretData)
+			got := mergeDefinitionConfig(tt.definition, tt.secretData, tt.wrapAsList)
 
 			if tt.wantSame {
 				if string(got) != string(tt.definition) {

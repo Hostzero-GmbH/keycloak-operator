@@ -202,6 +202,7 @@ var refContracts = []refContract{
 	{
 		file:      "keycloak.hostzero.com_keycloakcomponents.yaml",
 		exclusive: []string{"realmRef", "clusterRealmRef"},
+		data:      []string{"configSecretRef"},
 	},
 	{
 		file:      "keycloak.hostzero.com_keycloakidentityproviders.yaml",
@@ -215,6 +216,7 @@ var refContracts = []refContract{
 	{
 		file:      "keycloak.hostzero.com_keycloakrequiredactions.yaml",
 		exclusive: []string{"realmRef", "clusterRealmRef"},
+		data:      []string{"configSecretRef"},
 	},
 
 	// Kinds whose parent can imply the realm, so the parent ref replaces the realm
@@ -236,10 +238,12 @@ var refContracts = []refContract{
 	{
 		file:      "keycloak.hostzero.com_keycloakprotocolmappers.yaml",
 		exclusive: []string{"clientRef", "clientScopeRef"},
+		data:      []string{"configSecretRef"},
 	},
 	{
 		file: "keycloak.hostzero.com_keycloakidentityprovidermappers.yaml",
 		sole: []string{"identityProviderRef"},
+		data: []string{"configSecretRef"},
 	},
 	{
 		file: "keycloak.hostzero.com_keycloakusercredentials.yaml",

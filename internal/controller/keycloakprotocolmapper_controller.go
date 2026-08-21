@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
@@ -28,6 +31,7 @@ type KeycloakProtocolMapperReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakprotocolmappers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakprotocolmappers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakprotocolmappers/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile handles KeycloakProtocolMapper reconciliation
 func (r *KeycloakProtocolMapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -110,6 +114,12 @@ func (r *KeycloakProtocolMapperReconciler) Reconcile(ctx context.Context, req ct
 
 	// Prepare definition with name set
 	definition := setFieldInDefinition(mapper.Spec.Definition.Raw, "name", mapperName)
+
+	definition, err = applyConfigSecret(ctx, r.Client, mapper.Namespace, mapper.Spec.ConfigSecretRef, definition, false)
+	if err != nil {
+		RecordError(controllerName, "secret_error")
+		return r.updateStatus(ctx, mapper, false, "ConfigSecretError", err.Error(), "", "", "", "")
+	}
 
 	// Find existing mapper by name
 	var mapperID string
@@ -322,5 +332,15 @@ func extractIDFromPath(path string) string {
 func (r *KeycloakProtocolMapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakProtocolMapper{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findMappersForSecret),
+		).
 		Complete(r)
+}
+
+func (r *KeycloakProtocolMapperReconciler) findMappersForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	return findForConfigSecret(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakProtocolMapperList{}, func(o client.Object) *keycloakv1beta1.ConfigSecretRef {
+		return o.(*keycloakv1beta1.KeycloakProtocolMapper).Spec.ConfigSecretRef
+	})
 }

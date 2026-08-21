@@ -129,7 +129,7 @@ func TestDriftSkip(t *testing.T) {
 			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
 				RealmRef:        &keycloakv1beta1.ResourceRef{Name: realmName},
 				Alias:           strPtr(idpName),
-				ConfigSecretRef: &keycloakv1beta1.IDPConfigSecretRef{Name: idpSecret.Name},
+				ConfigSecretRef: &keycloakv1beta1.ConfigSecretRef{Name: idpSecret.Name},
 				Definition:      idpDef,
 			},
 		}

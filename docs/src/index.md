@@ -6,7 +6,7 @@ The Keycloak Operator is a Kubernetes operator developed by [**Hostzero**](https
 
 - **Declarative Configuration**: Manage Keycloak resources as Kubernetes Custom Resources
 - **Automatic Synchronization**: Changes to CRs are automatically applied to Keycloak
-- **Secret Management**: Client secrets are automatically synced to Kubernetes Secrets
+- **Secret Management**: Client secrets are synced to Kubernetes Secrets; `configSecretRef` keeps IdP, LDAP, and other config values out of the CR ([Secret references](./crds/secrets.md))
 - **Status Tracking**: Resource status reflects the current state in Keycloak
 - **Finalizers**: Proper cleanup when resources are deleted
 

@@ -24,6 +24,10 @@ spec:
   # clusterRealmRef:
   #   name: my-cluster-realm
 
+  # Optional: Secret whose keys are merged into definition.config
+  # configSecretRef:
+  #   name: action-secrets
+
   # Required: RequiredActionProviderRepresentation
   alias: TERMS_AND_CONDITIONS
   definition:
@@ -192,5 +196,6 @@ kubectl get kcra
 ## Notes
 
 - Most built-in required actions are pre-registered in Keycloak. This CRD will update them if they already exist, or register and configure them if they don't.
+- Custom action config secrets go in `configSecretRef` ([Secret references](./secrets.md)).
 - Deleting the CR deletes the required action from Keycloak (unless the `keycloak.hostzero.com/preserve-resource` annotation is set).
 - The `priority` field controls the order in which required actions are presented to the user.

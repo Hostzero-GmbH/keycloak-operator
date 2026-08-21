@@ -22,6 +22,10 @@ spec:
   # clusterRealmRef:
   #   name: my-cluster-realm
   
+  # Optional: Secret whose keys are merged into definition.config
+  # configSecretRef:
+  #   name: ldap-credentials
+
   # Required: Component definition
   name: corporate-ldap
   definition:
@@ -69,6 +73,8 @@ spec:
   realmRef:
     name: my-realm
   name: corporate-ldap
+  configSecretRef:
+    name: ldap-credentials
   definition:
     providerId: ldap
     providerType: org.keycloak.storage.UserStorageProvider
@@ -81,8 +87,6 @@ spec:
         - "ldap://ldap.example.com:389"
       bindDn:
         - "cn=admin,dc=example,dc=com"
-      bindCredential:
-        - "secret"
       usersDn:
         - "ou=users,dc=example,dc=com"
       userObjectClasses:
@@ -90,6 +94,8 @@ spec:
       editMode:
         - "READ_ONLY"
 ```
+
+The Secret key `bindCredential` is merged into `config` as `["…"]`. See [Secret references](./secrets.md).
 
 ### RSA Key Provider
 
@@ -147,5 +153,5 @@ kubectl get kcco
 ## Notes
 
 - Component configuration uses arrays of strings for all values
-- LDAP credentials should be managed via Kubernetes Secrets (not directly in the CR)
+- Put secrets such as `bindCredential` in a Secret and set `configSecretRef` ([Secret references](./secrets.md))
 - Some components may require specific ordering via `priority` config

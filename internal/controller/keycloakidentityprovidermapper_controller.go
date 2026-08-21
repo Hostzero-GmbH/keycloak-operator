@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -30,6 +31,7 @@ type KeycloakIdentityProviderMapperReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakidentityprovidermappers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakidentityprovidermappers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakidentityprovidermappers/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile handles KeycloakIdentityProviderMapper reconciliation
 func (r *KeycloakIdentityProviderMapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -99,6 +101,12 @@ func (r *KeycloakIdentityProviderMapperReconciler) Reconcile(ctx context.Context
 
 	definition := setFieldInDefinition(mapper.Spec.Definition.Raw, "name", mapperName)
 	definition = setFieldInDefinition(definition, "identityProviderAlias", alias)
+
+	definition, err = applyConfigSecret(ctx, r.Client, mapper.Namespace, mapper.Spec.ConfigSecretRef, definition, false)
+	if err != nil {
+		RecordError(controllerName, "secret_error")
+		return r.updateStatus(ctx, mapper, false, "ConfigSecretError", err.Error(), "", "", alias)
+	}
 
 	// Keep the full representation around to drift-compare below — avoids a
 	// second GET round-trip per mapper per reconcile.
@@ -252,7 +260,17 @@ func (r *KeycloakIdentityProviderMapperReconciler) SetupWithManager(mgr ctrl.Man
 			&keycloakv1beta1.KeycloakIdentityProvider{},
 			handler.EnqueueRequestsFromMapFunc(r.findMappersForIdentityProvider),
 		).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findMappersForSecret),
+		).
 		Complete(r)
+}
+
+func (r *KeycloakIdentityProviderMapperReconciler) findMappersForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	return findForConfigSecret(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakIdentityProviderMapperList{}, func(o client.Object) *keycloakv1beta1.ConfigSecretRef {
+		return o.(*keycloakv1beta1.KeycloakIdentityProviderMapper).Spec.ConfigSecretRef
+	})
 }
 
 // findMappersForIdentityProvider maps a KeycloakIdentityProvider to the

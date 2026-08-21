@@ -62,6 +62,19 @@ spec:
             description: KeycloakIdentityProviderMapperSpec defines the desired state
               of KeycloakIdentityProviderMapper
             properties:
+              configSecretRef:
+                description: |-
+                  ConfigSecretRef is a reference to a Kubernetes Secret whose data entries
+                  are merged into definition.config before syncing to Keycloak. Secret
+                  values take precedence over values specified inline in definition.config.
+                properties:
+                  name:
+                    description: Name of the Kubernetes Secret in the same namespace
+                      as the CR
+                    type: string
+                required:
+                - name
+                type: object
               definition:
                 description: |-
                   Definition contains the Keycloak IdentityProviderMapperRepresentation. The

@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
@@ -43,6 +46,7 @@ type KeycloakComponentReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakcomponents,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakcomponents/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakcomponents/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile handles KeycloakComponent reconciliation
 func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -124,6 +128,12 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	// Prepare definition JSON with name set
 	definition := setFieldInDefinition(component.Spec.Definition.Raw, "name", componentDef.Name)
+
+	definition, err = applyConfigSecret(ctx, r.Client, component.Namespace, component.Spec.ConfigSecretRef, definition, true)
+	if err != nil {
+		RecordError(controllerName, "secret_error")
+		return r.updateStatus(ctx, component, false, "ConfigSecretError", err.Error(), "", componentDef.Name, componentDef.ProviderType)
+	}
 
 	// Set parent ID to realm ID if not specified
 	if componentDef.ParentID == "" {
@@ -336,5 +346,15 @@ func (r *KeycloakComponentReconciler) updateStatus(ctx context.Context, componen
 func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakComponent{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findComponentsForSecret),
+		).
 		Complete(r)
+}
+
+func (r *KeycloakComponentReconciler) findComponentsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	return findForConfigSecret(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) *keycloakv1beta1.ConfigSecretRef {
+		return o.(*keycloakv1beta1.KeycloakComponent).Spec.ConfigSecretRef
+	})
 }
