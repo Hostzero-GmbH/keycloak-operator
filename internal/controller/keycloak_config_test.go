@@ -952,6 +952,31 @@ func TestComponentDefinitionsMatch_InSync(t *testing.T) {
 	}
 }
 
+func TestDefinitionHash_KeyOrderInsensitive(t *testing.T) {
+	a := definitionHash(json.RawMessage(`{"a":"1","config":{"x":["v"],"y":["w"]}}`))
+	b := definitionHash(json.RawMessage(`{"config":{"y":["w"],"x":["v"]},"a":"1"}`))
+	if a != b {
+		t.Error("expected equal hashes for semantically identical definitions")
+	}
+}
+
+func TestDefinitionHash_ValueChange(t *testing.T) {
+	a := definitionHash(json.RawMessage(`{"config":{"bindCredential":["old"]}}`))
+	b := definitionHash(json.RawMessage(`{"config":{"bindCredential":["new"]}}`))
+	if a == b {
+		t.Error("expected different hashes when a config value changes")
+	}
+}
+
+func TestDefinitionHash_InvalidJSON(t *testing.T) {
+	// Invalid JSON is hashed as raw bytes; must not panic and must be stable.
+	a := definitionHash(json.RawMessage(`{invalid`))
+	b := definitionHash(json.RawMessage(`{invalid`))
+	if a == "" || a != b {
+		t.Error("expected stable non-empty hash for invalid JSON")
+	}
+}
+
 func TestIsMaskedConfigValue(t *testing.T) {
 	tests := []struct {
 		name string

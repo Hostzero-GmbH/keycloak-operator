@@ -130,6 +130,10 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 		definition = mergeSmtpCredentials(definition, smtpUser, smtpPassword)
 	}
 
+	// realmDefinitionsMatch cannot see changes to the masked smtpServer.password,
+	// so a hash mismatch against the last applied definition forces the PUT (#143).
+	desiredHash := definitionHash(definition)
+
 	// Check if realm exists
 	existingRealm, err := kc.GetRealm(ctx, realmName)
 	if err != nil {
@@ -139,19 +143,22 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, realm, false, "CreateFailed", fmt.Sprintf("Failed to create realm: %v", err), instanceRef)
 		}
+		realm.Status.LastAppliedDefinitionHash = desiredHash
 		log.Info("realm created successfully", "realm", realmName)
 	} else {
 		// Realm exists — check if update is needed
 		definition = mergeIDIntoDefinition(definition, existingRealm.ID)
 
-		// Fetch current state from Keycloak for drift detection
-		currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmName)
-
-		needsUpdate := true
-		if fetchErr != nil {
-			log.Error(fetchErr, "failed to fetch current realm state, falling through to update")
-		} else if currentRaw != nil {
-			needsUpdate = !realmDefinitionsMatch(definition, currentRaw)
+		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash
+		if !needsUpdate {
+			// Fetch current state from Keycloak for drift detection
+			currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmName)
+			if fetchErr != nil {
+				log.Error(fetchErr, "failed to fetch current realm state, falling through to update")
+				needsUpdate = true
+			} else {
+				needsUpdate = currentRaw == nil || !realmDefinitionsMatch(definition, currentRaw)
+			}
 		}
 
 		if needsUpdate {
@@ -160,6 +167,7 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)
 			}
+			realm.Status.LastAppliedDefinitionHash = desiredHash
 			log.Info("realm updated successfully", "realm", realmName)
 		} else {
 			log.V(1).Info("realm already in sync, skipping update", "realm", realmName)

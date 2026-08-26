@@ -196,6 +196,13 @@ spec:
                     description: InstanceRef is the name of the namespaced instance
                     type: string
                 type: object
+              lastAppliedDefinitionHash:
+                description: |-
+                  LastAppliedDefinitionHash is a hash of the last successfully applied
+                  definition (after SMTP credential merging). Keycloak masks
+                  smtpServer.password on read, so this is the only way to detect that
+                  the desired password changed and must be pushed.
+                type: string
               message:
                 description: Message contains additional information
                 type: string

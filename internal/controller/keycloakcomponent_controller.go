@@ -156,6 +156,8 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.updateStatus(ctx, component, false, "LookupFailed", err.Error(), "", componentDef.Name, componentDef.ProviderType)
 	}
 
+	desiredHash := definitionHash(definition)
+
 	if componentID == "" {
 		// Create component
 		log.Info("creating component", "name", componentDef.Name, "realm", realmName)
@@ -164,14 +166,18 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, component, false, "CreateFailed", fmt.Sprintf("Failed to create component: %v", err), "", "", "")
 		}
+		component.Status.LastAppliedDefinitionHash = desiredHash
 		log.Info("component created successfully", "name", componentDef.Name, "id", componentID)
 	} else {
 		// Component exists — update only when it actually drifted. Every PUT
 		// produces a Keycloak admin event, so an unconditional write floods
-		// admin_event_entity for components that never change.
-		needsUpdate := true
-		if currentRaw, fetchErr := kc.GetComponentRaw(ctx, realmName, componentID); fetchErr == nil {
-			needsUpdate = !componentDefinitionsMatch(definition, currentRaw)
+		// admin_event_entity for components that never change. The masked
+		// comparison cannot see changes to secret config values, so a hash
+		// mismatch against the last applied definition forces the PUT (#143).
+		needsUpdate := desiredHash != component.Status.LastAppliedDefinitionHash
+		if !needsUpdate {
+			currentRaw, fetchErr := kc.GetComponentRaw(ctx, realmName, componentID)
+			needsUpdate = fetchErr != nil || !componentDefinitionsMatch(definition, currentRaw)
 		}
 
 		if needsUpdate {
@@ -181,6 +187,7 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, component, false, "UpdateFailed", fmt.Sprintf("Failed to update component: %v", err), componentID, componentDef.Name, componentDef.ProviderType)
 			}
+			component.Status.LastAppliedDefinitionHash = desiredHash
 			log.Info("component updated successfully", "name", componentDef.Name)
 		} else {
 			log.V(1).Info("component already in sync, skipping update", "name", componentDef.Name, "realm", realmName)

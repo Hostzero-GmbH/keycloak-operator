@@ -130,6 +130,13 @@ type KeycloakIdentityProviderStatus struct {
 	// +optional
 	OrganizationID string `json:"organizationID,omitempty"`
 
+	// LastAppliedDefinitionHash is a hash of the last successfully applied
+	// definition (after secret merging). Keycloak masks config.clientSecret
+	// on read, so this is the only way to detect that the desired secret
+	// changed and must be pushed.
+	// +optional
+	LastAppliedDefinitionHash string `json:"lastAppliedDefinitionHash,omitempty"`
+
 	// TokenExchange contains the observed state of the token-exchange
 	// permission wiring, populated only when spec.tokenExchange is set.
 	// +optional

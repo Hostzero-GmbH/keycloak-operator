@@ -131,6 +131,14 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		definition = mergeSmtpCredentials(definition, smtpUser, smtpPassword)
 	}
 
+	// Hash of the full desired definition. Stored in status only after the
+	// full (non-stripped) definition was applied: realmDefinitionsMatch cannot
+	// see changes to the masked smtpServer.password, so a hash mismatch is
+	// what forces the PUT after an SMTP password rotation (#143). Deferred
+	// flow-binding paths intentionally leave the hash stale so the retry
+	// forces the full PUT.
+	desiredHash := definitionHash(definition)
+
 	// Check if realm exists
 	existingRealm, err := kc.GetRealm(ctx, realmName)
 	if err != nil {
@@ -142,6 +150,9 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return r.updateStatus(ctx, realm, false, "CreateFailed", fmt.Sprintf("Failed to create realm: %v", err), instanceRef)
 		}
 		log.Info("realm created successfully", "realm", realmName)
+		if !flowBindingsDeferred {
+			realm.Status.LastAppliedDefinitionHash = desiredHash
+		}
 		if flowBindingsDeferred {
 			log.Info("deferred realm authentication flow bindings until referenced flows exist", "realm", realmName)
 			realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
@@ -156,14 +167,16 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Realm exists — check if update is needed (drift-detection)
 		definition = mergeIDIntoDefinition(definition, existingRealm.ID)
 
-		// Fetch current state from Keycloak for drift detection
-		currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmName)
-
-		needsUpdate := true
-		if fetchErr != nil {
-			log.Error(fetchErr, "failed to fetch current realm state, falling through to update")
-		} else if currentRaw != nil {
-			needsUpdate = !realmDefinitionsMatch(definition, currentRaw)
+		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash
+		if !needsUpdate {
+			// Fetch current state from Keycloak for drift detection
+			currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmName)
+			if fetchErr != nil {
+				log.Error(fetchErr, "failed to fetch current realm state, falling through to update")
+				needsUpdate = true
+			} else {
+				needsUpdate = currentRaw == nil || !realmDefinitionsMatch(definition, currentRaw)
+			}
 		}
 
 		if needsUpdate {
@@ -191,6 +204,7 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				result.RequeueAfter = ErrorRequeueDelay
 				return result, nil
 			}
+			realm.Status.LastAppliedDefinitionHash = desiredHash
 			log.Info("realm updated successfully", "realm", realmName)
 		} else {
 			log.V(1).Info("realm already in sync, skipping update", "realm", realmName)
