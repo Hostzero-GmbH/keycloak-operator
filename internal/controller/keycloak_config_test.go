@@ -896,3 +896,81 @@ func TestOrganizationDefinitionsMatch_RedirectUrlDrift(t *testing.T) {
 		t.Error("expected no match: desired redirectUrl missing from current")
 	}
 }
+
+func TestComponentDefinitionsMatch_MaskedSecretIgnored(t *testing.T) {
+	// Desired carries the real bindCredential (inline or merged from
+	// configSecretRef); current is masked. Must be treated as equal.
+	desired := json.RawMessage(`{"name":"ldap","providerId":"ldap","config":{"bindDn":["cn=admin"],"bindCredential":["s3cret"]}}`)
+	current := json.RawMessage(`{"id":"x","name":"ldap","providerId":"ldap","config":{"bindDn":["cn=admin"],"bindCredential":["**********"]}}`)
+
+	if !componentDefinitionsMatch(desired, current) {
+		t.Error("expected match: masked config value on the current side must be ignored")
+	}
+}
+
+func TestComponentDefinitionsMatch_VaultPlaceholderIgnored(t *testing.T) {
+	// A Vault SPI placeholder is just as unobservable as a plaintext password:
+	// Keycloak masks it on GET regardless of what was stored.
+	desired := json.RawMessage(`{"name":"ldap","config":{"bindCredential":["${vault.ldap-bind}"]}}`)
+	current := json.RawMessage(`{"id":"x","name":"ldap","config":{"bindCredential":["**********"]}}`)
+
+	if !componentDefinitionsMatch(desired, current) {
+		t.Error("expected match: mask must be ignored for vault placeholders too")
+	}
+}
+
+func TestComponentDefinitionsMatch_MissingSecretPushes(t *testing.T) {
+	// If current has no value for the secret field, the component genuinely
+	// lacks it and the diff must fire so the PUT pushes it.
+	desired := json.RawMessage(`{"name":"ldap","config":{"bindDn":["cn=admin"],"bindCredential":["s3cret"]}}`)
+	current := json.RawMessage(`{"id":"x","name":"ldap","config":{"bindDn":["cn=admin"]}}`)
+
+	if componentDefinitionsMatch(desired, current) {
+		t.Error("expected no match: current has no bindCredential, desired must push it")
+	}
+}
+
+func TestComponentDefinitionsMatch_NonSecretDrift(t *testing.T) {
+	// Drift on a non-secret config field must still be detected even when a
+	// secret field is masked.
+	desired := json.RawMessage(`{"name":"ldap","config":{"bindDn":["cn=new"],"bindCredential":["s3cret"]}}`)
+	current := json.RawMessage(`{"id":"x","name":"ldap","config":{"bindDn":["cn=old"],"bindCredential":["**********"]}}`)
+
+	if componentDefinitionsMatch(desired, current) {
+		t.Error("expected no match: bindDn differs")
+	}
+}
+
+func TestComponentDefinitionsMatch_InSync(t *testing.T) {
+	// No secret fields at all — plain subset comparison must report equality
+	// against Keycloak's extra server-side fields.
+	desired := json.RawMessage(`{"name":"key-provider","config":{"priority":["100"],"enabled":["true"]}}`)
+	current := json.RawMessage(`{"id":"x","name":"key-provider","parentId":"realm-id","config":{"priority":["100"],"enabled":["true"],"active":["true"]}}`)
+
+	if !componentDefinitionsMatch(desired, current) {
+		t.Error("expected match: identical config with extra current-only fields")
+	}
+}
+
+func TestIsMaskedConfigValue(t *testing.T) {
+	tests := []struct {
+		name string
+		val  interface{}
+		want bool
+	}{
+		{"masked list", []interface{}{"**********"}, true},
+		{"masked string", "**********", true},
+		{"real list value", []interface{}{"s3cret"}, false},
+		{"multi-element list", []interface{}{"**********", "**********"}, false},
+		{"empty list", []interface{}{}, false},
+		{"shorter asterisks", "*****", false},
+		{"nil", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isMaskedConfigValue(tt.val); got != tt.want {
+				t.Errorf("isMaskedConfigValue(%v) = %v, want %v", tt.val, got, tt.want)
+			}
+		})
+	}
+}

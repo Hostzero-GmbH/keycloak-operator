@@ -166,14 +166,25 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		}
 		log.Info("component created successfully", "name", componentDef.Name, "id", componentID)
 	} else {
-		// Update component
-		definition = mergeIDIntoDefinition(definition, &componentID)
-		log.Info("updating component", "name", componentDef.Name, "realm", realmName)
-		if err := kc.UpdateComponent(ctx, realmName, componentID, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, component, false, "UpdateFailed", fmt.Sprintf("Failed to update component: %v", err), componentID, componentDef.Name, componentDef.ProviderType)
+		// Component exists — update only when it actually drifted. Every PUT
+		// produces a Keycloak admin event, so an unconditional write floods
+		// admin_event_entity for components that never change.
+		needsUpdate := true
+		if currentRaw, fetchErr := kc.GetComponentRaw(ctx, realmName, componentID); fetchErr == nil {
+			needsUpdate = !componentDefinitionsMatch(definition, currentRaw)
 		}
-		log.Info("component updated successfully", "name", componentDef.Name)
+
+		if needsUpdate {
+			definition = mergeIDIntoDefinition(definition, &componentID)
+			log.Info("updating component", "name", componentDef.Name, "realm", realmName)
+			if err := kc.UpdateComponent(ctx, realmName, componentID, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, component, false, "UpdateFailed", fmt.Sprintf("Failed to update component: %v", err), componentID, componentDef.Name, componentDef.ProviderType)
+			}
+			log.Info("component updated successfully", "name", componentDef.Name)
+		} else {
+			log.V(1).Info("component already in sync, skipping update", "name", componentDef.Name, "realm", realmName)
+		}
 	}
 
 	// Update status

@@ -22,7 +22,7 @@ import (
 
 // TestDriftSkip verifies that controllers gated by definitionsMatch skip the
 // PUT to Keycloak when the desired state already matches what's stored. The
-// three sub-tests cover the comparator paths most likely to silently regress:
+// sub-tests cover the comparator paths most likely to silently regress:
 //
 //   - Unordered string-array equality on a real KeycloakClient with reordered
 //     redirectUris (set-equality path of valuesMatch).
@@ -32,8 +32,11 @@ import (
 //     fires drift.
 //   - The realm smtpServer.password mask wrapper (realmDefinitionsMatch),
 //     same shape as the IdP case but on KeycloakRealm.
+//   - The component config mask wrapper (componentDefinitionsMatch), which
+//     strips any masked config value instead of a hardcoded field name
+//     because secret fields vary by provider (#140).
 //
-// All three assertions rely on the operator's V(1) "already in sync, skipping
+// All assertions rely on the operator's V(1) "already in sync, skipping
 // update" log line as direct evidence the comparator returned true and the
 // PUT was bypassed. The chart's dev values run zap with development:true, so
 // debug-level controller-runtime logs reach the pod stdout.
@@ -231,6 +234,89 @@ func TestDriftSkip(t *testing.T) {
 		final := &keycloakv1beta1.KeycloakRealm{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: realm.Name, Namespace: realm.Namespace}, final))
 		require.True(t, final.Status.Ready, "realm should remain Ready after skipped reconcile")
+	})
+
+	t.Run("KeycloakComponent_SecretMaskNoLoop", func(t *testing.T) {
+		realmName := createTestRealm(t, instanceName, "drift-component")
+
+		componentName := fmt.Sprintf("drift-ldap-%d", time.Now().UnixNano())
+
+		// configSecretRef supplies the real bindCredential. Keycloak masks it
+		// on GET as ["**********"], which is the exact case
+		// componentDefinitionsMatch strips from both sides.
+		componentSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName + "-cfg",
+				Namespace: testNamespace,
+			},
+			StringData: map[string]string{
+				"bindCredential": "drift-ldap-bind-password",
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, componentSecret))
+		t.Cleanup(func() { k8sClient.Delete(ctx, componentSecret) })
+
+		component := &keycloakv1beta1.KeycloakComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakComponentSpec{
+				RealmRef:        &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:            strPtr(componentName),
+				ConfigSecretRef: &keycloakv1beta1.ConfigSecretRef{Name: componentSecret.Name},
+				Definition: rawJSON(`{
+					"providerId": "ldap",
+					"providerType": "org.keycloak.storage.UserStorageProvider",
+					"config": {
+						"enabled": ["true"],
+						"vendor": ["other"],
+						"connectionUrl": ["ldap://ldap.example.com:389"],
+						"bindDn": ["cn=admin,dc=example,dc=com"],
+						"usersDn": ["ou=users,dc=example,dc=com"],
+						"usernameLDAPAttribute": ["uid"],
+						"rdnLDAPAttribute": ["uid"],
+						"uuidLDAPAttribute": ["entryUUID"],
+						"userObjectClasses": ["inetOrgPerson"],
+						"editMode": ["READ_ONLY"]
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, component))
+		t.Cleanup(func() { k8sClient.Delete(ctx, component) })
+
+		waitForComponentReady(t, component.Name, component.Namespace)
+
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: component.Name, Namespace: component.Namespace}, updated))
+		require.NotEmpty(t, updated.Status.ComponentID)
+
+		// Confirm Keycloak is masking bindCredential as expected — that's what
+		// drives the masking branch in componentDefinitionsMatch. If Keycloak
+		// ever changes the mask string, this assertion fails fast.
+		kc := getInternalKeycloakClient(t)
+		raw, err := kc.GetComponentRaw(ctx, realmName, updated.Status.ComponentID)
+		require.NoError(t, err)
+		var componentMap map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &componentMap))
+		cfg, _ := componentMap["config"].(map[string]interface{})
+		require.NotNil(t, cfg, "config map missing on component read-back")
+		require.Equal(t, []interface{}{"**********"}, cfg["bindCredential"],
+			"Keycloak no longer masks component bindCredential as [**********]; componentDefinitionsMatch needs revisiting")
+
+		// Force a reconcile and assert the controller logs the skip line.
+		// Without componentDefinitionsMatch, current would carry ["**********"]
+		// while desired carries the real secret, so naive comparison would
+		// fire drift and PUT every reconcile (#140).
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+
+		assertSkipLogged(t, since, "component already in sync, skipping update", "name", componentName)
+
+		final := &keycloakv1beta1.KeycloakComponent{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: component.Name, Namespace: component.Namespace}, final))
+		require.True(t, final.Status.Ready, "component should remain Ready after skipped reconcile")
 	})
 
 	t.Run("KeycloakRequiredAction_InSyncSkipsUpdate", func(t *testing.T) {
@@ -463,6 +549,19 @@ func waitForRealmReady(t *testing.T, name, namespace string) {
 		return updated.Status.Ready, nil
 	})
 	require.NoError(t, err, "KeycloakRealm %s/%s did not become ready", namespace, name)
+}
+
+// waitForComponentReady waits for a KeycloakComponent to reach Ready status.
+func waitForComponentReady(t *testing.T, name, namespace string) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, updated); err != nil {
+			return false, nil
+		}
+		return updated.Status.Ready, nil
+	})
+	require.NoError(t, err, "KeycloakComponent %s/%s did not become ready", namespace, name)
 }
 
 // waitForRequiredActionReady waits for a KeycloakRequiredAction to reach Ready status.

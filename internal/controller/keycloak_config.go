@@ -664,6 +664,63 @@ func realmDefinitionsMatch(desired, current json.RawMessage) bool {
 	return definitionsMatch(desiredJSON, currentJSON)
 }
 
+// componentDefinitionsMatch compares two ComponentRepresentations for drift-detection,
+// stripping config values that Keycloak masks on GET so they don't cause false-positive
+// drift.
+//
+// Keycloak returns secret component config values (e.g. an LDAP provider's
+// bindCredential) as the literal mask "**********" — wrapped in a single-element
+// list, since component config is map[string][]string. Which config fields are
+// secret depends on the provider, so instead of hardcoding field names, ANY config
+// key whose current value is the mask is stripped from both sides: Keycloak has
+// *some* value stored, we can't observe it, so treat it as equal. If current has
+// no value for the key, it is left intact so the initial PUT pushes the secret.
+func componentDefinitionsMatch(desired, current json.RawMessage) bool {
+	var desiredMap, currentMap map[string]interface{}
+	if err := json.Unmarshal(desired, &desiredMap); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(current, &currentMap); err != nil {
+		return false
+	}
+
+	if cCfg, ok := currentMap["config"].(map[string]interface{}); ok {
+		dCfg, _ := desiredMap["config"].(map[string]interface{})
+		for key, val := range cCfg {
+			if !isMaskedConfigValue(val) {
+				continue
+			}
+			delete(cCfg, key)
+			if dCfg != nil {
+				delete(dCfg, key)
+			}
+		}
+	}
+
+	desiredJSON, err := json.Marshal(desiredMap)
+	if err != nil {
+		return false
+	}
+	currentJSON, err := json.Marshal(currentMap)
+	if err != nil {
+		return false
+	}
+	return definitionsMatch(desiredJSON, currentJSON)
+}
+
+// isMaskedConfigValue reports whether a config value is Keycloak's secret mask,
+// either as a bare string or as a single-element list.
+func isMaskedConfigValue(val interface{}) bool {
+	const mask = "**********"
+	switch v := val.(type) {
+	case string:
+		return v == mask
+	case []interface{}:
+		return len(v) == 1 && v[0] == mask
+	}
+	return false
+}
+
 // organizationDefinitionsMatch reports whether desired matches current,
 // ignoring domains[].verified which Keycloak sets on read.
 func organizationDefinitionsMatch(desired, current json.RawMessage) bool {
