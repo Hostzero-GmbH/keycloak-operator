@@ -84,7 +84,7 @@ func TestDriftSkip(t *testing.T) {
 		since := time.Now().UTC()
 		bumpReconcile(t, updated)
 
-		assertSkipLogged(t, since, "client already in sync, skipping update", "clientId", clientName)
+		assertOperatorLogged(t, since, "client already in sync, skipping update", "clientId", clientName)
 
 		// Sanity check: status stayed Ready, ObservedGeneration tracks Generation.
 		final := &keycloakv1beta1.KeycloakClient{}
@@ -164,11 +164,27 @@ func TestDriftSkip(t *testing.T) {
 		since := time.Now().UTC()
 		bumpReconcile(t, updated)
 
-		assertSkipLogged(t, since, "identity provider already in sync, skipping update", "alias", idpName)
+		assertOperatorLogged(t, since, "identity provider already in sync, skipping update", "alias", idpName)
+
+		// Rotate the clientSecret. Same #143 mechanism as for components:
+		// the mask comparison is blind, the hash forces the PUT.
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: idpSecret.Name, Namespace: testNamespace}, idpSecret))
+		idpSecret.Data = map[string][]byte{
+			"clientId":     []byte("drift-client-id"),
+			"clientSecret": []byte("rotated-client-secret-value"),
+		}
+		since = time.Now().UTC()
+		require.NoError(t, k8sClient.Update(ctx, idpSecret))
+
+		assertOperatorLogged(t, since, "identity provider updated successfully", "alias", idpName)
 
 		final := &keycloakv1beta1.KeycloakIdentityProvider{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}, final))
-		require.True(t, final.Status.Ready, "IdP should remain Ready after skipped reconcile")
+		require.True(t, final.Status.Ready, "IdP should remain Ready after rotation")
+
+		since = time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "identity provider already in sync, skipping update", "alias", idpName)
 	})
 
 	t.Run("KeycloakRealm_SmtpSecretMaskNoLoop", func(t *testing.T) {
@@ -229,11 +245,27 @@ func TestDriftSkip(t *testing.T) {
 		since := time.Now().UTC()
 		bumpReconcile(t, updated)
 
-		assertSkipLogged(t, since, "realm already in sync, skipping update", "realm", realmName)
+		assertOperatorLogged(t, since, "realm already in sync, skipping update", "realm", realmName)
+
+		// Rotate the SMTP password. Same #143 mechanism: the mask comparison
+		// is blind, the hash forces the PUT.
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: smtpSecret.Name, Namespace: testNamespace}, smtpSecret))
+		smtpSecret.Data = map[string][]byte{
+			"user":     []byte("drift-smtp@example.com"),
+			"password": []byte("rotated-smtp-password"),
+		}
+		since = time.Now().UTC()
+		require.NoError(t, k8sClient.Update(ctx, smtpSecret))
+
+		assertOperatorLogged(t, since, "realm updated successfully", "realm", realmName)
 
 		final := &keycloakv1beta1.KeycloakRealm{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: realm.Name, Namespace: realm.Namespace}, final))
-		require.True(t, final.Status.Ready, "realm should remain Ready after skipped reconcile")
+		require.True(t, final.Status.Ready, "realm should remain Ready after rotation")
+
+		since = time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "realm already in sync, skipping update", "realm", realmName)
 	})
 
 	t.Run("KeycloakComponent_SecretMaskNoLoop", func(t *testing.T) {
@@ -312,11 +344,26 @@ func TestDriftSkip(t *testing.T) {
 		since := time.Now().UTC()
 		bumpReconcile(t, updated)
 
-		assertSkipLogged(t, since, "component already in sync, skipping update", "name", componentName)
+		assertOperatorLogged(t, since, "component already in sync, skipping update", "name", componentName)
 
+		// Rotate the secret. The mask comparison cannot see the change
+		// (Keycloak keeps returning ["**********"]), so the PUT must be
+		// forced by the last-applied definition hash (#143).
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: componentSecret.Name, Namespace: testNamespace}, componentSecret))
+		componentSecret.Data = map[string][]byte{"bindCredential": []byte("rotated-bind-password")}
+		since = time.Now().UTC()
+		require.NoError(t, k8sClient.Update(ctx, componentSecret))
+
+		assertOperatorLogged(t, since, "component updated successfully", "name", componentName)
+
+		// Steady state after rotation: hash stored, mask comparison in sync.
 		final := &keycloakv1beta1.KeycloakComponent{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: component.Name, Namespace: component.Namespace}, final))
-		require.True(t, final.Status.Ready, "component should remain Ready after skipped reconcile")
+		require.True(t, final.Status.Ready, "component should remain Ready after rotation")
+
+		since = time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "component already in sync, skipping update", "name", componentName)
 	})
 
 	t.Run("KeycloakRequiredAction_InSyncSkipsUpdate", func(t *testing.T) {
@@ -353,7 +400,7 @@ func TestDriftSkip(t *testing.T) {
 		since := time.Now().UTC()
 		bumpReconcile(t, updated)
 
-		assertSkipLogged(t, since, "required action already in sync, skipping update", "alias", "UPDATE_PASSWORD")
+		assertOperatorLogged(t, since, "required action already in sync, skipping update", "alias", "UPDATE_PASSWORD")
 
 		final := &keycloakv1beta1.KeycloakRequiredAction{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: ra.Name, Namespace: ra.Namespace}, final))
@@ -417,7 +464,7 @@ func TestDriftSkip(t *testing.T) {
 		since := time.Now().UTC()
 		bumpReconcile(t, ready)
 
-		assertSkipLogged(t, since, "organization already in sync, skipping update", "name", orgName)
+		assertOperatorLogged(t, since, "organization already in sync, skipping update", "name", orgName)
 
 		final := &keycloakv1beta1.KeycloakOrganization{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, final))
@@ -445,12 +492,12 @@ func bumpReconcile(t *testing.T, obj client.Object) {
 	time.Sleep(3 * time.Second)
 }
 
-// assertSkipLogged tails the operator pod logs since `since` and asserts the
-// expected V(1) "already in sync, skipping update" line was emitted with the
-// expected structured field (e.g. clientId="foo", alias="bar"). Polls for up
-// to 30s because the operator's stdout buffering plus kubectl's --since-time
-// rounding can briefly hide a log line that's already been written.
-func assertSkipLogged(t *testing.T, since time.Time, msg, kvKey, kvValue string) {
+// assertOperatorLogged tails the operator pod logs since `since` and asserts
+// the expected log line was emitted with the expected structured field (e.g.
+// clientId="foo", alias="bar"). Polls for up to 30s because the operator's
+// stdout buffering plus kubectl's --since-time rounding can briefly hide a
+// log line that's already been written.
+func assertOperatorLogged(t *testing.T, since time.Time, msg, kvKey, kvValue string) {
 	t.Helper()
 	operatorNS := os.Getenv("OPERATOR_NAMESPACE")
 	if operatorNS == "" {

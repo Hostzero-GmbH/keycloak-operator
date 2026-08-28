@@ -69,6 +69,13 @@ type KeycloakComponentStatus struct {
 	// +optional
 	ProviderType string `json:"providerType,omitempty"`
 
+	// LastAppliedDefinitionHash is a hash of the last successfully applied
+	// definition (after secret merging). Keycloak masks secret config values
+	// on read, so this is the only way to detect that the desired secret
+	// changed and must be pushed.
+	// +optional
+	LastAppliedDefinitionHash string `json:"lastAppliedDefinitionHash,omitempty"`
+
 	// Instance contains the resolved instance reference
 	// +optional
 	Instance *InstanceRef `json:"instance,omitempty"`

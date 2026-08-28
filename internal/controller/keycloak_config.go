@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -662,6 +664,23 @@ func realmDefinitionsMatch(desired, current json.RawMessage) bool {
 		return false
 	}
 	return definitionsMatch(desiredJSON, currentJSON)
+}
+
+// definitionHash returns a sha256 over the canonicalized (sorted-key) JSON
+// definition. Controllers store the hash of the last successfully applied
+// definition in status: the mask-aware comparators cannot see changes to
+// secret values Keycloak masks on GET, so a hash mismatch is what forces the
+// PUT when the desired secret changed (rotation via configSecretRef /
+// smtpSecretRef or an inline edit).
+func definitionHash(definition json.RawMessage) string {
+	var m interface{}
+	if err := json.Unmarshal(definition, &m); err == nil {
+		if canonical, err := json.Marshal(m); err == nil {
+			definition = canonical
+		}
+	}
+	sum := sha256.Sum256(definition)
+	return hex.EncodeToString(sum[:])
 }
 
 // componentDefinitionsMatch compares two ComponentRepresentations for drift-detection,

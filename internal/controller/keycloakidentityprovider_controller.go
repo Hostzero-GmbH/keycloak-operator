@@ -146,6 +146,8 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		definition = setFieldInDefinition(definition, "organizationId", orgID)
 	}
 
+	desiredHash := definitionHash(definition)
+
 	// Check if identity provider exists by alias
 	existingIdp, err := kc.GetIdentityProvider(ctx, realmName, alias)
 
@@ -157,16 +159,23 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, idp, false, "CreateFailed", fmt.Sprintf("Failed to create identity provider: %v", err), "")
 		}
+		idp.Status.LastAppliedDefinitionHash = desiredHash
 		log.Info("identity provider created successfully", "alias", alias)
 	} else {
-		// Identity provider exists — check if update is needed (drift-detection, pace patch)
-		// to avoid reconcile-storms where every 5-min sync triggers an unneeded PUT.
-		currentRaw, fetchErr := kc.GetIdentityProviderRaw(ctx, realmName, alias)
-		needsUpdate := true
-		if fetchErr != nil {
-			log.Error(fetchErr, "failed to fetch current IdP state, falling through to update")
-		} else if currentRaw != nil {
-			needsUpdate = !idpDefinitionsMatch(definition, currentRaw)
+		// Identity provider exists — check if update is needed (drift-detection)
+		// to avoid reconcile-storms where every 5-min sync triggers an unneeded
+		// PUT. idpDefinitionsMatch cannot see changes to the masked
+		// clientSecret, so a hash mismatch against the last applied definition
+		// forces the PUT (#143).
+		needsUpdate := desiredHash != idp.Status.LastAppliedDefinitionHash
+		if !needsUpdate {
+			currentRaw, fetchErr := kc.GetIdentityProviderRaw(ctx, realmName, alias)
+			if fetchErr != nil {
+				log.Error(fetchErr, "failed to fetch current IdP state, falling through to update")
+				needsUpdate = true
+			} else {
+				needsUpdate = currentRaw == nil || !idpDefinitionsMatch(definition, currentRaw)
+			}
 		}
 
 		if needsUpdate {
@@ -175,6 +184,7 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, idp, false, "UpdateFailed", fmt.Sprintf("Failed to update identity provider: %v", err), alias)
 			}
+			idp.Status.LastAppliedDefinitionHash = desiredHash
 			log.Info("identity provider updated successfully", "alias", alias)
 		} else {
 			log.V(1).Info("identity provider already in sync, skipping update", "alias", alias)
