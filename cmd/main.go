@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 	"time"
@@ -8,6 +9,9 @@ import (
 	// Import all Kubernetes client auth plugins
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/go-logr/zapr"
+	uberzap "go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -20,6 +24,7 @@ import (
 	exportcmd "github.com/Hostzero-GmbH/keycloak-operator/cmd/export"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/controller"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 var (
@@ -67,13 +72,32 @@ func main() {
 		"Maximum number of concurrent requests to Keycloak. Set to 0 for no limit. "+
 			"Lower values reduce Keycloak load but increase reconciliation time.")
 
-	opts := zap.Options{
-		Development: true,
-	}
+	opts := zap.Options{}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	rawLog := zap.NewRaw(zap.UseFlagOptions(&opts))
+
+	ctx := ctrl.SetupSignalHandler()
+	otelShutdown, err := telemetry.Setup(ctx)
+	if err != nil {
+		zapr.NewLogger(rawLog).WithName("setup").Error(err, "unable to set up OpenTelemetry")
+		os.Exit(1)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := otelShutdown(shutdownCtx); err != nil {
+			setupLog.Error(err, "error shutting down OpenTelemetry")
+		}
+	}()
+
+	if telemetry.LoggingEnabled() {
+		rawLog = rawLog.WithOptions(uberzap.WrapCore(func(c zapcore.Core) zapcore.Core {
+			return zapcore.NewTee(c, telemetry.ZapCore())
+		}))
+	}
+	ctrl.SetLogger(zapr.NewLogger(rawLog))
 
 	// Configure global sync period for all controllers
 	controller.SetSyncPeriod(syncPeriod)
@@ -273,7 +297,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

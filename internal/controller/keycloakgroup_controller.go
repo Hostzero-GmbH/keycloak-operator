@@ -16,6 +16,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakGroupReconciler reconciles a KeycloakGroup object
@@ -286,5 +287,5 @@ func (r *KeycloakGroupReconciler) updateStatus(ctx context.Context, group *keycl
 func (r *KeycloakGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakGroup{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakGroup", r))
 }

@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-resty/resty/v2"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 // Client provides methods to interact with the Keycloak Admin REST API
@@ -75,6 +76,7 @@ func NewClient(cfg Config, log logr.Logger) *Client {
 	if tlsCfg, ok := buildTLSConfig(cfg, log); ok {
 		httpClient.SetTLSClientConfig(tlsCfg)
 	}
+	httpClient.SetTransport(otelhttp.NewTransport(httpClient.GetClient().Transport))
 
 	return &Client{
 		baseURL:            strings.TrimSuffix(cfg.BaseURL, "/"),

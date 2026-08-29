@@ -17,6 +17,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 const (
@@ -245,5 +246,5 @@ func (r *KeycloakOrganizationReconciler) updateStatus(ctx context.Context, org *
 func (r *KeycloakOrganizationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakOrganization{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakOrganization", r))
 }

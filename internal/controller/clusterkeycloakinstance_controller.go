@@ -14,6 +14,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // ClusterKeycloakInstanceReconciler reconciles a ClusterKeycloakInstance object
@@ -131,5 +132,5 @@ func (r *ClusterKeycloakInstanceReconciler) updateStatus(ctx context.Context, in
 func (r *ClusterKeycloakInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.ClusterKeycloakInstance{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("ClusterKeycloakInstance", r))
 }

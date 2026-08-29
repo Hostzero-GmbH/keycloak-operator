@@ -16,6 +16,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakRoleReconciler reconciles a KeycloakRole object
@@ -375,5 +376,5 @@ func (r *KeycloakRoleReconciler) updateStatus(ctx context.Context, role *keycloa
 func (r *KeycloakRoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakRole{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakRole", r))
 }

@@ -20,6 +20,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakClientReconciler reconciles a KeycloakClient object
@@ -699,5 +700,5 @@ func (r *KeycloakClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakClient{}).
 		Owns(&corev1.Secret{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakClient", r))
 }

@@ -18,6 +18,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakRequiredActionReconciler reconciles a KeycloakRequiredAction object
@@ -209,7 +210,7 @@ func (r *KeycloakRequiredActionReconciler) SetupWithManager(mgr ctrl.Manager) er
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findRequiredActionsForSecret),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakRequiredAction", r))
 }
 
 func (r *KeycloakRequiredActionReconciler) findRequiredActionsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {

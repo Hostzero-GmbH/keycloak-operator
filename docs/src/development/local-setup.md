@@ -120,4 +120,5 @@ For debugging in-cluster:
 |----------|-------------|---------|
 | `KUBECONFIG` | Path to kubeconfig | `~/.kube/config` |
 | `KEYCLOAK_URL` | Keycloak URL for tests | `http://localhost:8080` |
-| `LOG_LEVEL` | Log level | `info` |
+
+Use `--zap-log-level=debug --zap-encoder=console --zap-devel` for verbose local logs.

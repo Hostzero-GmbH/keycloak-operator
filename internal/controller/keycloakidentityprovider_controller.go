@@ -19,6 +19,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakIdentityProviderReconciler reconciles a KeycloakIdentityProvider object
@@ -315,7 +316,7 @@ func (r *KeycloakIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) 
 			&keycloakv1beta1.KeycloakOrganization{},
 			handler.EnqueueRequestsFromMapFunc(r.findIDPsForOrganization),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakIdentityProvider", r))
 }
 
 // findIDPsForSecret maps a Secret to the KeycloakIdentityProviders that reference it via configSecretRef

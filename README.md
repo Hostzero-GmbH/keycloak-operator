@@ -19,6 +19,7 @@ A Kubernetes operator for managing Keycloak resources declaratively. It uses the
 - GitOps-friendly: optionally keep Keycloak objects when CRs are deleted — see [Preserving resources on deletion](https://keycloak-operator.hostzero.com/crds.html#preserving-resources-on-deletion)
 - Helm chart for easy deployment
 - High availability with leader election
+- OpenTelemetry: optional OTLP traces and logs (Prometheus metrics included)
 
 ## Supported Keycloak Versions
 
@@ -157,11 +158,12 @@ make kind-test-run TEST_RUN=TestKeycloakRealmE2E
 
 ## Monitoring
 
-The operator exposes Prometheus metrics at `:8080/metrics` for observability:
+The operator exposes Prometheus metrics at `:8080/metrics` and optional OpenTelemetry (OTLP) traces and logs:
 
 - **Reconciliation metrics**: Total reconciliations, duration, errors by controller
 - **Resource metrics**: Managed and ready resources by type
 - **Keycloak connection**: Connection status, API request counts and latency
+- **Traces**: Root span per reconcile plus Keycloak Admin API calls (opt-in via `otel.enabled`)
 
 Key alerts to configure:
 - Connection failures (`keycloak_operator_keycloak_connection_status == 0`)

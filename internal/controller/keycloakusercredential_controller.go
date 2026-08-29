@@ -23,6 +23,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakUserCredentialReconciler reconciles a KeycloakUserCredential object
@@ -315,7 +316,7 @@ func (r *KeycloakUserCredentialReconciler) SetupWithManager(mgr ctrl.Manager) er
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findCredentialsForSecret),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakUserCredential", r))
 }
 
 // findCredentialsForSecret maps a Secret to the KeycloakUserCredential that references it

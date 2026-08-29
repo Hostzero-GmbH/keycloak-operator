@@ -15,6 +15,9 @@ The operator accepts the following configuration options:
 | `--metrics-bind-address` | Address for metrics endpoint | `:8080` |
 | `--health-probe-bind-address` | Address for health probes | `:8081` |
 | `--leader-elect` | Enable leader election | `false` |
+| `--zap-log-level` | Log level (`debug`, `info`, `error`) | `info` |
+| `--zap-encoder` | Log format (`json`, `console`) | `json` |
+| `--zap-devel` | Development logging (console, more verbose) | `false` |
 
 ## Keycloak Connection
 

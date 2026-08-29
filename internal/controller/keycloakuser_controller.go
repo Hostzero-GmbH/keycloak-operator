@@ -20,6 +20,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakUserReconciler reconciles a KeycloakUser object
@@ -683,7 +684,7 @@ func (r *KeycloakUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&keycloakv1beta1.KeycloakClient{},
 			handler.EnqueueRequestsFromMapFunc(r.findUsersForClient),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakUser", r))
 }
 
 // findUsersForRealm returns reconcile requests for all users referencing the given realm

@@ -17,6 +17,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 const (
@@ -179,7 +180,7 @@ func (r *KeycloakInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakInstance{}).
 		Owns(&corev1.Secret{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakInstance", r))
 }
 
 // validateKeycloakVersion checks if the Keycloak version is supported
