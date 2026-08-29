@@ -53,6 +53,9 @@ See [values.yaml](values.yaml) for the full list of configurable parameters.
 | `leaderElection.enabled` | Enable leader election | `true` |
 | `metrics.enabled` | Enable metrics endpoint | `true` |
 | `metrics.serviceMonitor.enabled` | Create ServiceMonitor | `false` |
+| `logging.level` | Log level (`debug`, `info`, `error`) | `info` |
+| `logging.format` | Log format (`json`, `console`) | `json` |
+| `otel.enabled` | Enable OTLP traces and logs | `false` |
 | `crds.install` | Install CRDs | `true` |
 | `crds.keep` | Keep CRDs on uninstall | `true` |
 

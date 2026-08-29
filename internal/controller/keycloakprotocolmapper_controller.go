@@ -19,6 +19,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakProtocolMapperReconciler reconciles a KeycloakProtocolMapper object
@@ -336,7 +337,7 @@ func (r *KeycloakProtocolMapperReconciler) SetupWithManager(mgr ctrl.Manager) er
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findMappersForSecret),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakProtocolMapper", r))
 }
 
 func (r *KeycloakProtocolMapperReconciler) findMappersForSecret(ctx context.Context, obj client.Object) []reconcile.Request {

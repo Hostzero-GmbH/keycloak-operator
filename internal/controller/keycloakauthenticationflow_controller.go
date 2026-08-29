@@ -17,6 +17,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // errProviderChangeUnsupported is returned when a spec change requests a
@@ -874,5 +875,5 @@ func (r *KeycloakAuthenticationFlowReconciler) updateStatus(ctx context.Context,
 func (r *KeycloakAuthenticationFlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakAuthenticationFlow{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakAuthenticationFlow", r))
 }

@@ -103,6 +103,16 @@ logging:
   # -- Enable development mode (more verbose)
   development: false
 
+# OpenTelemetry (OTLP) export. Disabled unless enabled is true and endpoint is set.
+# Additional OTEL_* settings (sampler, headers, resource attributes) go in extraEnv.
+otel:
+  # -- Enable OTLP export of traces and logs
+  enabled: false
+  # -- OTLP endpoint, e.g. http://otel-collector:4317
+  endpoint: ""
+  # -- OTLP protocol: grpc or http/protobuf
+  protocol: grpc
+
 # Performance tuning
 performance:
   # -- Sync period for re-checking successfully reconciled resources (e.g., "5m", "30m", "1h")

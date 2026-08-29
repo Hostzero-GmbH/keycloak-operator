@@ -43,6 +43,17 @@ spec:
             {{- if .Values.leaderElection.enabled }}
             - --leader-elect
             {{- end }}
+            {{- if .Values.logging }}
+            {{- if .Values.logging.level }}
+            - --zap-log-level={{ .Values.logging.level }}
+            {{- end }}
+            {{- if .Values.logging.format }}
+            - --zap-encoder={{ .Values.logging.format }}
+            {{- end }}
+            {{- if .Values.logging.development }}
+            - --zap-devel
+            {{- end }}
+            {{- end }}
             {{- if .Values.performance }}
             {{- if .Values.performance.syncPeriod }}
             - --sync-period={{ .Values.performance.syncPeriod }}
@@ -87,6 +98,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
+            {{- if and .Values.otel .Values.otel.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.otel.protocol | default "grpc" | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: keycloak-operator
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

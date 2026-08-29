@@ -105,12 +105,25 @@ health:
 
 ## Logging
 
+Passed through to `--zap-log-level`, `--zap-encoder`, and `--zap-devel`.
+
 ```yaml
 logging:
   level: info      # debug, info, error
   format: json     # json, console
   development: false
 ```
+
+## OpenTelemetry
+
+```yaml
+otel:
+  enabled: false
+  endpoint: ""           # e.g. http://otel-collector:4317
+  protocol: grpc         # or http/protobuf
+```
+
+Additional `OTEL_*` env vars via `extraEnv`. See [Monitoring](../monitoring.md#opentelemetry).
 
 ## Performance Tuning
 

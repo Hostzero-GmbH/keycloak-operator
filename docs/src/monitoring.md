@@ -195,3 +195,26 @@ metrics:
     interval: 30s
     labels: {}
 ```
+
+## OpenTelemetry
+
+OTLP export of traces and logs is opt-in. Metrics stay on the Prometheus scrape endpoint above; point an OpenTelemetry Collector Prometheus receiver at it if you want metrics in the same pipeline.
+
+Enable via Helm:
+
+```yaml
+otel:
+  enabled: true
+  endpoint: http://otel-collector:4317
+  protocol: grpc   # or http/protobuf
+```
+
+Or set the standard env vars directly (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`). Sampler, headers, and resource attributes use the usual `OTEL_*` variables (for example `OTEL_TRACES_SAMPLER=parentbased_traceidratio` and `OTEL_TRACES_SAMPLER_ARG=0.1`).
+
+When enabled, the operator exports:
+
+- A root `Reconcile` span per reconciliation (`controller`, `k8s.namespace.name`, `k8s.name`)
+- Child HTTP spans for Keycloak Admin API calls
+- Logs over OTLP, in addition to stdout. Stdout format is unchanged (`logging.format`). Reconcile logs include `trace_id` and `span_id` so stdout and OTLP logs correlate with traces.
+
+Export is a no-op when no OTLP endpoint is set. Collector unavailability does not block startup.

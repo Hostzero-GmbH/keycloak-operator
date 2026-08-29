@@ -19,6 +19,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakRealmReconciler reconciles a KeycloakRealm object
@@ -345,7 +346,7 @@ func (r *KeycloakRealmReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&keycloakv1beta1.KeycloakAuthenticationFlow{},
 			handler.EnqueueRequestsFromMapFunc(r.findRealmsForAuthenticationFlow),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakRealm", r))
 }
 
 // findRealmsForSecret maps a Secret to the KeycloakRealms that reference it via smtpSecretRef

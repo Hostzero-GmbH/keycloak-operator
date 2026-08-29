@@ -17,6 +17,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakRoleMappingReconciler reconciles a KeycloakRoleMapping object
@@ -470,7 +471,7 @@ func (r *KeycloakRoleMappingReconciler) SetupWithManager(mgr ctrl.Manager) error
 			&keycloakv1beta1.KeycloakClient{},
 			handler.EnqueueRequestsFromMapFunc(r.findRoleMappingsForServiceAccountClient),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakRoleMapping", r))
 }
 
 // findRoleMappingsForUser returns reconcile requests for all role mappings referencing the given user

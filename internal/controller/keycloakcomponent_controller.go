@@ -18,6 +18,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 const (
@@ -368,7 +369,7 @@ func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findComponentsForSecret),
 		).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakComponent", r))
 }
 
 func (r *KeycloakComponentReconciler) findComponentsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {

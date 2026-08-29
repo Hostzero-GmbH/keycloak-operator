@@ -15,6 +15,7 @@ import (
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/telemetry"
 )
 
 // KeycloakClientScopeReconciler reconciles a KeycloakClientScope object
@@ -203,5 +204,5 @@ func (r *KeycloakClientScopeReconciler) updateStatus(ctx context.Context, client
 func (r *KeycloakClientScopeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakClientScope{}).
-		Complete(r)
+		Complete(telemetry.WrapReconciler("KeycloakClientScope", r))
 }
