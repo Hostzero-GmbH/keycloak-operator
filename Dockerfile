@@ -1,5 +1,5 @@
 # Build stage - run on native platform, cross-compile for target
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
 ARG TARGETOS=linux
 ARG TARGETARCH
