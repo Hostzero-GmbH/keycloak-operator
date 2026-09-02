@@ -136,6 +136,12 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.updateStatus(ctx, component, false, "ConfigSecretError", err.Error(), "", componentDef.Name, componentDef.ProviderType)
 	}
 
+	definition, err = applyConfigSecretMappings(ctx, r.Client, component.Namespace, component.Spec.ConfigSecretRefs, definition)
+	if err != nil {
+		RecordError(controllerName, "secret_error")
+		return r.updateStatus(ctx, component, false, "ConfigSecretError", err.Error(), "", componentDef.Name, componentDef.ProviderType)
+	}
+
 	// Set parent ID to realm ID if not specified
 	if componentDef.ParentID == "" {
 		componentDef.ParentID = realmID
@@ -369,11 +375,21 @@ func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findComponentsForSecret),
 		).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findComponentsForSecretRefs),
+		).
 		Complete(telemetry.WrapReconciler("KeycloakComponent", r))
 }
 
 func (r *KeycloakComponentReconciler) findComponentsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
 	return findForConfigSecret(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) *keycloakv1beta1.ConfigSecretRef {
 		return o.(*keycloakv1beta1.KeycloakComponent).Spec.ConfigSecretRef
+	})
+}
+
+func (r *KeycloakComponentReconciler) findComponentsForSecretRefs(ctx context.Context, obj client.Object) []reconcile.Request {
+	return findForConfigSecretRefs(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) []keycloakv1beta1.ConfigSecretRefMapping {
+		return o.(*keycloakv1beta1.KeycloakComponent).Spec.ConfigSecretRefs
 	})
 }

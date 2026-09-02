@@ -86,6 +86,42 @@ spec:
                 required:
                 - name
                 type: object
+              configSecretRefs:
+                description: |-
+                  ConfigSecretRefs maps individual Secret keys to specific config keys in
+                  definition.config. Use this instead of configSecretRef when Secret key
+                  names don't match Keycloak config key names (e.g. cert-manager
+                  tls.key → privateKey). Unlike configSecretRef, a config key set both
+                  inline in definition.config and via a mapping is rejected rather than
+                  overridden, to surface the ambiguity. Mutually exclusive with
+                  configSecretRef.
+                items:
+                  description: |-
+                    ConfigSecretRefMapping maps a single key from a Kubernetes Secret to a
+                    specific config key in the component's definition.config. Unlike
+                    ConfigSecretRef (which merges all secret keys by name), this allows explicit
+                    source-to-target mapping — needed when cert-manager key names (tls.key,
+                    tls.crt) don't match Keycloak config names (privateKey, certificate).
+                  properties:
+                    configKey:
+                      description: |-
+                        ConfigKey is the target key in definition.config where the value is
+                        injected as a single-element string list (component config is map[string][]string)
+                      type: string
+                    key:
+                      description: Key is the key within the Secret that holds the
+                        value
+                      type: string
+                    secretName:
+                      description: SecretName is the name of the Kubernetes Secret
+                        in the same namespace
+                      type: string
+                  required:
+                  - configKey
+                  - key
+                  - secretName
+                  type: object
+                type: array
               definition:
                 description: |-
                   Definition contains the Keycloak ComponentRepresentation. Set the component
@@ -118,6 +154,8 @@ spec:
               rule: has(self.realmRef) != has(self.clusterRealmRef)
             - message: spec.name is immutable once set
               rule: '!has(oldSelf.name) || self.name == oldSelf.name'
+            - message: configSecretRef and configSecretRefs are mutually exclusive
+              rule: '!(has(self.configSecretRef) && has(self.configSecretRefs))'
           status:
             description: KeycloakComponentStatus defines the observed state of KeycloakComponent
             properties:

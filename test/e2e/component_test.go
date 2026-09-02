@@ -494,4 +494,217 @@ func TestKeycloakComponentE2E(t *testing.T) {
 		require.NoError(t, err, "missing config secret should set ConfigSecretError, got %q: %s", updated.Status.Status, updated.Status.Message)
 		require.False(t, updated.Status.Ready)
 	})
+
+	t.Run("ConfigSecretRefsRSAKeyProvider", func(t *testing.T) {
+		componentName := fmt.Sprintf("rsa-external-%d", time.Now().UnixNano())
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName + "-tls",
+				Namespace: testNamespace,
+			},
+			StringData: map[string]string{
+				"tls.key": "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBALRiMLAHudeSA/x3hB2f+2NRkJCBKXsKJ0VfG+BlVY7K3MqP\n-----END RSA PRIVATE KEY-----",
+				"tls.crt": "-----BEGIN CERTIFICATE-----\nMIIBkTCB+wIJALRiMLAHudeSMA0GCSqGSIb3DQEBCwUAMBExDzANBgNVBAMMBnRl\n-----END CERTIFICATE-----",
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, secret))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, secret)
+		})
+
+		component := &keycloakv1beta1.KeycloakComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakComponentSpec{
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:     strPtr(componentName),
+				ConfigSecretRefs: []keycloakv1beta1.ConfigSecretRefMapping{
+					{SecretName: secret.Name, Key: "tls.key", ConfigKey: "privateKey"},
+					{SecretName: secret.Name, Key: "tls.crt", ConfigKey: "certificate"},
+				},
+				Definition: rawJSON(`{
+					"providerId": "rsa",
+					"providerType": "org.keycloak.keys.KeyProvider",
+					"config": {
+						"active": ["true"],
+						"enabled": ["true"],
+						"priority": ["108"],
+						"algorithm": ["RS256"]
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, component))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, component)
+		})
+
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      component.Name,
+				Namespace: component.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "RSA key provider with configSecretRefs did not become ready: %s", updated.Status.Message)
+		require.NotEmpty(t, updated.Status.ComponentID)
+
+		if canConnectToKeycloak() {
+			kc := getInternalKeycloakClient(t)
+			raw, err := kc.GetComponentRaw(ctx, realmName, updated.Status.ComponentID)
+			require.NoError(t, err)
+			var parsed struct {
+				Config map[string][]string `json:"config"`
+			}
+			require.NoError(t, json.Unmarshal(raw, &parsed))
+			require.NotEmpty(t, parsed.Config["privateKey"], "privateKey should be present after mapping")
+			require.NotEmpty(t, parsed.Config["certificate"], "certificate should be present after mapping")
+			require.Equal(t, "true", parsed.Config["active"][0], "inline config should be preserved")
+		}
+	})
+
+	t.Run("ConfigSecretRefsSecretRotation", func(t *testing.T) {
+		componentName := fmt.Sprintf("rsa-rotate-%d", time.Now().UnixNano())
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName + "-tls",
+				Namespace: testNamespace,
+			},
+			StringData: map[string]string{
+				"tls.key": "-----BEGIN RSA PRIVATE KEY-----\noriginal\n-----END RSA PRIVATE KEY-----",
+				"tls.crt": "-----BEGIN CERTIFICATE-----\noriginal\n-----END CERTIFICATE-----",
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, secret))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, secret)
+		})
+
+		component := &keycloakv1beta1.KeycloakComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakComponentSpec{
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:     strPtr(componentName),
+				ConfigSecretRefs: []keycloakv1beta1.ConfigSecretRefMapping{
+					{SecretName: secret.Name, Key: "tls.key", ConfigKey: "privateKey"},
+					{SecretName: secret.Name, Key: "tls.crt", ConfigKey: "certificate"},
+				},
+				Definition: rawJSON(`{
+					"providerId": "rsa",
+					"providerType": "org.keycloak.keys.KeyProvider",
+					"config": {
+						"active": ["true"],
+						"enabled": ["true"],
+						"priority": ["100"],
+						"algorithm": ["RS256"]
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, component))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, component)
+		})
+
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      component.Name,
+				Namespace: component.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "component did not become ready")
+
+		// Capture the applied hash before rotation so we can prove the operator
+		// actually re-reconciles with the new secret values.
+		require.NotEmpty(t, updated.Status.LastAppliedDefinitionHash)
+		preRotateHash := updated.Status.LastAppliedDefinitionHash
+
+		// Rotate the secret
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: secret.Name, Namespace: secret.Namespace}, secret))
+		secret.Data = map[string][]byte{
+			"tls.key": []byte("-----BEGIN RSA PRIVATE KEY-----\nrotated\n-----END RSA PRIVATE KEY-----"),
+			"tls.crt": []byte("-----BEGIN CERTIFICATE-----\nrotated\n-----END CERTIFICATE-----"),
+		}
+		require.NoError(t, k8sClient.Update(ctx, secret))
+
+		// Wait for re-reconcile: the applied definition hash must change, proving
+		// the rotated secret value was re-merged and pushed to Keycloak. Merely
+		// waiting on status.Ready would return immediately (it is already true)
+		// and would not prove the rotation propagated.
+		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			check := &keycloakv1beta1.KeycloakComponent{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      component.Name,
+				Namespace: component.Namespace,
+			}, check); err != nil {
+				return false, nil
+			}
+			return check.Status.LastAppliedDefinitionHash != "" && check.Status.LastAppliedDefinitionHash != preRotateHash, nil
+		})
+		require.NoError(t, err, "component should re-reconcile and change its applied definition hash after secret rotation")
+
+		if canConnectToKeycloak() {
+			kc := getInternalKeycloakClient(t)
+			raw, err := kc.GetComponentRaw(ctx, realmName, updated.Status.ComponentID)
+			require.NoError(t, err)
+			var parsed struct {
+				Config map[string][]string `json:"config"`
+			}
+			require.NoError(t, json.Unmarshal(raw, &parsed))
+			require.Contains(t, parsed.Config["privateKey"][0], "rotated", "rotated privateKey should be present in Keycloak after secret rotation")
+		}
+	})
+
+	t.Run("ConfigSecretRefsMissingSecret", func(t *testing.T) {
+		componentName := fmt.Sprintf("rsa-missing-%d", time.Now().UnixNano())
+		component := &keycloakv1beta1.KeycloakComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      componentName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakComponentSpec{
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:     strPtr(componentName),
+				ConfigSecretRefs: []keycloakv1beta1.ConfigSecretRefMapping{
+					{SecretName: componentName + "-missing", Key: "tls.key", ConfigKey: "privateKey"},
+				},
+				Definition: rawJSON(`{
+					"providerId": "rsa",
+					"providerType": "org.keycloak.keys.KeyProvider",
+					"config": {
+						"active": ["true"]
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, component))
+		t.Cleanup(func() {
+			_ = k8sClient.Delete(ctx, component)
+		})
+
+		updated := &keycloakv1beta1.KeycloakComponent{}
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      component.Name,
+				Namespace: component.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Status == "ConfigSecretError", nil
+		})
+		require.NoError(t, err, "missing secret should set ConfigSecretError, got %q: %s", updated.Status.Status, updated.Status.Message)
+		require.False(t, updated.Status.Ready)
+	})
 }

@@ -5,9 +5,30 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// ConfigSecretRefMapping maps a single key from a Kubernetes Secret to a
+// specific config key in the component's definition.config. Unlike
+// ConfigSecretRef (which merges all secret keys by name), this allows explicit
+// source-to-target mapping — needed when cert-manager key names (tls.key,
+// tls.crt) don't match Keycloak config names (privateKey, certificate).
+type ConfigSecretRefMapping struct {
+	// SecretName is the name of the Kubernetes Secret in the same namespace
+	// +kubebuilder:validation:Required
+	SecretName string `json:"secretName"`
+
+	// Key is the key within the Secret that holds the value
+	// +kubebuilder:validation:Required
+	Key string `json:"key"`
+
+	// ConfigKey is the target key in definition.config where the value is
+	// injected as a single-element string list (component config is map[string][]string)
+	// +kubebuilder:validation:Required
+	ConfigKey string `json:"configKey"`
+}
+
 // KeycloakComponentSpec defines the desired state of KeycloakComponent
 // +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.configSecretRef) && has(self.configSecretRefs))",message="configSecretRef and configSecretRefs are mutually exclusive"
 type KeycloakComponentSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
@@ -32,6 +53,16 @@ type KeycloakComponentSpec struct {
 	// specified inline in definition.config.
 	// +optional
 	ConfigSecretRef *ConfigSecretRef `json:"configSecretRef,omitempty"`
+
+	// ConfigSecretRefs maps individual Secret keys to specific config keys in
+	// definition.config. Use this instead of configSecretRef when Secret key
+	// names don't match Keycloak config key names (e.g. cert-manager
+	// tls.key → privateKey). Unlike configSecretRef, a config key set both
+	// inline in definition.config and via a mapping is rejected rather than
+	// overridden, to surface the ambiguity. Mutually exclusive with
+	// configSecretRef.
+	// +optional
+	ConfigSecretRefs []ConfigSecretRefMapping `json:"configSecretRefs,omitempty"`
 
 	// Definition contains the Keycloak ComponentRepresentation. Set the component
 	// name via spec.name.

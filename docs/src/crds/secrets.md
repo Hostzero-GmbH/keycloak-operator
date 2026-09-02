@@ -43,6 +43,35 @@ spec:
 
 Component config is a list of strings per key. The operator wraps each Secret value as `["…"]` (`bindCredential: "s3cret"` in the Secret becomes `["s3cret"]` in Keycloak). Identity providers, protocol mappers, identity provider mappers, and required actions keep string values.
 
+## `configSecretRefs` (KeycloakComponent)
+
+[KeycloakComponent](./keycloakcomponent.md) also supports `configSecretRefs`, a plural form that maps individual Secret keys to specific Keycloak config keys. Use it when the Secret key names can't match Keycloak's config names (e.g. cert-manager emits `tls.key` / `tls.crt` but the realm key provider wants `privateKey` / `certificate`):
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakComponent
+metadata:
+  name: external-signing-key
+spec:
+  realmRef:
+    name: my-realm
+  name: external-signing-key
+  configSecretRefs:
+    - secretName: my-tls-secret
+      key: tls.key
+      configKey: privateKey
+    - secretName: my-tls-secret
+      key: tls.crt
+      configKey: certificate
+  definition:
+    providerId: rsa
+    providerType: org.keycloak.keys.KeyProvider
+    config:
+      enabled: ["true"]
+```
+
+Each mapping's `key` is read from the referenced Secret and injected into `definition.config` under `configKey` as a single-element list. `configSecretRefs` is mutually exclusive with `configSecretRef`, and a config key must not be set both inline and via a mapping.
+
 ## Other secret APIs
 
 Do not use `configSecretRef` for these. They have their own typed fields:
