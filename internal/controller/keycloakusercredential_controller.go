@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math/big"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -263,25 +264,94 @@ func (r *KeycloakUserCredentialReconciler) ensureSecret(ctx context.Context, cre
 	return secret, true, nil
 }
 
+// Character classes used to build the password alphabet. The symbol set is
+// restricted to punctuation that survives shell quoting and connection strings
+// unescaped, since these passwords are consumed by applications reading the
+// generated Secret.
+const (
+	passwordLetters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	passwordNumbers = "0123456789"
+	passwordSymbols = "!#%*+-.:=?@_"
+)
+
 func (r *KeycloakUserCredentialReconciler) generatePassword(policy *keycloakv1beta1.PasswordPolicySpec) (string, error) {
 	length := 24
-	if policy != nil && policy.Length > 0 {
-		length = policy.Length
+	includeNumbers, includeSymbols := true, true
+	if policy != nil {
+		if policy.Length > 0 {
+			length = policy.Length
+		}
+		if policy.IncludeNumbers != nil {
+			includeNumbers = *policy.IncludeNumbers
+		}
+		if policy.IncludeSymbols != nil {
+			includeSymbols = *policy.IncludeSymbols
+		}
 	}
 
-	// Generate random bytes
-	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
+	classes := []string{passwordLetters}
+	if includeNumbers {
+		classes = append(classes, passwordNumbers)
+	}
+	if includeSymbols {
+		classes = append(classes, passwordSymbols)
+	}
+	alphabet := strings.Join(classes, "")
+
+	password := make([]byte, 0, length)
+
+	// Take one character from each enabled class first. Drawing purely at
+	// random would usually include one, but not always, and Keycloak rejects
+	// the password outright when the realm policy requires a digit or a
+	// special character, leaving the credential permanently not ready.
+	if length >= len(classes) {
+		for _, class := range classes {
+			c, err := randomChar(class)
+			if err != nil {
+				return "", err
+			}
+			password = append(password, c)
+		}
+	}
+
+	for len(password) < length {
+		c, err := randomChar(alphabet)
+		if err != nil {
+			return "", err
+		}
+		password = append(password, c)
+	}
+
+	// The guaranteed characters are at fixed positions until shuffled.
+	if err := shuffle(password); err != nil {
 		return "", err
 	}
 
-	// Encode to base64 and truncate
-	password := base64.RawURLEncoding.EncodeToString(bytes)
-	if len(password) > length {
-		password = password[:length]
-	}
+	return string(password), nil
+}
 
-	return password, nil
+// randomChar returns one uniformly chosen character of s. rand.Int is used
+// rather than reducing a random byte modulo len(s), which would bias the
+// result toward the start of the alphabet.
+func randomChar(s string) (byte, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(len(s))))
+	if err != nil {
+		return 0, err
+	}
+	return s[n.Int64()], nil
+}
+
+// shuffle performs a Fisher-Yates shuffle using crypto/rand.
+func shuffle(b []byte) error {
+	for i := len(b) - 1; i > 0; i-- {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			return err
+		}
+		j := int(n.Int64())
+		b[i], b[j] = b[j], b[i]
+	}
+	return nil
 }
 
 func (r *KeycloakUserCredentialReconciler) updateStatus(ctx context.Context, cred *keycloakv1beta1.KeycloakUserCredential, ready bool, status, message, passwordHash string, observedGeneration int64) (ctrl.Result, error) {
