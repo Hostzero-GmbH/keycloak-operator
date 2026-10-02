@@ -63,6 +63,7 @@ Each entry in an `executions` list is one of two shapes.
     alias: forms                   # required, unique within the parent
     providerId: basic-flow         # "basic-flow", "client-flow", or "form-flow"
     description: "Optional"
+    authenticator: ...             # form-flow only; FormAuthenticator, defaults to registration-page-form
     executions:                    # child executions live here (inline shape)
       - authenticator: auth-username-password-form
         requirement: REQUIRED
@@ -92,6 +93,10 @@ If both lists are present, the inline list precedes the sibling list. Within eac
 | `form-flow` | A sub-flow that aggregates `FormAction` providers into a single rendered form. **Required** when the children are form actions such as `registration-user-creation`, `registration-profile-action`, `registration-password-action`, `registration-recaptcha`. These will not work inside a `basic-flow` sub-flow. |
 
 The CRD does not enumerate the allowed values so future Keycloak releases that introduce new provider types do not require an operator update.
+
+### Sub-flow `authenticator` (form-flow only)
+
+A `form-flow` sub-flow is rendered by a `FormAuthenticator` provider that Keycloak stores on the sub-flow's execution. The operator defaults it to `registration-page-form`, the only `FormAuthenticator` shipped with Keycloak and the value the admin console uses. Set `subFlow.authenticator` to use a custom `FormAuthenticator` from an extension. Setting it on a non-`form-flow` sub-flow is rejected with `InvalidSpec`. Changing it on an existing flow recreates that sub-flow (and its children), since Keycloak does not allow updating the authenticator of an execution in place.
 
 ## Examples
 

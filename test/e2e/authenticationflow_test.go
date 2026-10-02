@@ -145,6 +145,24 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 
 		waitForFlowReady(t, flow.Name)
 		t.Logf("Registration flow %s is ready", flowAlias)
+
+		if !canConnectToKeycloak() {
+			return
+		}
+		// Regression for #152: a form-flow must be wired to a FormAuthenticator,
+		// otherwise the registration page fails at runtime.
+		kc := getInternalKeycloakClient(t)
+		execs, err := kc.GetFlowExecutions(ctx, realmName, flowAlias)
+		require.NoError(t, err)
+		var sawFormFlow bool
+		for _, e := range execs {
+			if e.AuthenticationFlow != nil && *e.AuthenticationFlow && e.DisplayName != nil && *e.DisplayName == flowAlias+"-registration-form" {
+				sawFormFlow = true
+				require.NotNil(t, e.ProviderID)
+				require.Equal(t, "registration-page-form", *e.ProviderID, "form-flow execution must use the FormAuthenticator, not the flow type")
+			}
+		}
+		require.True(t, sawFormFlow, "registration form sub-flow must be present")
 	})
 
 	t.Run("FlowWithDeeplyNestedSubFlows", func(t *testing.T) {
