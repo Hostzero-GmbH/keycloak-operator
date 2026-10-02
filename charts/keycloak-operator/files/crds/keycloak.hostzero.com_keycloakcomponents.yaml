@@ -62,8 +62,8 @@ spec:
             properties:
               clusterRealmRef:
                 description: |-
-                  ClusterRealmRef is a reference to a ClusterKeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  ClusterRealmRef is a reference to a ClusterKeycloakRealm for top-level components
+                  One of realmRef, clusterRealmRef, or parentComponentRef must be specified
                 properties:
                   name:
                     description: Name of the cluster-scoped resource
@@ -98,10 +98,26 @@ spec:
                   providerType is set in spec.definition.
                 minLength: 1
                 type: string
+              parentComponentRef:
+                description: |-
+                  ParentComponentRef is a reference to a parent KeycloakComponent in the same
+                  namespace for sub-components, e.g. an LDAP mapper under its user federation
+                  provider. The parent's Keycloak ID is injected as definition.parentId and
+                  the realm is derived from the parent chain, so realmRef and clusterRealmRef
+                  must not be set alongside it. Mutually exclusive with definition.parentId
+                  and immutable.
+                  One of realmRef, clusterRealmRef, or parentComponentRef must be specified
+                properties:
+                  name:
+                    description: Name of the resource
+                    type: string
+                required:
+                - name
+                type: object
               realmRef:
                 description: |-
-                  RealmRef is a reference to a KeycloakRealm
-                  One of realmRef or clusterRealmRef must be specified
+                  RealmRef is a reference to a KeycloakRealm for top-level components
+                  One of realmRef, clusterRealmRef, or parentComponentRef must be specified
                 properties:
                   name:
                     description: Name of the resource
@@ -114,10 +130,16 @@ spec:
             - name
             type: object
             x-kubernetes-validations:
-            - message: exactly one of realmRef or clusterRealmRef must be set
-              rule: has(self.realmRef) != has(self.clusterRealmRef)
+            - message: exactly one of realmRef, clusterRealmRef, or parentComponentRef
+                must be set
+              rule: '(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1
+                : 0) + (has(self.parentComponentRef) ? 1 : 0) == 1'
             - message: spec.name is immutable once set
               rule: '!has(oldSelf.name) || self.name == oldSelf.name'
+            - message: spec.parentComponentRef is immutable
+              rule: has(self.parentComponentRef) == has(oldSelf.parentComponentRef)
+                && (!has(self.parentComponentRef) || self.parentComponentRef.name
+                == oldSelf.parentComponentRef.name)
           status:
             description: KeycloakComponentStatus defines the observed state of KeycloakComponent
             properties:

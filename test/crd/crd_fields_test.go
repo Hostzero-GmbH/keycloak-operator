@@ -200,11 +200,6 @@ var refContracts = []refContract{
 		exclusive: []string{"realmRef", "clusterRealmRef"},
 	},
 	{
-		file:      "keycloak.hostzero.com_keycloakcomponents.yaml",
-		exclusive: []string{"realmRef", "clusterRealmRef"},
-		data:      []string{"configSecretRef"},
-	},
-	{
 		file:      "keycloak.hostzero.com_keycloakidentityproviders.yaml",
 		exclusive: []string{"realmRef", "clusterRealmRef"},
 		data:      []string{"configSecretRef", "organizationRef"},
@@ -232,6 +227,11 @@ var refContracts = []refContract{
 	{
 		file:      "keycloak.hostzero.com_keycloakgroups.yaml",
 		exclusive: []string{"realmRef", "clusterRealmRef", "parentGroupRef"},
+	},
+	{
+		file:      "keycloak.hostzero.com_keycloakcomponents.yaml",
+		exclusive: []string{"realmRef", "clusterRealmRef", "parentComponentRef"},
+		data:      []string{"configSecretRef"},
 	},
 
 	// Kinds that always derive the realm from a parent and so carry no realm ref.
