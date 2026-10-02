@@ -72,7 +72,7 @@ spec:
       enabled: ["true"]
 ```
 
-Each mapping's `key` is read from the referenced Secret and injected into `definition.config` under `configKey` as a single-element list. `configSecretRefs` is mutually exclusive with `configSecretRef`, and a config key must not be set both inline and via a mapping.
+Each mapping's `key` is read from the referenced Secret and injected into `definition.config` under `configKey` as a single-element list. It can be combined with `configSecretRef`; a config key that is already set, inline or by `configSecretRef`, must not also be targeted by a mapping.
 
 ## Other secret APIs
 

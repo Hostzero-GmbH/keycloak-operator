@@ -458,10 +458,6 @@ func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.findComponentsForSecret),
 		).
 		Watches(
-			&corev1.Secret{},
-			handler.EnqueueRequestsFromMapFunc(r.findComponentsForSecretRefs),
-		).
-		Watches(
 			&keycloakv1beta1.KeycloakComponent{},
 			handler.EnqueueRequestsFromMapFunc(r.findComponentsForParent),
 		)
@@ -493,14 +489,20 @@ func (r *KeycloakComponentReconciler) findComponentsForParent(ctx context.Contex
 	return requests
 }
 
+// findComponentsForSecret enqueues components that reference the Secret via
+// configSecretRef or any configSecretRefs entry.
 func (r *KeycloakComponentReconciler) findComponentsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
-	return findForConfigSecret(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) *keycloakv1beta1.ConfigSecretRef {
-		return o.(*keycloakv1beta1.KeycloakComponent).Spec.ConfigSecretRef
-	})
-}
-
-func (r *KeycloakComponentReconciler) findComponentsForSecretRefs(ctx context.Context, obj client.Object) []reconcile.Request {
-	return findForConfigSecretRefs(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) []keycloakv1beta1.ConfigSecretRefMapping {
-		return o.(*keycloakv1beta1.KeycloakComponent).Spec.ConfigSecretRefs
+	secret := obj.(*corev1.Secret)
+	return findReferencingSecret(ctx, r.Client, secret, &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) bool {
+		spec := o.(*keycloakv1beta1.KeycloakComponent).Spec
+		if spec.ConfigSecretRef != nil && spec.ConfigSecretRef.Name == secret.Name {
+			return true
+		}
+		for _, m := range spec.ConfigSecretRefs {
+			if m.SecretName == secret.Name {
+				return true
+			}
+		}
+		return false
 	})
 }

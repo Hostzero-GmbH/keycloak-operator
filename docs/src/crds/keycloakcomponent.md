@@ -33,7 +33,6 @@ spec:
 
   # Optional: Map individual Secret keys to specific config keys. Use this when
   # Secret key names don't match Keycloak config names (e.g. cert-manager).
-  # Mutually exclusive with configSecretRef.
   # configSecretRefs:
   #   - secretName: my-tls-secret
   #     key: tls.key
@@ -177,12 +176,7 @@ spec:
         - "RS256"
 ```
 
-`configSecretRefs` maps the listed Secret keys to the named config keys, which is
-useful when a Secret key (e.g. cert-manager's `tls.key` / `tls.crt`) cannot match
-a Keycloak config key (`privateKey` / `certificate`). Each injected value is
-stored as a single-element list, same as `configSecretRef`. A config key must not
-be set both inline in `definition.config` and via `configSecretRefs`. This field
-is mutually exclusive with `configSecretRef`.
+`configSecretRefs` maps the listed Secret keys to the named config keys, for Secrets whose key names cannot match Keycloak's (cert-manager fixes them to `tls.key` / `tls.crt`). Each injected value is stored as a single-element list, same as `configSecretRef`. Both fields can be combined; a config key that is already set, inline or via `configSecretRef`, is rejected with `ConfigSecretError` rather than overridden. `configKey` is unique per entry.
 
 ### RSA Key Provider
 
@@ -241,5 +235,5 @@ kubectl get kcco
 
 - Component configuration uses arrays of strings for all values
 - Put secrets such as `bindCredential` in a Secret and set `configSecretRef`, or map individual Secret keys to config keys with `configSecretRefs` ([Secret references](./secrets.md))
-- `configSecretRef` and `configSecretRefs` are mutually exclusive; a config key must not be set both inline and via a Secret ref
+- A config key set via `configSecretRefs` must not already be set inline or via `configSecretRef`
 - Some components may require specific ordering via `priority` config

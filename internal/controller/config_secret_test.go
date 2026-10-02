@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -150,7 +151,7 @@ func TestApplyConfigSecretMappings(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects config key conflict with inline definition", func(t *testing.T) {
+	t.Run("rejects config key already present in definition", func(t *testing.T) {
 		mappings := []keycloakv1beta1.ConfigSecretRefMapping{
 			{SecretName: "tls-secret", Key: "tls.key", ConfigKey: "privateKey"},
 		}
@@ -180,26 +181,20 @@ func TestApplyConfigSecretMappings(t *testing.T) {
 			t.Fatal("expected error for missing secret key")
 		}
 	})
-
-	t.Run("duplicate configKey returns error", func(t *testing.T) {
-		mappings := []keycloakv1beta1.ConfigSecretRefMapping{
-			{SecretName: "tls-secret", Key: "tls.key", ConfigKey: "privateKey"},
-			{SecretName: "tls-secret", Key: "tls.crt", ConfigKey: "privateKey"},
-		}
-		_, err := applyConfigSecretMappings(context.Background(), cl, "ns", mappings, json.RawMessage(`{}`))
-		if err == nil {
-			t.Fatal("expected error for duplicate configKey")
-		}
-	})
 }
 
-func TestFindForConfigSecretRefs(t *testing.T) {
+func TestFindComponentsForSecret(t *testing.T) {
 	t.Parallel()
 
-	matching := &keycloakv1beta1.KeycloakComponent{
+	byRef := &keycloakv1beta1.KeycloakComponent{
+		ObjectMeta: metav1.ObjectMeta{Name: "ldap", Namespace: "ns"},
+		Spec:       keycloakv1beta1.KeycloakComponentSpec{ConfigSecretRef: &keycloakv1beta1.ConfigSecretRef{Name: "tls-secret"}},
+	}
+	byMapping := &keycloakv1beta1.KeycloakComponent{
 		ObjectMeta: metav1.ObjectMeta{Name: "rsa-external", Namespace: "ns"},
 		Spec: keycloakv1beta1.KeycloakComponentSpec{
 			ConfigSecretRefs: []keycloakv1beta1.ConfigSecretRefMapping{
+				{SecretName: "other-secret", Key: "key", ConfigKey: "cfg"},
 				{SecretName: "tls-secret", Key: "tls.key", ConfigKey: "privateKey"},
 			},
 		},
@@ -224,15 +219,19 @@ func TestFindForConfigSecretRefs(t *testing.T) {
 		},
 	}
 	secret := mkSecret("tls-secret", "ns", map[string]string{"tls.key": "data"})
-	cl := fake.NewClientBuilder().WithScheme(configSecretScheme(t)).WithObjects(matching, noRefs, otherSecret, wrongNS, secret).Build()
+	cl := fake.NewClientBuilder().WithScheme(configSecretScheme(t)).WithObjects(byRef, byMapping, noRefs, otherSecret, wrongNS, secret).Build()
 
-	reqs := findForConfigSecretRefs(context.Background(), cl, secret, &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) []keycloakv1beta1.ConfigSecretRefMapping {
-		return o.(*keycloakv1beta1.KeycloakComponent).Spec.ConfigSecretRefs
-	})
-	if len(reqs) != 1 {
-		t.Fatalf("got %d requests, want 1", len(reqs))
+	r := &KeycloakComponentReconciler{Client: cl}
+	reqs := r.findComponentsForSecret(context.Background(), secret)
+	got := map[types.NamespacedName]bool{}
+	for _, req := range reqs {
+		got[req.NamespacedName] = true
 	}
-	if reqs[0].NamespacedName != (types.NamespacedName{Name: "rsa-external", Namespace: "ns"}) {
-		t.Errorf("got %s, want ns/rsa-external", reqs[0].NamespacedName)
+	want := map[types.NamespacedName]bool{
+		{Name: "ldap", Namespace: "ns"}:         true,
+		{Name: "rsa-external", Namespace: "ns"}: true,
+	}
+	if len(reqs) != len(want) || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", reqs, want)
 	}
 }

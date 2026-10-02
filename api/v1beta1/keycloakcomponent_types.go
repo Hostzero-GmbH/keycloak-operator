@@ -5,23 +5,19 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// ConfigSecretRefMapping maps a single key from a Kubernetes Secret to a
-// specific config key in the component's definition.config. Unlike
-// ConfigSecretRef (which merges all secret keys by name), this allows explicit
-// source-to-target mapping — needed when cert-manager key names (tls.key,
-// tls.crt) don't match Keycloak config names (privateKey, certificate).
+// ConfigSecretRefMapping injects one Secret key into definition.config under
+// a different key name.
 type ConfigSecretRefMapping struct {
 	// SecretName is the name of the Kubernetes Secret in the same namespace
-	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	SecretName string `json:"secretName"`
 
 	// Key is the key within the Secret that holds the value
-	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
 	Key string `json:"key"`
 
-	// ConfigKey is the target key in definition.config where the value is
-	// injected as a single-element string list (component config is map[string][]string)
-	// +kubebuilder:validation:Required
+	// ConfigKey is the target key in definition.config
+	// +kubebuilder:validation:MinLength=1
 	ConfigKey string `json:"configKey"`
 }
 
@@ -29,7 +25,6 @@ type ConfigSecretRefMapping struct {
 // +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.parentComponentRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or parentComponentRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
 // +kubebuilder:validation:XValidation:rule="has(self.parentComponentRef) == has(oldSelf.parentComponentRef) && (!has(self.parentComponentRef) || self.parentComponentRef.name == oldSelf.parentComponentRef.name)",message="spec.parentComponentRef is immutable"
-// +kubebuilder:validation:XValidation:rule="!(has(self.configSecretRef) && has(self.configSecretRefs))",message="configSecretRef and configSecretRefs are mutually exclusive"
 type KeycloakComponentSpec struct {
 	// RealmRef is a reference to a KeycloakRealm for top-level components
 	// One of realmRef, clusterRealmRef, or parentComponentRef must be specified
@@ -65,13 +60,13 @@ type KeycloakComponentSpec struct {
 	// +optional
 	ConfigSecretRef *ConfigSecretRef `json:"configSecretRef,omitempty"`
 
-	// ConfigSecretRefs maps individual Secret keys to specific config keys in
-	// definition.config. Use this instead of configSecretRef when Secret key
-	// names don't match Keycloak config key names (e.g. cert-manager
-	// tls.key → privateKey). Unlike configSecretRef, a config key set both
-	// inline in definition.config and via a mapping is rejected rather than
-	// overridden, to surface the ambiguity. Mutually exclusive with
-	// configSecretRef.
+	// ConfigSecretRefs maps individual Secret keys to config keys in
+	// definition.config, for Secrets whose key names differ from Keycloak's
+	// (e.g. cert-manager's tls.key -> privateKey). Each value is injected as a
+	// single-element list. A config key that is already set, inline or via
+	// configSecretRef, cannot also be set here.
+	// +listType=map
+	// +listMapKey=configKey
 	// +optional
 	ConfigSecretRefs []ConfigSecretRefMapping `json:"configSecretRefs,omitempty"`
 

@@ -41,90 +41,52 @@ func applyConfigSecret(ctx context.Context, c client.Client, namespace string, r
 	return mergeDefinitionConfig(definition, data, wrapAsList), nil
 }
 
-// findForConfigSecret lists objects of the given kind in the Secret's namespace
-// and enqueues those whose spec.configSecretRef.name matches the Secret.
-func findForConfigSecret(ctx context.Context, c client.Client, secret *corev1.Secret, list client.ObjectList, getRef func(client.Object) *keycloakv1beta1.ConfigSecretRef) []reconcile.Request {
-	if err := c.List(ctx, list, client.InNamespace(secret.Namespace)); err != nil {
-		return nil
-	}
-	items, err := meta.ExtractList(list)
-	if err != nil {
-		return nil
-	}
-
-	var requests []reconcile.Request
-	for _, item := range items {
-		obj, ok := item.(client.Object)
-		if !ok {
-			continue
-		}
-		ref := getRef(obj)
-		if ref != nil && ref.Name == secret.Name {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      obj.GetName(),
-					Namespace: obj.GetNamespace(),
-				},
-			})
-		}
-	}
-	return requests
-}
-
-// resolveConfigSecretMappings reads the specific keys referenced by each mapping
-// from their respective Secrets. It returns a map of configKey → value.
-func resolveConfigSecretMappings(ctx context.Context, c client.Client, namespace string, mappings []keycloakv1beta1.ConfigSecretRefMapping) (map[string]string, error) {
-	result := make(map[string]string, len(mappings))
-	for i, m := range mappings {
-		if _, exists := result[m.ConfigKey]; exists {
-			return nil, fmt.Errorf("mapping[%d]: duplicate configKey %q; each config key must be set by at most one mapping", i, m.ConfigKey)
-		}
-		secret := &corev1.Secret{}
-		if err := c.Get(ctx, types.NamespacedName{Name: m.SecretName, Namespace: namespace}, secret); err != nil {
-			return nil, fmt.Errorf("mapping[%d]: failed to get secret %q: %w", i, m.SecretName, err)
-		}
-		val, ok := secret.Data[m.Key]
-		if !ok {
-			return nil, fmt.Errorf("mapping[%d]: secret %q does not contain key %q", i, m.SecretName, m.Key)
-		}
-		result[m.ConfigKey] = string(val)
-	}
-	return result, nil
-}
-
-// applyConfigSecretMappings resolves configSecretRefs and merges the mapped
-// values into definition.config as single-element string lists. It rejects
-// definitions where a config key is set both inline and via a mapping.
+// applyConfigSecretMappings merges spec.configSecretRefs into definition.config
+// as single-element string lists. Runs after applyConfigSecret, so a config key
+// already present (inline or via configSecretRef) is a conflict rather than an
+// override.
 func applyConfigSecretMappings(ctx context.Context, c client.Client, namespace string, mappings []keycloakv1beta1.ConfigSecretRefMapping, definition json.RawMessage) (json.RawMessage, error) {
 	if len(mappings) == 0 {
 		return definition, nil
 	}
-	data, err := resolveConfigSecretMappings(ctx, c, namespace, mappings)
-	if err != nil {
-		return nil, err
-	}
 
-	// Check for conflicts with inline config keys.
 	var defMap map[string]interface{}
 	if err := json.Unmarshal(definition, &defMap); err != nil {
 		return nil, fmt.Errorf("failed to parse definition: %w", err)
 	}
 	cfg, _ := defMap["config"].(map[string]interface{})
-	for configKey := range data {
-		if cfg != nil {
-			if _, exists := cfg[configKey]; exists {
-				return nil, fmt.Errorf("config key %q is set both inline in definition.config and via configSecretRefs; use one or the other", configKey)
-			}
+
+	data := make(map[string]string, len(mappings))
+	for _, m := range mappings {
+		if _, exists := cfg[m.ConfigKey]; exists {
+			return nil, fmt.Errorf("config key %q is already set in definition.config; it cannot also be set via configSecretRefs", m.ConfigKey)
 		}
+		secret := &corev1.Secret{}
+		if err := c.Get(ctx, types.NamespacedName{Name: m.SecretName, Namespace: namespace}, secret); err != nil {
+			return nil, fmt.Errorf("failed to get secret %q for config key %q: %w", m.SecretName, m.ConfigKey, err)
+		}
+		val, ok := secret.Data[m.Key]
+		if !ok {
+			return nil, fmt.Errorf("secret %q does not contain key %q", m.SecretName, m.Key)
+		}
+		data[m.ConfigKey] = string(val)
 	}
 
 	return mergeDefinitionConfig(definition, data, true), nil
 }
 
-// findForConfigSecretRefs lists objects of the given kind in the Secret's
-// namespace and enqueues those whose spec.configSecretRefs entries reference
-// the Secret by name.
-func findForConfigSecretRefs(ctx context.Context, c client.Client, secret *corev1.Secret, list client.ObjectList, getMappings func(client.Object) []keycloakv1beta1.ConfigSecretRefMapping) []reconcile.Request {
+// findForConfigSecret lists objects of the given kind in the Secret's namespace
+// and enqueues those whose spec.configSecretRef.name matches the Secret.
+func findForConfigSecret(ctx context.Context, c client.Client, secret *corev1.Secret, list client.ObjectList, getRef func(client.Object) *keycloakv1beta1.ConfigSecretRef) []reconcile.Request {
+	return findReferencingSecret(ctx, c, secret, list, func(o client.Object) bool {
+		ref := getRef(o)
+		return ref != nil && ref.Name == secret.Name
+	})
+}
+
+// findReferencingSecret lists objects of the given kind in the Secret's
+// namespace and enqueues those for which references reports true.
+func findReferencingSecret(ctx context.Context, c client.Client, secret *corev1.Secret, list client.ObjectList, references func(client.Object) bool) []reconcile.Request {
 	if err := c.List(ctx, list, client.InNamespace(secret.Namespace)); err != nil {
 		return nil
 	}
@@ -136,20 +98,15 @@ func findForConfigSecretRefs(ctx context.Context, c client.Client, secret *corev
 	var requests []reconcile.Request
 	for _, item := range items {
 		obj, ok := item.(client.Object)
-		if !ok {
+		if !ok || !references(obj) {
 			continue
 		}
-		for _, m := range getMappings(obj) {
-			if m.SecretName == secret.Name {
-				requests = append(requests, reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Name:      obj.GetName(),
-						Namespace: obj.GetNamespace(),
-					},
-				})
-				break
-			}
-		}
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      obj.GetName(),
+				Namespace: obj.GetNamespace(),
+			},
+		})
 	}
 	return requests
 }
