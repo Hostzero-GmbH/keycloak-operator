@@ -13,6 +13,10 @@ endif
 # CONTAINER_TOOL defines the container tool to be used for building images.
 CONTAINER_TOOL ?= docker
 
+# Nothing here needs cgo. Disabling it keeps host builds reproducible and avoids
+# Apple toolchain linker breakage on macOS.
+export CGO_ENABLED = 0
+
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
