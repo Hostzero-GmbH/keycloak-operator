@@ -214,55 +214,6 @@ The Secret must exist in the same namespace as the `KeycloakIdentityProvider`. W
 
 The same `configSecretRef` field is available on other CRs that have `definition.config`. See [Secret references](./secrets.md).
 
-### Realm-to-realm brokering
-
-To broker logins from one realm into another on the same Keycloak, point a `keycloak-oidc` identity provider in the target realm at a confidential [KeycloakClient](./keycloakclient.md) in the source realm. The client's `clientSecretRef` Secret can be fed straight into `configSecretRef`, but only if its keys are named after Keycloak's IdP config keys. The defaults (`client-id` / `client-secret`) do not match: `configSecretRef` merges Secret keys verbatim, so Keycloak would store them as unrelated config entries, the IdP would have no `clientId` / `clientSecret`, and the secret value would be returned unmasked by the admin API. Set `clientIdKey` and `clientSecretKey` on the client instead:
-
-```yaml
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakClient
-metadata:
-  name: target-broker
-spec:
-  realmRef:
-    name: source-realm
-  clientId: target-broker
-  clientSecretRef:
-    name: target-broker-oidc
-    clientIdKey: clientId          # match Keycloak IdP config keys
-    clientSecretKey: clientSecret
-  definition:
-    publicClient: false
-    standardFlowEnabled: true
-    redirectUris:
-      - https://keycloak.example.com/realms/target-realm/broker/source/endpoint
----
-apiVersion: keycloak.hostzero.com/v1beta1
-kind: KeycloakIdentityProvider
-metadata:
-  name: target-idp-source
-spec:
-  realmRef:
-    name: target-realm
-  alias: source
-  configSecretRef:
-    name: target-broker-oidc
-  definition:
-    providerId: keycloak-oidc
-    enabled: true
-    config:
-      issuer: https://keycloak.example.com/realms/source-realm
-      authorizationUrl: https://keycloak.example.com/realms/source-realm/protocol/openid-connect/auth
-      tokenUrl: https://keycloak.example.com/realms/source-realm/protocol/openid-connect/token
-      jwksUrl: https://keycloak.example.com/realms/source-realm/protocol/openid-connect/certs
-      useJwksUrl: "true"
-      validateSignature: "true"
-```
-
-Both CRs can be applied together. The identity provider reports `ConfigSecretError` until the client has written its Secret, then reconciles automatically; rotating the client secret propagates to the identity provider the same way.
-
-Pick the key names before the Secret is first created. Changing `clientSecretKey` on a client whose Secret still carries the old key fails with `SecretError` (`key "clientSecret" not found`); delete the Secret and the operator re-materialises it from Keycloak with the new key names.
-
 ## Token Exchange Permission
 
 When this identity provider should also act as a [Trusted Token Issuer](https://www.keycloak.org/securing-apps/token-exchange) — i.e. clients in the realm exchange a JWT from the upstream IdP for a Keycloak token using RFC 8693 Token Exchange with `subject_issuer=<alias>` — Keycloak needs a fine-grained-authz policy listing which clients are allowed to do so. Without that policy, any client in the realm could perform the exchange.
