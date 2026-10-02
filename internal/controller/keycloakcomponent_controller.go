@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -136,6 +137,26 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.updateStatus(ctx, component, false, "ConfigSecretError", err.Error(), "", componentDef.Name, componentDef.ProviderType)
 	}
 
+	// Resolve the parent component reference into definition.parentId. The
+	// definition schema is free-form, so CEL cannot enforce this exclusivity.
+	if component.Spec.ParentComponentRef != nil {
+		if componentDef.ParentID != "" {
+			RecordError(controllerName, "invalid_spec")
+			return r.updateStatus(ctx, component, false, "InvalidSpec", "at most one of parentComponentRef or definition.parentId may be set", "", componentDef.Name, componentDef.ProviderType)
+		}
+		parent, err := getReadyParentComponent(ctx, r.Client, component)
+		if err != nil {
+			RecordError(controllerName, "parent_not_ready")
+			return r.updateStatus(ctx, component, false, "ParentNotReady", err.Error(), "", componentDef.Name, componentDef.ProviderType)
+		}
+		if !sameRealmRef(component, parent) {
+			RecordError(controllerName, "invalid_spec")
+			return r.updateStatus(ctx, component, false, "InvalidSpec", fmt.Sprintf("parent KeycloakComponent %s references a different realm", parent.Name), "", componentDef.Name, componentDef.ProviderType)
+		}
+		componentDef.ParentID = parent.Status.ComponentID
+		definition = setFieldInDefinition(definition, "parentId", componentDef.ParentID)
+	}
+
 	// Set parent ID to realm ID if not specified
 	if componentDef.ParentID == "" {
 		componentDef.ParentID = realmID
@@ -203,8 +224,9 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 // findExistingComponentID returns the Keycloak ID of the component represented
 // by the CR, or an empty string when it does not exist yet.
 //
-// The normal component identity used by this controller is name+providerType.
-// That keeps existing behavior for generic components such as keys and LDAP.
+// The normal component identity used by this controller is
+// name+providerType+parentId. The parent is required because sub-components
+// (e.g. LDAP mappers) repeat the same name and providerType under each parent.
 //
 // A special fallback is needed for declarative user-profile components. When a
 // user saves Realm settings -> User profile in the Keycloak Admin UI (or calls
@@ -214,8 +236,8 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 // can be unnamed. Matching by provider identity plus parent realm lets the
 // operator adopt that existing component instead of creating a duplicate.
 func (r *KeycloakComponentReconciler) findExistingComponentID(ctx context.Context, kc *keycloak.Client, realmName string, desired componentIdentity) (string, error) {
-	// Fast path and backwards-compatible behavior: find components by the
-	// configured name, then require providerType to match before adopting it.
+	// Fast path: find components by the configured name, then require
+	// providerType and parentId to match before adopting one.
 	components, err := kc.GetComponents(ctx, realmName, map[string]string{"name": desired.Name})
 	if err != nil {
 		return "", err
@@ -258,10 +280,12 @@ func findComponentByNameAndProviderType(components []keycloak.ComponentRepresent
 	}
 
 	for _, c := range components {
-		if c.ID == nil || c.Name == nil || c.ProviderType == nil {
+		if c.ID == nil || c.Name == nil || c.ProviderType == nil || c.ParentID == nil {
 			continue
 		}
-		if *c.Name == desired.Name && *c.ProviderType == desired.ProviderType {
+		// parentId is part of the identity: sub-components such as LDAP mappers
+		// reuse the same name and providerType under each parent.
+		if *c.Name == desired.Name && *c.ProviderType == desired.ProviderType && *c.ParentID == desired.ParentID {
 			return *c.ID
 		}
 	}
@@ -291,6 +315,33 @@ func findDeclarativeUserProfileComponent(components []keycloak.ComponentRepresen
 
 func (c componentIdentity) isDeclarativeUserProfile() bool {
 	return c.ProviderID == declarativeUserProfileProviderID && c.ProviderType == userProfileProviderType
+}
+
+// getReadyParentComponent returns the KeycloakComponent referenced by
+// spec.parentComponentRef once it has been created in Keycloak.
+func getReadyParentComponent(ctx context.Context, c client.Reader, component *keycloakv1beta1.KeycloakComponent) (*keycloakv1beta1.KeycloakComponent, error) {
+	key := types.NamespacedName{Name: component.Spec.ParentComponentRef.Name, Namespace: component.Namespace}
+	parent := &keycloakv1beta1.KeycloakComponent{}
+	if err := c.Get(ctx, key, parent); err != nil {
+		return nil, fmt.Errorf("failed to get parent KeycloakComponent %s: %w", key, err)
+	}
+	if !parent.Status.Ready || parent.Status.ComponentID == "" {
+		return nil, fmt.Errorf("parent KeycloakComponent %s is not ready", key)
+	}
+	return parent, nil
+}
+
+// sameRealmRef reports whether both components reference the same realm
+// resource, so a child is never attached to a component of another realm.
+func sameRealmRef(a, b *keycloakv1beta1.KeycloakComponent) bool {
+	switch {
+	case a.Spec.RealmRef != nil && b.Spec.RealmRef != nil:
+		return a.Spec.RealmRef.Name == b.Spec.RealmRef.Name
+	case a.Spec.ClusterRealmRef != nil && b.Spec.ClusterRealmRef != nil:
+		return a.Spec.ClusterRealmRef.Name == b.Spec.ClusterRealmRef.Name
+	default:
+		return false
+	}
 }
 
 func (r *KeycloakComponentReconciler) getKeycloakClientAndRealm(ctx context.Context, component *keycloakv1beta1.KeycloakComponent) (*keycloak.Client, string, string, error) {
@@ -369,7 +420,30 @@ func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findComponentsForSecret),
 		).
+		Watches(
+			&keycloakv1beta1.KeycloakComponent{},
+			handler.EnqueueRequestsFromMapFunc(r.findComponentsForParent),
+		).
 		Complete(telemetry.WrapReconciler("KeycloakComponent", r))
+}
+
+// findComponentsForParent enqueues the components whose parentComponentRef
+// points at the changed component, so they react when it becomes ready.
+func (r *KeycloakComponentReconciler) findComponentsForParent(ctx context.Context, obj client.Object) []reconcile.Request {
+	var list keycloakv1beta1.KeycloakComponentList
+	if err := r.List(ctx, &list, client.InNamespace(obj.GetNamespace())); err != nil {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, c := range list.Items {
+		if c.Spec.ParentComponentRef != nil && c.Spec.ParentComponentRef.Name == obj.GetName() {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: c.Name, Namespace: c.Namespace},
+			})
+		}
+	}
+	return requests
 }
 
 func (r *KeycloakComponentReconciler) findComponentsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {

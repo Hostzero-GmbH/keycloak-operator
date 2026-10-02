@@ -98,6 +98,20 @@ spec:
                   providerType is set in spec.definition.
                 minLength: 1
                 type: string
+              parentComponentRef:
+                description: |-
+                  ParentComponentRef is a reference to a KeycloakComponent in the same
+                  namespace whose Keycloak ID is injected as definition.parentId, e.g. to
+                  attach an LDAP mapper to its user federation provider. The parent must
+                  reference the same realm. Mutually exclusive with definition.parentId and
+                  immutable.
+                properties:
+                  name:
+                    description: Name of the resource
+                    type: string
+                required:
+                - name
+                type: object
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm
@@ -118,6 +132,10 @@ spec:
               rule: has(self.realmRef) != has(self.clusterRealmRef)
             - message: spec.name is immutable once set
               rule: '!has(oldSelf.name) || self.name == oldSelf.name'
+            - message: spec.parentComponentRef is immutable
+              rule: has(self.parentComponentRef) == has(oldSelf.parentComponentRef)
+                && (!has(self.parentComponentRef) || self.parentComponentRef.name
+                == oldSelf.parentComponentRef.name)
           status:
             description: KeycloakComponentStatus defines the observed state of KeycloakComponent
             properties:

@@ -202,7 +202,9 @@ var refContracts = []refContract{
 	{
 		file:      "keycloak.hostzero.com_keycloakcomponents.yaml",
 		exclusive: []string{"realmRef", "clusterRealmRef"},
-		data:      []string{"configSecretRef"},
+		// parentComponentRef accompanies the realm ref: it addresses a parent
+		// component, not the realm, so it has no exclusivity rule here.
+		data: []string{"configSecretRef", "parentComponentRef"},
 	},
 	{
 		file:      "keycloak.hostzero.com_keycloakidentityproviders.yaml",

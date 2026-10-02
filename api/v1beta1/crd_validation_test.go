@@ -51,6 +51,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 	clientID := "client-id"
 	mapperName := "mapper"
 	groupName := "group"
+	componentName := "mapper"
 
 	tests := []struct {
 		name        string
@@ -197,6 +198,18 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 			wantErrText: "exactly one of realmRef, clusterRealmRef, or parentGroupRef must be set",
 		},
 		{
+			name: "KeycloakComponent accepts a parent component reference",
+			object: &KeycloakComponent{
+				ObjectMeta: metav1.ObjectMeta{Name: "component-parent", Namespace: namespace},
+				Spec: KeycloakComponentSpec{
+					Name:               &componentName,
+					RealmRef:           &ResourceRef{Name: "realm"},
+					ParentComponentRef: &ResourceRef{Name: "ldap"},
+					Definition:         runtime.RawExtension{Raw: []byte(`{"providerId":"user-attribute-ldap-mapper"}`)},
+				},
+			},
+		},
+		{
 			name: "RoleDefinition rejects both client selectors",
 			object: &KeycloakRoleMapping{
 				ObjectMeta: metav1.ObjectMeta{Name: "mapping-both-client-role", Namespace: namespace},
@@ -231,4 +244,16 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("KeycloakComponent rejects a parentComponentRef change", func(t *testing.T) {
+		component := &KeycloakComponent{}
+		if err := k8sClient.Get(ctx, client.ObjectKey{Name: "component-parent", Namespace: namespace}, component); err != nil {
+			t.Fatalf("get component: %v", err)
+		}
+		component.Spec.ParentComponentRef = &ResourceRef{Name: "other-ldap"}
+		err := k8sClient.Update(ctx, component)
+		if err == nil || !strings.Contains(err.Error(), "spec.parentComponentRef is immutable") {
+			t.Fatalf("expected immutability error, got %v", err)
+		}
+	})
 }

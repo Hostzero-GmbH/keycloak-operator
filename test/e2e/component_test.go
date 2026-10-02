@@ -495,3 +495,80 @@ func TestKeycloakComponentE2E(t *testing.T) {
 		require.False(t, updated.Status.Ready)
 	})
 }
+
+func TestKeycloakComponentParentComponentRefE2E(t *testing.T) {
+	skipIfNoCluster(t)
+	skipIfNoKeycloakAccess(t)
+
+	instanceName, _ := getOrCreateInstance(t)
+	realmName := createTestRealm(t, instanceName, "component-parent-ref")
+	kc := getInternalKeycloakClient(t)
+	suffix := time.Now().UnixNano()
+
+	// Create the mapper first: it must wait for its parent instead of being
+	// attached to the realm.
+	mapper := &keycloakv1beta1.KeycloakComponent{
+		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("ldap-mapper-%d", suffix), Namespace: testNamespace},
+		Spec: keycloakv1beta1.KeycloakComponentSpec{
+			RealmRef:           &keycloakv1beta1.ResourceRef{Name: realmName},
+			ParentComponentRef: &keycloakv1beta1.ResourceRef{Name: fmt.Sprintf("ldap-%d", suffix)},
+			Name:               strPtr("department"),
+			Definition: rawJSON(`{
+				"providerId": "user-attribute-ldap-mapper",
+				"providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+				"config": {
+					"ldap.attribute": ["departmentNumber"],
+					"user.model.attribute": ["department"],
+					"read.only": ["true"],
+					"always.read.value.from.ldap": ["false"],
+					"is.mandatory.in.ldap": ["false"]
+				}
+			}`),
+		},
+	}
+	require.NoError(t, k8sClient.Create(ctx, mapper))
+	t.Cleanup(func() { _ = k8sClient.Delete(ctx, mapper) })
+
+	updatedMapper := &keycloakv1beta1.KeycloakComponent{}
+	waitForCondition(t, mapper.Name, mapper.Namespace, updatedMapper, func() bool {
+		return updatedMapper.Status.Status == "ParentNotReady"
+	}, "mapper reports ParentNotReady while its parent is missing")
+
+	ldap := &keycloakv1beta1.KeycloakComponent{
+		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("ldap-%d", suffix), Namespace: testNamespace},
+		Spec: keycloakv1beta1.KeycloakComponentSpec{
+			RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+			Name:     strPtr(fmt.Sprintf("ldap-%d", suffix)),
+			Definition: rawJSON(`{
+				"providerId": "ldap",
+				"providerType": "org.keycloak.storage.UserStorageProvider",
+				"config": {
+					"enabled": ["false"],
+					"vendor": ["other"],
+					"connectionUrl": ["ldap://ldap.invalid:389"],
+					"usersDn": ["ou=users,dc=example,dc=com"],
+					"usernameLDAPAttribute": ["uid"],
+					"rdnLDAPAttribute": ["uid"],
+					"uuidLDAPAttribute": ["entryUUID"],
+					"userObjectClasses": ["inetOrgPerson"],
+					"editMode": ["READ_ONLY"],
+					"authType": ["none"]
+				}
+			}`),
+		},
+	}
+	require.NoError(t, k8sClient.Create(ctx, ldap))
+	t.Cleanup(func() { _ = k8sClient.Delete(ctx, ldap) })
+
+	updatedLDAP := &keycloakv1beta1.KeycloakComponent{}
+	waitForReady(t, ldap.Name, ldap.Namespace, updatedLDAP, func() bool { return updatedLDAP.Status.Ready })
+	waitForReady(t, mapper.Name, mapper.Namespace, updatedMapper, func() bool { return updatedMapper.Status.Ready })
+
+	raw, err := kc.GetComponentRaw(ctx, realmName, updatedMapper.Status.ComponentID)
+	require.NoError(t, err)
+	var got struct {
+		ParentID string `json:"parentId"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.Equal(t, updatedLDAP.Status.ComponentID, got.ParentID, "mapper must be attached to the referenced LDAP provider")
+}

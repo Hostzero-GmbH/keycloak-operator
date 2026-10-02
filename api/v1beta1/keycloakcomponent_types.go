@@ -8,6 +8,7 @@ import (
 // KeycloakComponentSpec defines the desired state of KeycloakComponent
 // +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
+// +kubebuilder:validation:XValidation:rule="has(self.parentComponentRef) == has(oldSelf.parentComponentRef) && (!has(self.parentComponentRef) || self.parentComponentRef.name == oldSelf.parentComponentRef.name)",message="spec.parentComponentRef is immutable"
 type KeycloakComponentSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef or clusterRealmRef must be specified
@@ -18,6 +19,14 @@ type KeycloakComponentSpec struct {
 	// One of realmRef or clusterRealmRef must be specified
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
+
+	// ParentComponentRef is a reference to a KeycloakComponent in the same
+	// namespace whose Keycloak ID is injected as definition.parentId, e.g. to
+	// attach an LDAP mapper to its user federation provider. The parent must
+	// reference the same realm. Mutually exclusive with definition.parentId and
+	// immutable.
+	// +optional
+	ParentComponentRef *ResourceRef `json:"parentComponentRef,omitempty"`
 
 	// Name is the component name in Keycloak. Immutable once set. The
 	// providerType is set in spec.definition.
