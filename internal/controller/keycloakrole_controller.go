@@ -374,7 +374,13 @@ func (r *KeycloakRoleReconciler) updateStatus(ctx context.Context, role *keycloa
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakRoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&keycloakv1beta1.KeycloakRole{}).
-		Complete(telemetry.WrapReconciler("KeycloakRole", r))
+	b := ctrl.NewControllerManagedBy(mgr).
+		For(&keycloakv1beta1.KeycloakRole{})
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakRoleList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			role := o.(*keycloakv1beta1.KeycloakRole)
+			return role.Spec.RealmRef, role.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakRole", r))
 }

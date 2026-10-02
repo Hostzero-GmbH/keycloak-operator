@@ -873,7 +873,13 @@ func (r *KeycloakAuthenticationFlowReconciler) updateStatus(ctx context.Context,
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakAuthenticationFlowReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&keycloakv1beta1.KeycloakAuthenticationFlow{}).
-		Complete(telemetry.WrapReconciler("KeycloakAuthenticationFlow", r))
+	b := ctrl.NewControllerManagedBy(mgr).
+		For(&keycloakv1beta1.KeycloakAuthenticationFlow{})
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakAuthenticationFlowList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			f := o.(*keycloakv1beta1.KeycloakAuthenticationFlow)
+			return f.Spec.RealmRef, f.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakAuthenticationFlow", r))
 }

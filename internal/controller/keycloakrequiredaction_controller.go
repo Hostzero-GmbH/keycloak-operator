@@ -204,13 +204,19 @@ func (r *KeycloakRequiredActionReconciler) updateStatus(ctx context.Context, ra 
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakRequiredActionReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakRequiredAction{}).
 		Watches(
 			&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.findRequiredActionsForSecret),
-		).
-		Complete(telemetry.WrapReconciler("KeycloakRequiredAction", r))
+		)
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakRequiredActionList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			ra := o.(*keycloakv1beta1.KeycloakRequiredAction)
+			return ra.Spec.RealmRef, ra.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakRequiredAction", r))
 }
 
 func (r *KeycloakRequiredActionReconciler) findRequiredActionsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {

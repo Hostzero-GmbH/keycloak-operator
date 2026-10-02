@@ -670,65 +670,19 @@ func (r *KeycloakUserReconciler) updateStatus(ctx context.Context, user *keycloa
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakUser{}).
-		Watches(
-			&keycloakv1beta1.KeycloakRealm{},
-			handler.EnqueueRequestsFromMapFunc(r.findUsersForRealm),
-		).
-		Watches(
-			&keycloakv1beta1.ClusterKeycloakRealm{},
-			handler.EnqueueRequestsFromMapFunc(r.findUsersForClusterRealm),
-		).
 		Watches(
 			&keycloakv1beta1.KeycloakClient{},
 			handler.EnqueueRequestsFromMapFunc(r.findUsersForClient),
-		).
-		Complete(telemetry.WrapReconciler("KeycloakUser", r))
-}
-
-// findUsersForRealm returns reconcile requests for all users referencing the given realm
-func (r *KeycloakUserReconciler) findUsersForRealm(ctx context.Context, obj client.Object) []reconcile.Request {
-	realm := obj.(*keycloakv1beta1.KeycloakRealm)
-	var users keycloakv1beta1.KeycloakUserList
-	if err := r.List(ctx, &users, client.InNamespace(realm.Namespace)); err != nil {
-		return nil
-	}
-
-	var requests []reconcile.Request
-	for _, user := range users.Items {
-		if user.Spec.RealmRef != nil && user.Spec.RealmRef.Name == realm.Name {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      user.Name,
-					Namespace: user.Namespace,
-				},
-			})
-		}
-	}
-	return requests
-}
-
-// findUsersForClusterRealm returns reconcile requests for all users referencing the given cluster realm
-func (r *KeycloakUserReconciler) findUsersForClusterRealm(ctx context.Context, obj client.Object) []reconcile.Request {
-	realm := obj.(*keycloakv1beta1.ClusterKeycloakRealm)
-	var users keycloakv1beta1.KeycloakUserList
-	if err := r.List(ctx, &users); err != nil {
-		return nil
-	}
-
-	var requests []reconcile.Request
-	for _, user := range users.Items {
-		if user.Spec.ClusterRealmRef != nil && user.Spec.ClusterRealmRef.Name == realm.Name {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      user.Name,
-					Namespace: user.Namespace,
-				},
-			})
-		}
-	}
-	return requests
+		)
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakUserList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			u := o.(*keycloakv1beta1.KeycloakUser)
+			return u.Spec.RealmRef, u.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakUser", r))
 }
 
 // findUsersForClient returns reconcile requests for all users referencing the given client (service accounts)

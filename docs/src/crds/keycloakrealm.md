@@ -227,11 +227,15 @@ A realm definition may bind built-in authentication points to custom flows via `
 
 The operator works around this with **deferred bindings**:
 
-1. On the *first* `CreateRealm` call, any flow-binding fields whose target alias does not yet exist in Keycloak are stripped before the request is sent. The realm is created and marked `Ready`; the operator records that bindings were deferred.
+1. On the *first* `CreateRealm` call, any flow-binding fields whose target alias does not yet exist in Keycloak are stripped before the request is sent. The realm is created and marked `Ready` so that the flows can be created against it, but with `status.status` (and the `Ready` condition reason) set to `FlowBindingsDeferred` instead of `Ready`.
 2. The realm controller watches `KeycloakAuthenticationFlow` resources and requeues the realm immediately when a referenced flow becomes ready, instead of waiting for the next periodic resync.
-3. On the next reconcile (either triggered by the watch or by the periodic resync) the operator updates the realm with the original bindings now that the referenced flows exist.
+3. On the next reconcile (either triggered by the watch or by the periodic resync) the operator updates the realm with the original bindings now that the referenced flows exist, and the status reason returns to `Ready`.
 
-Practically this means you can apply a `KeycloakRealm` and its `KeycloakAuthenticationFlow` resources together — in any order — and convergence happens within seconds.
+Practically this means you can apply a `KeycloakRealm` and its `KeycloakAuthenticationFlow` resources together — in any order — and convergence happens within seconds. To wait for the bindings to be applied rather than just for the realm to exist, wait on the status reason:
+
+```bash
+kubectl wait keycloakrealm/my-realm --for=jsonpath='{.status.status}'=Ready
+```
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
