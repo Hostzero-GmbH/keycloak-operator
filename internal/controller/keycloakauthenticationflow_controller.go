@@ -30,10 +30,33 @@ var errProviderChangeUnsupported = stderrors.New("authentication flow provider c
 // flowDefinition is the recursive representation of a (sub-)flow that the
 // controller works with after decoding the spec's free-form executions field.
 type flowDefinition struct {
-	Alias       string          `json:"alias"`
-	Description string          `json:"description,omitempty"`
-	ProviderID  string          `json:"providerId"`
-	Executions  []flowExecution `json:"executions,omitempty"`
+	Alias       string `json:"alias"`
+	Description string `json:"description,omitempty"`
+	ProviderID  string `json:"providerId"`
+	// Authenticator is the FormAuthenticator provider rendering a form-flow
+	// sub-flow. Only meaningful for ProviderID "form-flow"; defaults to
+	// defaultFormAuthenticator.
+	Authenticator string          `json:"authenticator,omitempty"`
+	Executions    []flowExecution `json:"executions,omitempty"`
+}
+
+const (
+	formFlowProviderID       = "form-flow"
+	defaultFormAuthenticator = "registration-page-form"
+)
+
+// formAuthenticator returns the execution authenticator Keycloak should use
+// for this sub-flow: Keycloak only consumes it for form-flow sub-flows, where
+// a missing or unknown FormAuthenticator makes the rendered page fail at
+// runtime even though the flow looks fine in the admin console.
+func (d flowDefinition) formAuthenticator() string {
+	if d.ProviderID != formFlowProviderID {
+		return ""
+	}
+	if d.Authenticator != "" {
+		return d.Authenticator
+	}
+	return defaultFormAuthenticator
 }
 
 // flowExecution is one node in the execution tree. Exactly one of
@@ -100,6 +123,9 @@ func validateExecutions(execs []flowExecution, path string) error {
 			}
 			if strings.TrimSpace(e.SubFlow.ProviderID) == "" {
 				return fmt.Errorf("%s.subFlow.providerId is required", nodePath)
+			}
+			if e.SubFlow.Authenticator != "" && e.SubFlow.ProviderID != formFlowProviderID {
+				return fmt.Errorf("%s.subFlow.authenticator is only supported for providerId %q", nodePath, formFlowProviderID)
 			}
 		}
 		if e.Requirement == "" {
@@ -328,7 +354,7 @@ func (r *KeycloakAuthenticationFlowReconciler) addAuthenticatorExecution(ctx con
 }
 
 func (r *KeycloakAuthenticationFlowReconciler) addSubFlow(ctx context.Context, kc *keycloak.Client, realmName, parentAlias string, exec flowExecution) error {
-	subFlowDef := buildSubFlowDef(exec.SubFlow.Alias, exec.SubFlow.Description, exec.SubFlow.ProviderID)
+	subFlowDef := buildSubFlowDef(*exec.SubFlow)
 	if _, err := kc.AddFlowSubFlow(ctx, realmName, parentAlias, subFlowDef); err != nil {
 		return fmt.Errorf("adding sub-flow %q to flow %q: %w", exec.SubFlow.Alias, parentAlias, err)
 	}
@@ -355,16 +381,20 @@ func (r *KeycloakAuthenticationFlowReconciler) addSubFlow(ctx context.Context, k
 }
 
 // buildSubFlowDef constructs the request body for adding a sub-flow execution.
-// Empty optional fields are omitted to avoid unintentionally clearing values
-// on Keycloak versions that distinguish between absent and empty strings.
-func buildSubFlowDef(alias, description, providerId string) map[string]interface{} {
+// Keycloak uses "type" as the new flow's providerId and "provider" as the
+// execution's authenticator (only consumed for form-flow). Empty optional
+// fields are omitted to avoid unintentionally clearing values on Keycloak
+// versions that distinguish between absent and empty strings.
+func buildSubFlowDef(sub flowDefinition) map[string]interface{} {
 	def := map[string]interface{}{
-		"alias":    alias,
-		"provider": providerId,
-		"type":     providerId,
+		"alias": sub.Alias,
+		"type":  sub.ProviderID,
 	}
-	if description != "" {
-		def["description"] = description
+	if provider := sub.formAuthenticator(); provider != "" {
+		def["provider"] = provider
+	}
+	if sub.Description != "" {
+		def["description"] = sub.Description
 	}
 	return def
 }
@@ -511,9 +541,11 @@ type liveExecution struct {
 	Requirement          string
 	AuthenticationConfig string
 	IsFlow               bool
-	Authenticator        string
-	SubFlowAlias         string
-	Children             []liveExecution
+	// Authenticator is the leaf provider id, or for sub-flows the execution's
+	// authenticator (the FormAuthenticator of a form-flow).
+	Authenticator string
+	SubFlowAlias  string
+	Children      []liveExecution
 }
 
 // readLiveTree fetches the live execution tree under flowAlias and returns it
@@ -540,6 +572,9 @@ func (r *KeycloakAuthenticationFlowReconciler) readLiveTree(ctx context.Context,
 			le.IsFlow = true
 			if e.DisplayName != nil {
 				le.SubFlowAlias = *e.DisplayName
+			}
+			if e.ProviderID != nil {
+				le.Authenticator = *e.ProviderID
 			}
 			if le.SubFlowAlias != "" {
 				kids, err := r.readLiveTree(ctx, kc, realmName, le.SubFlowAlias)
@@ -615,6 +650,19 @@ func (r *KeycloakAuthenticationFlowReconciler) reconcileChildren(
 ) error {
 	matches, matchedLive := matchExecutions(desired, live)
 
+	// A form-flow's FormAuthenticator lives on the execution and cannot be
+	// changed via the API, so a mismatched sub-flow is dropped here and
+	// re-added below as if it were new. Deleting the execution cascades to
+	// the nested flow and its children.
+	for di, d := range desired {
+		li := matches[di]
+		if li < 0 || !subFlowAuthenticatorMismatch(d, live[li]) {
+			continue
+		}
+		matches[di] = -1
+		matchedLive[li] = false
+	}
+
 	for li, l := range live {
 		if matchedLive[li] || l.ID == "" {
 			continue
@@ -674,6 +722,17 @@ func (r *KeycloakAuthenticationFlowReconciler) reconcileChildren(
 		}
 	}
 	return nil
+}
+
+// subFlowAuthenticatorMismatch reports whether a matched form-flow sub-flow
+// carries a different FormAuthenticator than desired. Only form-flow sub-flows
+// are compared; Keycloak ignores the authenticator on other sub-flow types.
+func subFlowAuthenticatorMismatch(d flowExecution, l liveExecution) bool {
+	if d.SubFlow == nil || !l.IsFlow {
+		return false
+	}
+	want := d.SubFlow.formAuthenticator()
+	return want != "" && want != l.Authenticator
 }
 
 // setExecutionRequirement updates an existing execution's requirement via the

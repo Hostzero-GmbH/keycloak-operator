@@ -91,11 +91,15 @@ spec:
 
                   Sub-flow (object fields):
 
-                    subFlow:              { alias, providerId, description? } — the
-                                          child flow definition. providerId is typically
-                                          "basic-flow" or "form-flow"; "form-flow" is
-                                          required when the children are FormAction
+                    subFlow:              { alias, providerId, description?, authenticator? }
+                                          — the child flow definition. providerId is
+                                          typically "basic-flow" or "form-flow"; "form-flow"
+                                          is required when the children are FormAction
                                           providers (e.g. registration-user-creation).
+                                          authenticator is the FormAuthenticator rendering
+                                          a "form-flow" sub-flow; defaults to
+                                          "registration-page-form" and is rejected for
+                                          other providerIds.
                     requirement:          REQUIRED | ALTERNATIVE | DISABLED | CONDITIONAL.
                     executions:           ordered list of child executions, recursively
                                           using the same shape. As a convenience, child
