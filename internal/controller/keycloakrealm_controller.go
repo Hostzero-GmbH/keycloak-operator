@@ -141,7 +141,7 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	desiredHash := definitionHash(definition)
 
 	// Check if realm exists
-	existingRealm, err := kc.GetRealm(ctx, realmName)
+	currentRaw, err := kc.GetRealmRaw(ctx, realmName)
 	if err != nil {
 		// Realm doesn't exist, create it
 		log.Info("creating realm", "realm", realmName)
@@ -166,18 +166,12 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	} else {
 		// Realm exists — check if update is needed (drift-detection)
-		definition = mergeIDIntoDefinition(definition, existingRealm.ID)
+		definition = mergeIDIntoDefinition(definition, realmIDFromRaw(currentRaw))
+		definition = preserveRealmFieldsResetOnUpdate(definition, currentRaw)
 
 		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash
 		if !needsUpdate {
-			// Fetch current state from Keycloak for drift detection
-			currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmName)
-			if fetchErr != nil {
-				log.Error(fetchErr, "failed to fetch current realm state, falling through to update")
-				needsUpdate = true
-			} else {
-				needsUpdate = currentRaw == nil || !realmDefinitionsMatch(definition, currentRaw)
-			}
+			needsUpdate = !realmDefinitionsMatch(definition, currentRaw)
 		}
 
 		if needsUpdate {

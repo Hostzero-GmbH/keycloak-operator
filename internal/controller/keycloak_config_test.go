@@ -832,6 +832,92 @@ func TestStripRealmFlowBindingsForCreateNoBindings(t *testing.T) {
 	}
 }
 
+func TestPreserveRealmFieldsResetOnUpdate(t *testing.T) {
+	current := json.RawMessage(`{
+		"id": "abc",
+		"realm": "r",
+		"oauth2DeviceCodeLifespan": 1200,
+		"oauth2DevicePollingInterval": 10,
+		"attributes": {"cibaExpiresIn": "300", "custom.attr": "keep"},
+		"browserSecurityHeaders": {"xFrameOptions": "DENY"},
+		"displayName": "Current"
+	}`)
+
+	t.Run("omitted fields are copied from current", func(t *testing.T) {
+		definition := json.RawMessage(`{"realm":"r","enabled":true}`)
+		var got map[string]interface{}
+		if err := json.Unmarshal(preserveRealmFieldsResetOnUpdate(definition, current), &got); err != nil {
+			t.Fatalf("failed to parse result: %v", err)
+		}
+		if got["oauth2DeviceCodeLifespan"] != float64(1200) || got["oauth2DevicePollingInterval"] != float64(10) {
+			t.Fatalf("oauth2Device fields not carried over: %v", got)
+		}
+		attrs, _ := got["attributes"].(map[string]interface{})
+		if attrs["cibaExpiresIn"] != "300" || attrs["custom.attr"] != "keep" {
+			t.Fatalf("attributes not carried over: %v", got)
+		}
+		headers, _ := got["browserSecurityHeaders"].(map[string]interface{})
+		if headers["xFrameOptions"] != "DENY" {
+			t.Fatalf("browserSecurityHeaders not carried over: %v", got)
+		}
+		if _, ok := got["displayName"]; ok {
+			t.Fatalf("unrelated field must not be copied: %v", got)
+		}
+		if got["enabled"] != true {
+			t.Fatalf("definition fields were lost: %v", got)
+		}
+	})
+
+	t.Run("definition values win over current", func(t *testing.T) {
+		definition := json.RawMessage(`{"realm":"r","oauth2DevicePollingInterval":7,"attributes":{"only":"mine"}}`)
+		var got map[string]interface{}
+		if err := json.Unmarshal(preserveRealmFieldsResetOnUpdate(definition, current), &got); err != nil {
+			t.Fatalf("failed to parse result: %v", err)
+		}
+		if got["oauth2DevicePollingInterval"] != float64(7) {
+			t.Fatalf("explicit polling interval was overwritten: %v", got)
+		}
+		if got["oauth2DeviceCodeLifespan"] != float64(1200) {
+			t.Fatalf("omitted lifespan should still be carried over: %v", got)
+		}
+		attrs, _ := got["attributes"].(map[string]interface{})
+		if len(attrs) != 1 || attrs["only"] != "mine" {
+			t.Fatalf("definition attributes must be left untouched (Keycloak replaces the map wholesale): %v", got)
+		}
+	})
+
+	t.Run("nothing to copy returns definition unchanged", func(t *testing.T) {
+		definition := json.RawMessage(`{"realm":"r"}`)
+		result := preserveRealmFieldsResetOnUpdate(definition, json.RawMessage(`{"id":"abc","attributes":null}`))
+		if string(result) != string(definition) {
+			t.Fatalf("expected original definition, got %s", string(result))
+		}
+	})
+
+	t.Run("unparseable input returns definition unchanged", func(t *testing.T) {
+		definition := json.RawMessage(`{"realm":"r"}`)
+		if got := preserveRealmFieldsResetOnUpdate(definition, json.RawMessage(`not json`)); string(got) != string(definition) {
+			t.Fatalf("expected original definition on bad current, got %s", string(got))
+		}
+		bad := json.RawMessage(`not json`)
+		if got := preserveRealmFieldsResetOnUpdate(bad, current); string(got) != string(bad) {
+			t.Fatalf("expected original definition on bad definition, got %s", string(got))
+		}
+	})
+}
+
+func TestRealmIDFromRaw(t *testing.T) {
+	if id := realmIDFromRaw(json.RawMessage(`{"id":"abc","realm":"r"}`)); id == nil || *id != "abc" {
+		t.Fatalf("expected id abc, got %v", id)
+	}
+	if id := realmIDFromRaw(json.RawMessage(`{"realm":"r"}`)); id != nil {
+		t.Fatalf("expected nil id, got %q", *id)
+	}
+	if id := realmIDFromRaw(json.RawMessage(`not json`)); id != nil {
+		t.Fatalf("expected nil id on bad input, got %q", *id)
+	}
+}
+
 func TestRealmDefinitionsMatch_SmtpPasswordMasked(t *testing.T) {
 	// Desired carries the real password (just merged from smtpSecretRef);
 	// current is masked. realmDefinitionsMatch must treat them as equal.
