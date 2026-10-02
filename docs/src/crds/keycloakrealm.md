@@ -221,6 +221,14 @@ Common properties:
 | `ssoSessionIdleTimeout` | integer | SSO session idle timeout (seconds) |
 | `accessTokenLifespan` | integer | Access token lifespan (seconds) |
 
+### Partial Updates
+
+`definition` is sent to Keycloak as-is. For an existing realm, Keycloak applies only the fields present in the representation and leaves everything else unchanged, so a minimal `definition` can adopt a pre-existing realm without rewriting it.
+
+Keycloak makes an exception for the OAuth 2.0 device flow (`oauth2DeviceCodeLifespan`, `oauth2DevicePollingInterval`), CIBA and PAR settings (`attributes.ciba*`, `attributes.parRequestUriLifespan`) and `browserSecurityHeaders`: it resets these to defaults when they are omitted from an update. The operator compensates by copying the realm's current values for these fields into the request when the definition does not set them.
+
+Because of that, `attributes` behaves as a whole: when the definition sets `attributes`, Keycloak replaces the realm's attribute map with it, dropping any attribute not listed.
+
 ## Binding Custom Authentication Flows
 
 A realm definition may bind built-in authentication points to custom flows via `browserFlow`, `registrationFlow`, `directGrantFlow`, `resetCredentialsFlow`, `clientAuthenticationFlow`, or `dockerAuthenticationFlow`. Keycloak rejects realm imports that reference a flow alias which does not yet exist (see [keycloak/keycloak#23980](https://github.com/keycloak/keycloak/issues/23980)), which would otherwise prevent declaratively creating the realm and the flow at the same time.
