@@ -10,6 +10,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -474,6 +475,9 @@ func ResolveRealm(ctx context.Context, c client.Client, clientManager *keycloak.
 	if clusterRealmRef != nil {
 		clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{}
 		if err := c.Get(ctx, types.NamespacedName{Name: clusterRealmRef.Name}, clusterRealm); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("ClusterKeycloakRealm %s not found", clusterRealmRef.Name)
+			}
 			return nil, fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmRef.Name, err)
 		}
 		if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
@@ -507,6 +511,9 @@ func ResolveRealm(ctx context.Context, c client.Client, clientManager *keycloak.
 	realmKey := types.NamespacedName{Name: realmRef.Name, Namespace: namespace}
 	realm := &keycloakv1beta1.KeycloakRealm{}
 	if err := c.Get(ctx, realmKey, realm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("KeycloakRealm %s not found", realmKey)
+		}
 		return nil, fmt.Errorf("failed to get KeycloakRealm %s: %w", realmKey, err)
 	}
 	if !realm.Status.Ready || realm.Status.RealmName == "" {
