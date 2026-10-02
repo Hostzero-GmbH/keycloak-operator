@@ -69,6 +69,8 @@ You can run the operator against any Keycloak instance:
 | `make vet` | Run go vet |
 | `make lint` | Run golangci-lint |
 
+The Makefile sets `CGO_ENABLED=0` for all Go targets. When invoking `go build`, `go run` or `go test` directly, set it yourself (`CGO_ENABLED=0 go run ./cmd export ...`); on macOS the default cgo build can fail in the link step with the Apple toolchain.
+
 ## IDE Setup
 
 ### VS Code

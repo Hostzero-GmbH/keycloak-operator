@@ -20,7 +20,24 @@ docker run --rm ghcr.io/hostzero-gmbh/keycloak-operator export \
 
 ## Running the Export Command
 
-The export command is included in the operator container image. Run it via Docker:
+The export command is part of the operator binary. Either download a prebuilt binary or use the container image.
+
+### Release Binary
+
+Prebuilt binaries for Linux, macOS and Windows (amd64/arm64) are attached to every [GitHub release](https://github.com/Hostzero-GmbH/keycloak-operator/releases), together with a `checksums.txt`:
+
+```bash
+VERSION=0.12.0
+curl -fsSLO "https://github.com/Hostzero-GmbH/keycloak-operator/releases/download/v${VERSION}/keycloak-operator_${VERSION}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz"
+tar -xzf keycloak-operator_${VERSION}_*.tar.gz
+./keycloak-operator_${VERSION}_*/keycloak-operator export --help
+```
+
+The binary reads `~/.kube/config` directly, so `--from-instance` works without volume mounts. The examples below use Docker; replace `docker run --rm ghcr.io/hostzero-gmbh/keycloak-operator` with the binary path to run them locally.
+
+### Container Image
+
+The export command is also included in the operator container image. Run it via Docker:
 
 ### Direct Connection Mode
 
