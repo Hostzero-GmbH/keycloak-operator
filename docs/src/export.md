@@ -27,7 +27,7 @@ The export command is part of the operator binary. Either download a prebuilt bi
 Prebuilt binaries for Linux, macOS and Windows (amd64/arm64) are attached to every [GitHub release](https://github.com/Hostzero-GmbH/keycloak-operator/releases), together with a `checksums.txt`:
 
 ```bash
-VERSION=0.12.0
+VERSION=0.13.0
 curl -fsSLO "https://github.com/Hostzero-GmbH/keycloak-operator/releases/download/v${VERSION}/keycloak-operator_${VERSION}_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz"
 tar -xzf keycloak-operator_${VERSION}_*.tar.gz
 ./keycloak-operator_${VERSION}_*/keycloak-operator export --help
