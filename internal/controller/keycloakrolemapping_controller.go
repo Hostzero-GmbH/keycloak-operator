@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -58,9 +59,9 @@ func (r *KeycloakRoleMappingReconciler) Reconcile(ctx context.Context, req ctrl.
 	}()
 
 	// Validate spec
-	if mapping.Spec.Subject.UserRef == nil && mapping.Spec.Subject.GroupRef == nil && mapping.Spec.Subject.ServiceAccountRef == nil {
+	if mapping.Spec.Subject.UserRef == nil && mapping.Spec.Subject.GroupRef == nil && mapping.Spec.Subject.ExistingGroup == nil && mapping.Spec.Subject.ServiceAccountRef == nil {
 		RecordError(controllerName, "invalid_definition")
-		return r.updateStatus(ctx, mapping, false, "InvalidSpec", "Either userRef, groupRef, or serviceAccountRef must be specified", "", "", "", "")
+		return r.updateStatus(ctx, mapping, false, "InvalidSpec", "Either userRef, groupRef, existingGroup, or serviceAccountRef must be specified", "", "", "", "")
 	}
 	if mapping.Spec.Role == nil && mapping.Spec.RoleRef == nil {
 		RecordError(controllerName, "invalid_definition")
@@ -222,6 +223,18 @@ func (r *KeycloakRoleMappingReconciler) resolveSubject(ctx context.Context, mapp
 		return "group", group.Status.GroupID, realmName, kc, nil
 	}
 
+	if group := mapping.Spec.Subject.ExistingGroup; group != nil {
+		res, err := ResolveRealm(ctx, r.Client, r.ClientManager, mapping.Namespace, group.RealmRef, group.ClusterRealmRef)
+		if err != nil {
+			return "group", "", "", nil, err
+		}
+		groupID, err := findExistingGroupID(ctx, res.Client, res.RealmName, group)
+		if err != nil {
+			return "group", "", "", nil, err
+		}
+		return "group", groupID, res.RealmName, res.Client, nil
+	}
+
 	if mapping.Spec.Subject.ServiceAccountRef != nil {
 		client, kc, realmName, err := r.resolveServiceAccountSubject(ctx, mapping)
 		if err != nil {
@@ -241,6 +254,41 @@ func (r *KeycloakRoleMappingReconciler) resolveSubject(ctx context.Context, mapp
 	}
 
 	return "", "", "", nil, fmt.Errorf("no subject specified")
+}
+
+// findExistingGroupID walks each path component through direct children. This
+// avoids relying on subGroups in the realm-wide response, which Keycloak 23+
+// does not populate.
+func findExistingGroupID(ctx context.Context, kc *keycloak.Client, realmName string, ref *keycloakv1beta1.ExistingGroupRef) (string, error) {
+	var parts []string
+	if ref.Name != nil {
+		parts = []string{*ref.Name}
+	} else if ref.Path != nil {
+		parts = strings.Split(strings.TrimPrefix(*ref.Path, "/"), "/")
+	} else {
+		return "", fmt.Errorf("group name or path must be specified")
+	}
+
+	var parentID string
+	for _, name := range parts {
+		params := map[string]string{"search": name, "exact": "true"}
+		var groups []keycloak.GroupRepresentation
+		var err error
+		if parentID == "" {
+			groups, err = kc.GetGroups(ctx, realmName, params)
+		} else {
+			groups, err = kc.GetGroupChildren(ctx, realmName, parentID, params)
+		}
+		if err != nil {
+			return "", fmt.Errorf("failed to look up group %q: %w", name, err)
+		}
+		group := findTopLevelGroupByName(groups, name)
+		if group == nil || group.ID == nil || *group.ID == "" {
+			return "", fmt.Errorf("group %q not found in realm %q", name, realmName)
+		}
+		parentID = *group.ID
+	}
+	return parentID, nil
 }
 
 func (r *KeycloakRoleMappingReconciler) resolveRole(ctx context.Context, mapping *keycloakv1beta1.KeycloakRoleMapping, kc *keycloak.Client, realmName string) (string, string, string, error) {
