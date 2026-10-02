@@ -510,7 +510,6 @@ func TestKeycloakComponentParentComponentRefE2E(t *testing.T) {
 	mapper := &keycloakv1beta1.KeycloakComponent{
 		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("ldap-mapper-%d", suffix), Namespace: testNamespace},
 		Spec: keycloakv1beta1.KeycloakComponentSpec{
-			RealmRef:           &keycloakv1beta1.ResourceRef{Name: realmName},
 			ParentComponentRef: &keycloakv1beta1.ResourceRef{Name: fmt.Sprintf("ldap-%d", suffix)},
 			Name:               strPtr("department"),
 			Definition: rawJSON(`{

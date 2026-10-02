@@ -173,18 +173,38 @@ func TestGetReadyParentComponent(t *testing.T) {
 	}
 }
 
-func TestSameRealmRef(t *testing.T) {
-	realm := func(name string) *keycloakv1beta1.KeycloakComponent {
-		return &keycloakv1beta1.KeycloakComponent{Spec: keycloakv1beta1.KeycloakComponentSpec{RealmRef: &keycloakv1beta1.ResourceRef{Name: name}}}
+func TestResolveComponentRealmOwner(t *testing.T) {
+	component := func(name, parent string, realm *keycloakv1beta1.ResourceRef) *keycloakv1beta1.KeycloakComponent {
+		c := &keycloakv1beta1.KeycloakComponent{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
+			Spec:       keycloakv1beta1.KeycloakComponentSpec{RealmRef: realm},
+		}
+		if parent != "" {
+			c.Spec.ParentComponentRef = &keycloakv1beta1.ResourceRef{Name: parent}
+		}
+		return c
 	}
-	clusterRealm := func(name string) *keycloakv1beta1.KeycloakComponent {
-		return &keycloakv1beta1.KeycloakComponent{Spec: keycloakv1beta1.KeycloakComponentSpec{ClusterRealmRef: &keycloakv1beta1.ClusterResourceRef{Name: name}}}
-	}
+	realm := &keycloakv1beta1.ResourceRef{Name: "realm"}
+	ldap := component("ldap", "", realm)
+	mapper := component("mapper", "ldap", nil)
+	orphan := component("orphan", "missing", nil)
+	loopA := component("loop-a", "loop-b", nil)
+	loopB := component("loop-b", "loop-a", nil)
+	cl := fake.NewClientBuilder().WithScheme(configSecretScheme(t)).WithObjects(ldap, mapper, orphan, loopA, loopB).Build()
 
-	require.True(t, sameRealmRef(realm("a"), realm("a")))
-	require.True(t, sameRealmRef(clusterRealm("a"), clusterRealm("a")))
-	require.False(t, sameRealmRef(realm("a"), realm("b")))
-	require.False(t, sameRealmRef(realm("a"), clusterRealm("a")))
+	owner, err := resolveComponentRealmOwner(context.Background(), cl, mapper)
+	require.NoError(t, err)
+	require.Equal(t, "ldap", owner.Name)
+
+	owner, err = resolveComponentRealmOwner(context.Background(), cl, ldap)
+	require.NoError(t, err)
+	require.Equal(t, "ldap", owner.Name)
+
+	_, err = resolveComponentRealmOwner(context.Background(), cl, orphan)
+	require.ErrorContains(t, err, "failed to get parent KeycloakComponent")
+
+	_, err = resolveComponentRealmOwner(context.Background(), cl, loopA)
+	require.ErrorContains(t, err, "cycle detected")
 }
 
 func TestFindComponentsForParent(t *testing.T) {

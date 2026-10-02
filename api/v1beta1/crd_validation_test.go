@@ -203,11 +203,34 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "component-parent", Namespace: namespace},
 				Spec: KeycloakComponentSpec{
 					Name:               &componentName,
+					ParentComponentRef: &ResourceRef{Name: "ldap"},
+					Definition:         runtime.RawExtension{Raw: []byte(`{"providerId":"user-attribute-ldap-mapper"}`)},
+				},
+			},
+		},
+		{
+			name: "KeycloakComponent rejects realm and parent component references together",
+			object: &KeycloakComponent{
+				ObjectMeta: metav1.ObjectMeta{Name: "component-realm-and-parent", Namespace: namespace},
+				Spec: KeycloakComponentSpec{
+					Name:               &componentName,
 					RealmRef:           &ResourceRef{Name: "realm"},
 					ParentComponentRef: &ResourceRef{Name: "ldap"},
 					Definition:         runtime.RawExtension{Raw: []byte(`{"providerId":"user-attribute-ldap-mapper"}`)},
 				},
 			},
+			wantErrText: "exactly one of realmRef, clusterRealmRef, or parentComponentRef must be set",
+		},
+		{
+			name: "KeycloakComponent rejects no parent reference",
+			object: &KeycloakComponent{
+				ObjectMeta: metav1.ObjectMeta{Name: "component-none", Namespace: namespace},
+				Spec: KeycloakComponentSpec{
+					Name:       &componentName,
+					Definition: runtime.RawExtension{Raw: []byte(`{"providerId":"ldap"}`)},
+				},
+			},
+			wantErrText: "exactly one of realmRef, clusterRealmRef, or parentComponentRef must be set",
 		},
 		{
 			name: "RoleDefinition rejects both client selectors",

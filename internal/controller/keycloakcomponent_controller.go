@@ -103,8 +103,12 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// Get Keycloak client and realm info
 	kc, realmName, realmID, err := r.getKeycloakClientAndRealm(ctx, component)
 	if err != nil {
-		RecordError(controllerName, "realm_not_ready")
-		return r.updateStatus(ctx, component, false, "RealmNotReady", err.Error(), "", "", "")
+		reason, metric := "RealmNotReady", "realm_not_ready"
+		if component.Spec.ParentComponentRef != nil {
+			reason, metric = "ParentNotReady", "parent_not_ready"
+		}
+		RecordError(controllerName, metric)
+		return r.updateStatus(ctx, component, false, reason, err.Error(), "", "", "")
 	}
 
 	// Parse component definition to extract identity fields
@@ -148,10 +152,6 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		if err != nil {
 			RecordError(controllerName, "parent_not_ready")
 			return r.updateStatus(ctx, component, false, "ParentNotReady", err.Error(), "", componentDef.Name, componentDef.ProviderType)
-		}
-		if !sameRealmRef(component, parent) {
-			RecordError(controllerName, "invalid_spec")
-			return r.updateStatus(ctx, component, false, "InvalidSpec", fmt.Sprintf("parent KeycloakComponent %s references a different realm", parent.Name), "", componentDef.Name, componentDef.ProviderType)
 		}
 		componentDef.ParentID = parent.Status.ComponentID
 		definition = setFieldInDefinition(definition, "parentId", componentDef.ParentID)
@@ -331,21 +331,52 @@ func getReadyParentComponent(ctx context.Context, c client.Reader, component *ke
 	return parent, nil
 }
 
-// sameRealmRef reports whether both components reference the same realm
-// resource, so a child is never attached to a component of another realm.
-func sameRealmRef(a, b *keycloakv1beta1.KeycloakComponent) bool {
-	switch {
-	case a.Spec.RealmRef != nil && b.Spec.RealmRef != nil:
-		return a.Spec.RealmRef.Name == b.Spec.RealmRef.Name
-	case a.Spec.ClusterRealmRef != nil && b.Spec.ClusterRealmRef != nil:
-		return a.Spec.ClusterRealmRef.Name == b.Spec.ClusterRealmRef.Name
-	default:
-		return false
+// maxComponentNestingDepth caps the parentComponentRef walk. Keycloak
+// sub-components nest one level in practice (provider -> mapper); the cap only
+// guards against misconfigured chains.
+const maxComponentNestingDepth = 10
+
+// resolveComponentRealmOwner walks parentComponentRef upwards and returns the
+// ancestor that carries the realm reference, which for a top-level component is
+// the component itself.
+func resolveComponentRealmOwner(ctx context.Context, c client.Reader, component *keycloakv1beta1.KeycloakComponent) (*keycloakv1beta1.KeycloakComponent, error) {
+	current := component
+	seen := make(map[string]bool, 1)
+
+	for range maxComponentNestingDepth {
+		if current.Spec.ParentComponentRef == nil {
+			if current.Spec.RealmRef == nil && current.Spec.ClusterRealmRef == nil {
+				return nil, fmt.Errorf("KeycloakComponent %s/%s has no realmRef or clusterRealmRef", current.Namespace, current.Name)
+			}
+			return current, nil
+		}
+
+		key := current.Namespace + "/" + current.Name
+		if seen[key] {
+			return nil, fmt.Errorf("parentComponentRef cycle detected at KeycloakComponent %s", key)
+		}
+		seen[key] = true
+
+		parentKey := types.NamespacedName{Name: current.Spec.ParentComponentRef.Name, Namespace: current.Namespace}
+		parent := &keycloakv1beta1.KeycloakComponent{}
+		if err := c.Get(ctx, parentKey, parent); err != nil {
+			return nil, fmt.Errorf("failed to get parent KeycloakComponent %s: %w", parentKey, err)
+		}
+		current = parent
 	}
+
+	return nil, fmt.Errorf("parentComponentRef chain from KeycloakComponent %s/%s exceeds %d levels", component.Namespace, component.Name, maxComponentNestingDepth)
 }
 
 func (r *KeycloakComponentReconciler) getKeycloakClientAndRealm(ctx context.Context, component *keycloakv1beta1.KeycloakComponent) (*keycloak.Client, string, string, error) {
-	res, err := ResolveRealm(ctx, r.Client, r.ClientManager, component.Namespace, component.Spec.RealmRef, component.Spec.ClusterRealmRef)
+	// A sub-component names no realm of its own; it inherits the one carried by
+	// the root of its parent chain.
+	owner, err := resolveComponentRealmOwner(ctx, r.Client, component)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	res, err := ResolveRealm(ctx, r.Client, r.ClientManager, owner.Namespace, owner.Spec.RealmRef, owner.Spec.ClusterRealmRef)
 	if err != nil {
 		return nil, "", "", err
 	}
