@@ -141,7 +141,7 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	desiredHash := definitionHash(definition)
 
 	// Check if realm exists
-	existingRealm, err := kc.GetRealm(ctx, realmName)
+	currentRaw, err := kc.GetRealmRaw(ctx, realmName)
 	if err != nil {
 		// Realm doesn't exist, create it
 		log.Info("creating realm", "realm", realmName)
@@ -156,28 +156,16 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		if flowBindingsDeferred {
 			log.Info("deferred realm authentication flow bindings until referenced flows exist", "realm", realmName)
-			realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
-			result, statusErr := r.updateStatus(ctx, realm, true, "Ready", "Realm synchronized; authentication flow bindings will be retried after referenced flows exist", instanceRef)
-			if statusErr != nil {
-				return result, statusErr
-			}
-			result.RequeueAfter = ErrorRequeueDelay
-			return result, nil
+			return r.updateStatusFlowBindingsDeferred(ctx, realm, realmName, instanceRef)
 		}
 	} else {
 		// Realm exists — check if update is needed (drift-detection)
-		definition = mergeIDIntoDefinition(definition, existingRealm.ID)
+		definition = mergeIDIntoDefinition(definition, realmIDFromRaw(currentRaw))
+		definition = preserveRealmFieldsResetOnUpdate(definition, currentRaw)
 
 		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash
 		if !needsUpdate {
-			// Fetch current state from Keycloak for drift detection
-			currentRaw, fetchErr := kc.GetRealmRaw(ctx, realmName)
-			if fetchErr != nil {
-				log.Error(fetchErr, "failed to fetch current realm state, falling through to update")
-				needsUpdate = true
-			} else {
-				needsUpdate = currentRaw == nil || !realmDefinitionsMatch(definition, currentRaw)
-			}
+			needsUpdate = !realmDefinitionsMatch(definition, currentRaw)
 		}
 
 		if needsUpdate {
@@ -197,13 +185,7 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					RecordError(controllerName, "keycloak_api_error")
 					return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)
 				}
-				realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
-				result, statusErr := r.updateStatus(ctx, realm, true, "Ready", "Realm synchronized; authentication flow bindings will be retried after referenced flows exist", instanceRef)
-				if statusErr != nil {
-					return result, statusErr
-				}
-				result.RequeueAfter = ErrorRequeueDelay
-				return result, nil
+				return r.updateStatusFlowBindingsDeferred(ctx, realm, realmName, instanceRef)
 			}
 			realm.Status.LastAppliedDefinitionHash = desiredHash
 			log.Info("realm updated successfully", "realm", realmName)
@@ -293,6 +275,24 @@ func (r *KeycloakRealmReconciler) deleteRealm(ctx context.Context, realm *keyclo
 		return nil
 	}
 	return kc.DeleteRealm(ctx, realmName)
+}
+
+// FlowBindingsDeferredReason is the status reason while the realm exists in
+// Keycloak but its authentication flow bindings have been stripped because a
+// referenced flow does not exist yet.
+const FlowBindingsDeferredReason = "FlowBindingsDeferred"
+
+// updateStatusFlowBindingsDeferred keeps the realm Ready (dependents, including
+// the referenced flows, must be able to reconcile) but exposes the pending
+// bindings via the status reason, and schedules a short retry.
+func (r *KeycloakRealmReconciler) updateStatusFlowBindingsDeferred(ctx context.Context, realm *keycloakv1beta1.KeycloakRealm, realmName string, instanceRef *keycloakv1beta1.InstanceRef) (ctrl.Result, error) {
+	realm.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s", realmName)
+	result, err := r.updateStatus(ctx, realm, true, FlowBindingsDeferredReason, "Realm synchronized; authentication flow bindings will be retried after referenced flows exist", instanceRef)
+	if err != nil {
+		return result, err
+	}
+	result.RequeueAfter = ErrorRequeueDelay
+	return result, nil
 }
 
 func (r *KeycloakRealmReconciler) updateStatus(ctx context.Context, realm *keycloakv1beta1.KeycloakRealm, ready bool, status, message string, instanceRef *keycloakv1beta1.InstanceRef) (ctrl.Result, error) {

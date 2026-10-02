@@ -306,7 +306,7 @@ func (r *KeycloakIdentityProviderReconciler) updateStatus(ctx context.Context, i
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakIdentityProvider{}).
 		Watches(
 			&corev1.Secret{},
@@ -315,8 +315,14 @@ func (r *KeycloakIdentityProviderReconciler) SetupWithManager(mgr ctrl.Manager) 
 		Watches(
 			&keycloakv1beta1.KeycloakOrganization{},
 			handler.EnqueueRequestsFromMapFunc(r.findIDPsForOrganization),
-		).
-		Complete(telemetry.WrapReconciler("KeycloakIdentityProvider", r))
+		)
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakIdentityProviderList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			idp := o.(*keycloakv1beta1.KeycloakIdentityProvider)
+			return idp.Spec.RealmRef, idp.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakIdentityProvider", r))
 }
 
 // findIDPsForSecret maps a Secret to the KeycloakIdentityProviders that reference it via configSecretRef

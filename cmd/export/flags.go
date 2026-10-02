@@ -8,7 +8,10 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
@@ -16,6 +19,13 @@ import (
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/controller"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
+
+var scheme = runtime.NewScheme()
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(keycloakv1beta1.AddToScheme(scheme))
+}
 
 // Options holds the export command options
 type Options struct {
@@ -237,11 +247,15 @@ func (o *Options) GetKeycloakConfig(ctx context.Context, log logr.Logger) (*keyc
 		return nil, fmt.Errorf("failed to get kubeconfig: %w (ensure KUBECONFIG is set or ~/.kube/config exists)", err)
 	}
 
-	k8sClient, err := client.New(cfg, client.Options{})
+	k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 
+	return o.getKeycloakConfigFromCluster(ctx, k8sClient, log)
+}
+
+func (o *Options) getKeycloakConfigFromCluster(ctx context.Context, k8sClient client.Client, log logr.Logger) (*keycloak.Config, error) {
 	if o.FromClusterInstance != "" {
 		return o.loadFromClusterInstance(ctx, k8sClient, log)
 	}

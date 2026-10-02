@@ -221,17 +221,29 @@ Common properties:
 | `ssoSessionIdleTimeout` | integer | SSO session idle timeout (seconds) |
 | `accessTokenLifespan` | integer | Access token lifespan (seconds) |
 
+### Partial Updates
+
+`definition` is sent to Keycloak as-is. For an existing realm, Keycloak applies only the fields present in the representation and leaves everything else unchanged, so a minimal `definition` can adopt a pre-existing realm without rewriting it.
+
+Keycloak makes an exception for the OAuth 2.0 device flow (`oauth2DeviceCodeLifespan`, `oauth2DevicePollingInterval`), CIBA and PAR settings (`attributes.ciba*`, `attributes.parRequestUriLifespan`) and `browserSecurityHeaders`: it resets these to defaults when they are omitted from an update. The operator compensates by copying the realm's current values for these fields into the request when the definition does not set them.
+
+Because of that, `attributes` behaves as a whole: when the definition sets `attributes`, Keycloak replaces the realm's attribute map with it, dropping any attribute not listed.
+
 ## Binding Custom Authentication Flows
 
 A realm definition may bind built-in authentication points to custom flows via `browserFlow`, `registrationFlow`, `directGrantFlow`, `resetCredentialsFlow`, `clientAuthenticationFlow`, or `dockerAuthenticationFlow`. Keycloak rejects realm imports that reference a flow alias which does not yet exist (see [keycloak/keycloak#23980](https://github.com/keycloak/keycloak/issues/23980)), which would otherwise prevent declaratively creating the realm and the flow at the same time.
 
 The operator works around this with **deferred bindings**:
 
-1. On the *first* `CreateRealm` call, any flow-binding fields whose target alias does not yet exist in Keycloak are stripped before the request is sent. The realm is created and marked `Ready`; the operator records that bindings were deferred.
+1. On the *first* `CreateRealm` call, any flow-binding fields whose target alias does not yet exist in Keycloak are stripped before the request is sent. The realm is created and marked `Ready` so that the flows can be created against it, but with `status.status` (and the `Ready` condition reason) set to `FlowBindingsDeferred` instead of `Ready`.
 2. The realm controller watches `KeycloakAuthenticationFlow` resources and requeues the realm immediately when a referenced flow becomes ready, instead of waiting for the next periodic resync.
-3. On the next reconcile (either triggered by the watch or by the periodic resync) the operator updates the realm with the original bindings now that the referenced flows exist.
+3. On the next reconcile (either triggered by the watch or by the periodic resync) the operator updates the realm with the original bindings now that the referenced flows exist, and the status reason returns to `Ready`.
 
-Practically this means you can apply a `KeycloakRealm` and its `KeycloakAuthenticationFlow` resources together — in any order — and convergence happens within seconds.
+Practically this means you can apply a `KeycloakRealm` and its `KeycloakAuthenticationFlow` resources together — in any order — and convergence happens within seconds. To wait for the bindings to be applied rather than just for the realm to exist, wait on the status reason:
+
+```bash
+kubectl wait keycloakrealm/my-realm --for=jsonpath='{.status.status}'=Ready
+```
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1

@@ -285,7 +285,13 @@ func (r *KeycloakGroupReconciler) updateStatus(ctx context.Context, group *keycl
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakGroupReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&keycloakv1beta1.KeycloakGroup{}).
-		Complete(telemetry.WrapReconciler("KeycloakGroup", r))
+	b := ctrl.NewControllerManagedBy(mgr).
+		For(&keycloakv1beta1.KeycloakGroup{})
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakGroupList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			g := o.(*keycloakv1beta1.KeycloakGroup)
+			return g.Spec.RealmRef, g.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakGroup", r))
 }

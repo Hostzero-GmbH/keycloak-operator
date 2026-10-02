@@ -445,7 +445,7 @@ func (r *KeycloakComponentReconciler) updateStatus(ctx context.Context, componen
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakComponent{}).
 		Watches(
 			&corev1.Secret{},
@@ -454,8 +454,14 @@ func (r *KeycloakComponentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&keycloakv1beta1.KeycloakComponent{},
 			handler.EnqueueRequestsFromMapFunc(r.findComponentsForParent),
-		).
-		Complete(telemetry.WrapReconciler("KeycloakComponent", r))
+		)
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakComponentList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			c := o.(*keycloakv1beta1.KeycloakComponent)
+			return c.Spec.RealmRef, c.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakComponent", r))
 }
 
 // findComponentsForParent enqueues the components whose parentComponentRef

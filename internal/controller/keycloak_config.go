@@ -10,6 +10,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -474,6 +475,9 @@ func ResolveRealm(ctx context.Context, c client.Client, clientManager *keycloak.
 	if clusterRealmRef != nil {
 		clusterRealm := &keycloakv1beta1.ClusterKeycloakRealm{}
 		if err := c.Get(ctx, types.NamespacedName{Name: clusterRealmRef.Name}, clusterRealm); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("ClusterKeycloakRealm %s not found", clusterRealmRef.Name)
+			}
 			return nil, fmt.Errorf("failed to get ClusterKeycloakRealm %s: %w", clusterRealmRef.Name, err)
 		}
 		if !clusterRealm.Status.Ready || clusterRealm.Status.RealmName == "" {
@@ -507,6 +511,9 @@ func ResolveRealm(ctx context.Context, c client.Client, clientManager *keycloak.
 	realmKey := types.NamespacedName{Name: realmRef.Name, Namespace: namespace}
 	realm := &keycloakv1beta1.KeycloakRealm{}
 	if err := c.Get(ctx, realmKey, realm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("KeycloakRealm %s not found", realmKey)
+		}
 		return nil, fmt.Errorf("failed to get KeycloakRealm %s: %w", realmKey, err)
 	}
 	if !realm.Status.Ready || realm.Status.RealmName == "" {
@@ -882,6 +889,69 @@ func stripRealmFlowBindingsForCreate(definition json.RawMessage) (json.RawMessag
 		return definition, false
 	}
 	return result, true
+}
+
+// Keycloak's PUT /admin/realms/{realm} applies most fields only when present,
+// but rebuilds the OAuth2 device, CIBA and PAR configs unconditionally
+// (DefaultExportImportManager.updateRealm), resetting them to defaults when
+// the representation omits them. CIBA/PAR live in `attributes`, and a present
+// `attributes` map replaces the realm's attributes wholesale, so the whole
+// current map is carried over when the definition has none.
+//
+// browserSecurityHeaders is backed by `_browser_header.*` attributes that GET
+// strips from `attributes`; Keycloak < 26.2 removes them when `attributes` is
+// sent without them, so the headers are carried over as well.
+var realmFieldsResetOnUpdate = []string{
+	"oauth2DeviceCodeLifespan",
+	"oauth2DevicePollingInterval",
+	"attributes",
+	"browserSecurityHeaders",
+}
+
+// realmIDFromRaw extracts the id field of a raw realm representation.
+func realmIDFromRaw(raw json.RawMessage) *string {
+	var rep struct {
+		ID *string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &rep); err != nil {
+		return nil
+	}
+	return rep.ID
+}
+
+// preserveRealmFieldsResetOnUpdate copies realmFieldsResetOnUpdate from the
+// current realm representation into definition where definition does not set
+// them. Unparseable input returns definition unchanged.
+func preserveRealmFieldsResetOnUpdate(definition, current json.RawMessage) json.RawMessage {
+	var defMap, curMap map[string]interface{}
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return definition
+	}
+	if err := json.Unmarshal(current, &curMap); err != nil {
+		return definition
+	}
+
+	changed := false
+	for _, field := range realmFieldsResetOnUpdate {
+		if _, ok := defMap[field]; ok {
+			continue
+		}
+		val, ok := curMap[field]
+		if !ok || val == nil {
+			continue
+		}
+		defMap[field] = val
+		changed = true
+	}
+	if !changed {
+		return definition
+	}
+
+	result, err := json.Marshal(defMap)
+	if err != nil {
+		return definition
+	}
+	return result
 }
 
 // flowAliasToKey maps alias-based keys in authenticationFlowBindingOverrides
