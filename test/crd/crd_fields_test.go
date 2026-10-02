@@ -231,7 +231,7 @@ var refContracts = []refContract{
 	{
 		file:      "keycloak.hostzero.com_keycloakcomponents.yaml",
 		exclusive: []string{"realmRef", "clusterRealmRef", "parentComponentRef"},
-		data:      []string{"configSecretRef"},
+		data:      []string{"configSecretRef", "configSecretRefs"},
 	},
 
 	// Kinds that always derive the realm from a parent and so carry no realm ref.
@@ -307,7 +307,7 @@ func TestRefContractsAreComplete(t *testing.T) {
 		t.Run(c.name(), func(t *testing.T) {
 			obj := resolveObject(t, c)
 			for prop := range obj.Properties {
-				if !strings.HasSuffix(prop, "Ref") {
+				if !strings.HasSuffix(prop, "Ref") && !strings.HasSuffix(prop, "Refs") {
 					continue
 				}
 				if !declared[c.name()][prop] {

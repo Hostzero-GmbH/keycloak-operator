@@ -5,6 +5,22 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// ConfigSecretRefMapping injects one Secret key into definition.config under
+// a different key name.
+type ConfigSecretRefMapping struct {
+	// SecretName is the name of the Kubernetes Secret in the same namespace
+	// +kubebuilder:validation:MinLength=1
+	SecretName string `json:"secretName"`
+
+	// Key is the key within the Secret that holds the value
+	// +kubebuilder:validation:MinLength=1
+	Key string `json:"key"`
+
+	// ConfigKey is the target key in definition.config
+	// +kubebuilder:validation:MinLength=1
+	ConfigKey string `json:"configKey"`
+}
+
 // KeycloakComponentSpec defines the desired state of KeycloakComponent
 // +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.parentComponentRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or parentComponentRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
@@ -43,6 +59,16 @@ type KeycloakComponentSpec struct {
 	// specified inline in definition.config.
 	// +optional
 	ConfigSecretRef *ConfigSecretRef `json:"configSecretRef,omitempty"`
+
+	// ConfigSecretRefs maps individual Secret keys to config keys in
+	// definition.config, for Secrets whose key names differ from Keycloak's
+	// (e.g. cert-manager's tls.key -> privateKey). Each value is injected as a
+	// single-element list. A config key that is already set, inline or via
+	// configSecretRef, cannot also be set here.
+	// +listType=map
+	// +listMapKey=configKey
+	// +optional
+	ConfigSecretRefs []ConfigSecretRefMapping `json:"configSecretRefs,omitempty"`
 
 	// Definition contains the Keycloak ComponentRepresentation. Set the component
 	// name via spec.name.

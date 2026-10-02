@@ -31,6 +31,16 @@ spec:
   # configSecretRef:
   #   name: ldap-credentials
 
+  # Optional: Map individual Secret keys to specific config keys. Use this when
+  # Secret key names don't match Keycloak config names (e.g. cert-manager).
+  # configSecretRefs:
+  #   - secretName: my-tls-secret
+  #     key: tls.key
+  #     configKey: privateKey
+  #   - secretName: my-tls-secret
+  #     key: tls.crt
+  #     configKey: certificate
+
   # Required: Component definition
   name: corporate-ldap
   definition:
@@ -133,6 +143,41 @@ Rules:
 - `parentComponentRef` is immutable. Setting it together with `definition.parentId` gives `InvalidSpec`.
 - Deleting the parent in Keycloak also deletes its sub-components. The child then reports `ParentNotReady` until the parent exists again.
 
+### External RSA Key Provider (cert-manager)
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakComponent
+metadata:
+  name: external-signing-key
+  namespace: keycloak
+spec:
+  realmRef:
+    name: my-realm
+  name: external-signing-key
+  configSecretRefs:
+    - secretName: my-tls-secret
+      key: tls.key
+      configKey: privateKey
+    - secretName: my-tls-secret
+      key: tls.crt
+      configKey: certificate
+  definition:
+    providerId: rsa
+    providerType: org.keycloak.keys.KeyProvider
+    config:
+      active:
+        - "true"
+      enabled:
+        - "true"
+      priority:
+        - "108"
+      algorithm:
+        - "RS256"
+```
+
+`configSecretRefs` maps the listed Secret keys to the named config keys, for Secrets whose key names cannot match Keycloak's (cert-manager fixes them to `tls.key` / `tls.crt`). Each injected value is stored as a single-element list, same as `configSecretRef`. Both fields can be combined; a config key that is already set, inline or via `configSecretRef`, is rejected with `ConfigSecretError` rather than overridden. `configKey` is unique per entry.
+
 ### RSA Key Provider
 
 ```yaml
@@ -189,5 +234,6 @@ kubectl get kcco
 ## Notes
 
 - Component configuration uses arrays of strings for all values
-- Put secrets such as `bindCredential` in a Secret and set `configSecretRef` ([Secret references](./secrets.md))
+- Put secrets such as `bindCredential` in a Secret and set `configSecretRef`, or map individual Secret keys to config keys with `configSecretRefs` ([Secret references](./secrets.md))
+- A config key set via `configSecretRefs` must not already be set inline or via `configSecretRef`
 - Some components may require specific ordering via `priority` config

@@ -141,6 +141,12 @@ func (r *KeycloakComponentReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return r.updateStatus(ctx, component, false, "ConfigSecretError", err.Error(), "", componentDef.Name, componentDef.ProviderType)
 	}
 
+	definition, err = applyConfigSecretMappings(ctx, r.Client, component.Namespace, component.Spec.ConfigSecretRefs, definition)
+	if err != nil {
+		RecordError(controllerName, "secret_error")
+		return r.updateStatus(ctx, component, false, "ConfigSecretError", err.Error(), "", componentDef.Name, componentDef.ProviderType)
+	}
+
 	// Resolve the parent component reference into definition.parentId. The
 	// definition schema is free-form, so CEL cannot enforce this exclusivity.
 	if component.Spec.ParentComponentRef != nil {
@@ -483,8 +489,20 @@ func (r *KeycloakComponentReconciler) findComponentsForParent(ctx context.Contex
 	return requests
 }
 
+// findComponentsForSecret enqueues components that reference the Secret via
+// configSecretRef or any configSecretRefs entry.
 func (r *KeycloakComponentReconciler) findComponentsForSecret(ctx context.Context, obj client.Object) []reconcile.Request {
-	return findForConfigSecret(ctx, r.Client, obj.(*corev1.Secret), &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) *keycloakv1beta1.ConfigSecretRef {
-		return o.(*keycloakv1beta1.KeycloakComponent).Spec.ConfigSecretRef
+	secret := obj.(*corev1.Secret)
+	return findReferencingSecret(ctx, r.Client, secret, &keycloakv1beta1.KeycloakComponentList{}, func(o client.Object) bool {
+		spec := o.(*keycloakv1beta1.KeycloakComponent).Spec
+		if spec.ConfigSecretRef != nil && spec.ConfigSecretRef.Name == secret.Name {
+			return true
+		}
+		for _, m := range spec.ConfigSecretRefs {
+			if m.SecretName == secret.Name {
+				return true
+			}
+		}
+		return false
 	})
 }

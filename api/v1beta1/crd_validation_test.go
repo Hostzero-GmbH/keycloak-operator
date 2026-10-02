@@ -233,6 +233,22 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 			wantErrText: "exactly one of realmRef, clusterRealmRef, or parentComponentRef must be set",
 		},
 		{
+			name: "KeycloakComponent rejects duplicate configSecretRefs targets",
+			object: &KeycloakComponent{
+				ObjectMeta: metav1.ObjectMeta{Name: "component-dup-config-key", Namespace: namespace},
+				Spec: KeycloakComponentSpec{
+					Name:     &componentName,
+					RealmRef: &ResourceRef{Name: "realm"},
+					ConfigSecretRefs: []ConfigSecretRefMapping{
+						{SecretName: "tls", Key: "tls.key", ConfigKey: "privateKey"},
+						{SecretName: "tls", Key: "tls.crt", ConfigKey: "privateKey"},
+					},
+					Definition: runtime.RawExtension{Raw: []byte(`{"providerId":"rsa"}`)},
+				},
+			},
+			wantErrText: "Duplicate value",
+		},
+		{
 			name: "RoleDefinition rejects both client selectors",
 			object: &KeycloakRoleMapping{
 				ObjectMeta: metav1.ObjectMeta{Name: "mapping-both-client-role", Namespace: namespace},

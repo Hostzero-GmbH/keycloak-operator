@@ -86,6 +86,41 @@ spec:
                 required:
                 - name
                 type: object
+              configSecretRefs:
+                description: |-
+                  ConfigSecretRefs maps individual Secret keys to config keys in
+                  definition.config, for Secrets whose key names differ from Keycloak's
+                  (e.g. cert-manager's tls.key -> privateKey). Each value is injected as a
+                  single-element list. A config key that is already set, inline or via
+                  configSecretRef, cannot also be set here.
+                items:
+                  description: |-
+                    ConfigSecretRefMapping injects one Secret key into definition.config under
+                    a different key name.
+                  properties:
+                    configKey:
+                      description: ConfigKey is the target key in definition.config
+                      minLength: 1
+                      type: string
+                    key:
+                      description: Key is the key within the Secret that holds the
+                        value
+                      minLength: 1
+                      type: string
+                    secretName:
+                      description: SecretName is the name of the Kubernetes Secret
+                        in the same namespace
+                      minLength: 1
+                      type: string
+                  required:
+                  - configKey
+                  - key
+                  - secretName
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - configKey
+                x-kubernetes-list-type: map
               definition:
                 description: |-
                   Definition contains the Keycloak ComponentRepresentation. Set the component
