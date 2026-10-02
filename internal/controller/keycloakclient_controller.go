@@ -697,8 +697,14 @@ func toObjectSlice(v interface{}) ([]map[string]interface{}, bool) {
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakClientReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&keycloakv1beta1.KeycloakClient{}).
-		Owns(&corev1.Secret{}).
-		Complete(telemetry.WrapReconciler("KeycloakClient", r))
+		Owns(&corev1.Secret{})
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakClientList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			c := o.(*keycloakv1beta1.KeycloakClient)
+			return c.Spec.RealmRef, c.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakClient", r))
 }

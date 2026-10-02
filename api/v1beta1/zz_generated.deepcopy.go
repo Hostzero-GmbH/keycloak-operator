@@ -1169,6 +1169,11 @@ func (in *KeycloakComponentSpec) DeepCopyInto(out *KeycloakComponentSpec) {
 		*out = new(ClusterResourceRef)
 		**out = **in
 	}
+	if in.ParentComponentRef != nil {
+		in, out := &in.ParentComponentRef, &out.ParentComponentRef
+		*out = new(ResourceRef)
+		**out = **in
+	}
 	if in.Name != nil {
 		in, out := &in.Name, &out.Name
 		*out = new(string)

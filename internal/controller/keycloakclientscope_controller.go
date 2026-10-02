@@ -202,7 +202,13 @@ func (r *KeycloakClientScopeReconciler) updateStatus(ctx context.Context, client
 
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakClientScopeReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&keycloakv1beta1.KeycloakClientScope{}).
-		Complete(telemetry.WrapReconciler("KeycloakClientScope", r))
+	b := ctrl.NewControllerManagedBy(mgr).
+		For(&keycloakv1beta1.KeycloakClientScope{})
+	return watchRealms(b, r.Client,
+		func() client.ObjectList { return &keycloakv1beta1.KeycloakClientScopeList{} },
+		func(o client.Object) (*keycloakv1beta1.ResourceRef, *keycloakv1beta1.ClusterResourceRef) {
+			s := o.(*keycloakv1beta1.KeycloakClientScope)
+			return s.Spec.RealmRef, s.Spec.ClusterRealmRef
+		},
+	).Complete(telemetry.WrapReconciler("KeycloakClientScope", r))
 }

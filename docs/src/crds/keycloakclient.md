@@ -101,6 +101,8 @@ clientSecretRef:
   clientSecretKey: OIDC_CLIENT_SECRET
 ```
 
+Use `clientIdKey: clientId` / `clientSecretKey: clientSecret` when the Secret is consumed by a `KeycloakIdentityProvider` via `configSecretRef`, see [Realm-to-realm brokering](./keycloakidentityprovider.md#realm-to-realm-brokering).
+
 ## Examples
 
 ### Public Client (SPA)

@@ -254,6 +254,11 @@ func TestParseExecutionsRejectsInvalidShape(t *testing.T) {
 			json: `[{"subFlow":{"alias":"a","providerId":"basic-flow","executions":[{"requirement":"REQUIRED"}]},"requirement":"REQUIRED"}]`,
 			want: "[0].executions[0]",
 		},
+		{
+			name: "subflow authenticator on non-form-flow",
+			json: `[{"subFlow":{"alias":"a","providerId":"basic-flow","authenticator":"registration-page-form"},"requirement":"REQUIRED"}]`,
+			want: "subFlow.authenticator is only supported for providerId \"form-flow\"",
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -268,6 +273,64 @@ func TestParseExecutionsEmpty(t *testing.T) {
 	got, err := parseExecutions(runtime.RawExtension{})
 	require.NoError(t, err)
 	require.Nil(t, got)
+}
+
+func TestBuildSubFlowDef(t *testing.T) {
+	tests := []struct {
+		name string
+		sub  flowDefinition
+		want map[string]interface{}
+	}{
+		{
+			name: "basic-flow sends no provider",
+			sub:  flowDefinition{Alias: "forms", ProviderID: "basic-flow"},
+			want: map[string]interface{}{"alias": "forms", "type": "basic-flow"},
+		},
+		{
+			name: "form-flow defaults provider to registration-page-form",
+			sub:  flowDefinition{Alias: "reg", ProviderID: "form-flow", Description: "Registration form"},
+			want: map[string]interface{}{"alias": "reg", "type": "form-flow", "provider": "registration-page-form", "description": "Registration form"},
+		},
+		{
+			name: "form-flow with explicit authenticator",
+			sub:  flowDefinition{Alias: "reg", ProviderID: "form-flow", Authenticator: "my-custom-form"},
+			want: map[string]interface{}{"alias": "reg", "type": "form-flow", "provider": "my-custom-form"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, buildSubFlowDef(tt.sub))
+		})
+	}
+}
+
+func TestSubFlowAuthenticatorMismatch(t *testing.T) {
+	formFlow := func(auth string) flowExecution {
+		return flowExecution{SubFlow: &flowDefinition{Alias: "reg", ProviderID: "form-flow", Authenticator: auth}, Requirement: "REQUIRED"}
+	}
+	basicFlow := flowExecution{SubFlow: &flowDefinition{Alias: "forms", ProviderID: "basic-flow"}, Requirement: "REQUIRED"}
+	liveSub := func(auth string) liveExecution {
+		return liveExecution{ID: "1", IsFlow: true, SubFlowAlias: "reg", Authenticator: auth}
+	}
+
+	tests := []struct {
+		name string
+		d    flowExecution
+		l    liveExecution
+		want bool
+	}{
+		{name: "form-flow created with type as provider (issue #152)", d: formFlow(""), l: liveSub("form-flow"), want: true},
+		{name: "form-flow with correct default provider", d: formFlow(""), l: liveSub("registration-page-form"), want: false},
+		{name: "form-flow with explicit provider differing from live", d: formFlow("custom"), l: liveSub("registration-page-form"), want: true},
+		{name: "form-flow with explicit provider matching live", d: formFlow("custom"), l: liveSub("custom"), want: false},
+		{name: "basic-flow ignores stray live authenticator", d: basicFlow, l: liveSub("basic-flow"), want: false},
+		{name: "leaf is never a mismatch", d: flowExecution{Authenticator: "auth-cookie", Requirement: "REQUIRED"}, l: liveExecution{ID: "1", Authenticator: "auth-cookie"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, subFlowAuthenticatorMismatch(tt.d, tt.l))
+		})
+	}
 }
 
 func rawExt(t *testing.T, s string) runtime.RawExtension {

@@ -26,19 +26,30 @@ type ConfigSecretRefMapping struct {
 }
 
 // KeycloakComponentSpec defines the desired state of KeycloakComponent
-// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.parentComponentRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or parentComponentRef must be set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.name) || self.name == oldSelf.name",message="spec.name is immutable once set"
+// +kubebuilder:validation:XValidation:rule="has(self.parentComponentRef) == has(oldSelf.parentComponentRef) && (!has(self.parentComponentRef) || self.parentComponentRef.name == oldSelf.parentComponentRef.name)",message="spec.parentComponentRef is immutable"
 // +kubebuilder:validation:XValidation:rule="!(has(self.configSecretRef) && has(self.configSecretRefs))",message="configSecretRef and configSecretRefs are mutually exclusive"
 type KeycloakComponentSpec struct {
-	// RealmRef is a reference to a KeycloakRealm
-	// One of realmRef or clusterRealmRef must be specified
+	// RealmRef is a reference to a KeycloakRealm for top-level components
+	// One of realmRef, clusterRealmRef, or parentComponentRef must be specified
 	// +optional
 	RealmRef *ResourceRef `json:"realmRef,omitempty"`
 
-	// ClusterRealmRef is a reference to a ClusterKeycloakRealm
-	// One of realmRef or clusterRealmRef must be specified
+	// ClusterRealmRef is a reference to a ClusterKeycloakRealm for top-level components
+	// One of realmRef, clusterRealmRef, or parentComponentRef must be specified
 	// +optional
 	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
+
+	// ParentComponentRef is a reference to a parent KeycloakComponent in the same
+	// namespace for sub-components, e.g. an LDAP mapper under its user federation
+	// provider. The parent's Keycloak ID is injected as definition.parentId and
+	// the realm is derived from the parent chain, so realmRef and clusterRealmRef
+	// must not be set alongside it. Mutually exclusive with definition.parentId
+	// and immutable.
+	// One of realmRef, clusterRealmRef, or parentComponentRef must be specified
+	// +optional
+	ParentComponentRef *ResourceRef `json:"parentComponentRef,omitempty"`
 
 	// Name is the component name in Keycloak. Immutable once set. The
 	// providerType is set in spec.definition.

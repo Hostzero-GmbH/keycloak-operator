@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 func TestKeycloakRealmE2E(t *testing.T) {
@@ -542,6 +543,130 @@ func TestKeycloakRealmE2E(t *testing.T) {
 		require.NoError(t, err, "Realm was not recreated in Keycloak after deletion")
 		t.Log("Realm was successfully reconciled (recreated) after manual deletion")
 	})
+
+	// Keycloak's PUT /admin/realms/{realm} resets the OAuth2 device, CIBA and
+	// PAR settings to defaults when the representation omits them. Adopting an
+	// existing realm with a minimal definition must not touch them.
+	t.Run("PartialUpdatePreservesKeycloakResetFields", func(t *testing.T) {
+		if !canConnectToKeycloak() {
+			t.Skip("Skipping - cannot connect to Keycloak from test environment")
+		}
+		kc := getInternalKeycloakClient(t)
+
+		// Every field known to be reset-on-null, at a non-default value. If a
+		// Keycloak upgrade adds another such field, add it here so the full
+		// representation diff below catches it.
+		nonDefaultRealm := func(name string) json.RawMessage {
+			return rawJSON(fmt.Sprintf(`{
+				"realm": %q,
+				"enabled": true,
+				"displayName": "before adoption",
+				"accessTokenLifespan": 420,
+				"oauth2DeviceCodeLifespan": 1200,
+				"oauth2DevicePollingInterval": 10,
+				"browserSecurityHeaders": {
+					"xFrameOptions": "DENY",
+					"contentSecurityPolicy": "frame-src 'none'; frame-ancestors 'none'; object-src 'none';"
+				},
+				"attributes": {
+					"cibaBackchannelTokenDeliveryMode": "ping",
+					"cibaExpiresIn": "300",
+					"cibaInterval": "10",
+					"cibaAuthRequestedUserHint": "login_hint",
+					"parRequestUriLifespan": "120",
+					"custom.attr": "keep"
+				}
+			}`, name)).Raw
+		}
+
+		// Fail-fast guard: confirm Keycloak still resets the field on a bare
+		// PUT. If this stops failing, Keycloak fixed it upstream and
+		// preserveRealmFieldsResetOnUpdate can be removed.
+		probeName := fmt.Sprintf("realm-reset-probe-%d", time.Now().UnixNano())
+		require.NoError(t, kc.CreateRealmFromDefinition(ctx, nonDefaultRealm(probeName)))
+		t.Cleanup(func() { _ = kc.DeleteRealm(ctx, probeName) })
+		require.NoError(t, kc.UpdateRealm(ctx, probeName, rawJSON(`{"enabled": true}`).Raw))
+		probe := getRealmMap(t, kc, probeName)
+		require.Equal(t, float64(5), probe["oauth2DevicePollingInterval"],
+			"Keycloak no longer resets oauth2DevicePollingInterval on a partial PUT; preserveRealmFieldsResetOnUpdate can be dropped")
+		probeAttrs, _ := probe["attributes"].(map[string]interface{})
+		require.Equal(t, "120", probeAttrs["cibaExpiresIn"],
+			"Keycloak no longer resets CIBA attributes on a partial PUT; preserveRealmFieldsResetOnUpdate can be dropped")
+
+		// Pre-existing realm, then adopt it with a CR that only sets a few fields.
+		realmName := fmt.Sprintf("realm-adopt-%d", time.Now().UnixNano())
+		require.NoError(t, kc.CreateRealmFromDefinition(ctx, nonDefaultRealm(realmName)))
+		t.Cleanup(func() { _ = kc.DeleteRealm(ctx, realmName) })
+		before := getRealmMap(t, kc, realmName)
+
+		realm := &keycloakv1beta1.KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      realmName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakRealmSpec{
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
+					"enabled": true,
+					"displayName": "adopted"
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, realm))
+		t.Cleanup(func() { k8sClient.Delete(ctx, realm) })
+		waitForRealmReady(t, realm.Name, realm.Namespace)
+
+		after := getRealmMap(t, kc, realmName)
+		require.Equal(t, "adopted", after["displayName"])
+		delete(before, "displayName")
+		delete(after, "displayName")
+		require.Equal(t, before, after, "adopting the realm changed fields the definition does not set")
+
+		// Explicit values in the definition still win over the carried-over ones.
+		updated := &keycloakv1beta1.KeycloakRealm{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: realm.Name, Namespace: realm.Namespace}, updated))
+		updated.Spec.Definition = rawJSON(`{
+			"enabled": true,
+			"displayName": "adopted",
+			"oauth2DevicePollingInterval": 7
+		}`)
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			raw, err := kc.GetRealmRaw(ctx, realmName)
+			if err != nil {
+				return false, nil
+			}
+			var m map[string]interface{}
+			if err := json.Unmarshal(raw, &m); err != nil {
+				return false, nil
+			}
+			return m["oauth2DevicePollingInterval"] == float64(7), nil
+		}), "explicit oauth2DevicePollingInterval was not applied")
+		final := getRealmMap(t, kc, realmName)
+		require.Equal(t, float64(1200), final["oauth2DeviceCodeLifespan"], "omitted lifespan was reset by the update")
+		finalAttrs, _ := final["attributes"].(map[string]interface{})
+		require.Equal(t, "300", finalAttrs["cibaExpiresIn"], "CIBA attributes were reset by the update")
+		require.Equal(t, "keep", finalAttrs["custom.attr"], "custom attribute was dropped by the update")
+		finalHeaders, _ := final["browserSecurityHeaders"].(map[string]interface{})
+		require.Equal(t, "DENY", finalHeaders["xFrameOptions"], "browserSecurityHeaders were wiped by the update")
+
+		// The carried-over attributes must not cause a perpetual update loop.
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: realm.Name, Namespace: realm.Namespace}, updated))
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+		assertOperatorLogged(t, since, "realm already in sync, skipping update", "realm", realmName)
+	})
+}
+
+// getRealmMap fetches the full realm representation as a generic map.
+func getRealmMap(t *testing.T, kc *keycloak.Client, realmName string) map[string]interface{} {
+	t.Helper()
+	raw, err := kc.GetRealmRaw(ctx, realmName)
+	require.NoError(t, err)
+	var m map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &m))
+	return m
 }
 
 // TestSameNamespaceRefEnforcement verifies that a namespace set on instanceRef or

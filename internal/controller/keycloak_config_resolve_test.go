@@ -133,6 +133,17 @@ func TestResolveRealm(t *testing.T) {
 			realmRef:  &keycloakv1beta1.ResourceRef{Name: "realm-not-ready"},
 			wantErr:   "is not ready",
 		},
+		{
+			name:      "realm not found",
+			namespace: "demo",
+			realmRef:  &keycloakv1beta1.ResourceRef{Name: "missing"},
+			wantErr:   "KeycloakRealm demo/missing not found",
+		},
+		{
+			name:            "cluster realm not found",
+			clusterRealmRef: &keycloakv1beta1.ClusterResourceRef{Name: "missing"},
+			wantErr:         "ClusterKeycloakRealm missing not found",
+		},
 	}
 
 	for _, tc := range cases {

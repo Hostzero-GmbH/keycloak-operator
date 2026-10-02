@@ -12,7 +12,7 @@ kind: KeycloakComponent
 metadata:
   name: my-component
 spec:
-  # One of realmRef or clusterRealmRef must be specified
+  # Exactly one of realmRef, clusterRealmRef, or parentComponentRef must be specified
   
   # Option 1: Reference to a namespaced KeycloakRealm
   realmRef:
@@ -22,6 +22,11 @@ spec:
   # clusterRealmRef:
   #   name: my-cluster-realm
   
+  # Option 3: Parent KeycloakComponent in the same namespace for sub-components
+  # (e.g. an LDAP provider for a mapper). The realm is derived from the parent.
+  # parentComponentRef:
+  #   name: ldap-federation
+
   # Optional: Secret whose keys are merged into definition.config
   # configSecretRef:
   #   name: ldap-credentials
@@ -108,6 +113,37 @@ spec:
 
 The Secret key `bindCredential` is merged into `config` as `["…"]`. See [Secret references](./secrets.md).
 
+### LDAP Mapper
+
+Set `parentComponentRef` instead of a realm reference to attach a sub-component to another `KeycloakComponent`. The realm is derived from the parent, and the operator injects the parent's `status.componentID` into `definition.parentId`, so the manifest does not depend on server-generated IDs.
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakComponent
+metadata:
+  name: ldap-department-mapper
+  namespace: keycloak
+spec:
+  parentComponentRef:
+    name: ldap-federation
+  name: department
+  definition:
+    providerId: user-attribute-ldap-mapper
+    providerType: org.keycloak.storage.ldap.mappers.LDAPStorageMapper
+    config:
+      ldap.attribute:
+        - "departmentNumber"
+      user.model.attribute:
+        - "department"
+```
+
+Rules:
+
+- The parent must be in the same namespace. `realmRef` and `clusterRealmRef` must not be set alongside `parentComponentRef`; the API server rejects the combination.
+- Until the parent exists and is ready, the status is `ParentNotReady`. The child reconciles again when the parent changes.
+- `parentComponentRef` is immutable. Setting it together with `definition.parentId` gives `InvalidSpec`.
+- Deleting the parent in Keycloak also deletes its sub-components. The child then reports `ParentNotReady` until the parent exists again.
+
 ### External RSA Key Provider (cert-manager)
 
 ```yaml
@@ -179,7 +215,7 @@ The `definition` field accepts any valid Keycloak [ComponentRepresentation](http
 | `name` | string | Component name (required) |
 | `providerId` | string | Provider ID (e.g., "ldap", "rsa-generated") |
 | `providerType` | string | Provider type (e.g., "org.keycloak.storage.UserStorageProvider") |
-| `parentId` | string | Parent component ID (defaults to realm ID) |
+| `parentId` | string | Parent component ID (defaults to realm ID; prefer `spec.parentComponentRef`) |
 | `subType` | string | Optional component subtype |
 | `config` | object | Provider-specific configuration (array of strings per key) |
 

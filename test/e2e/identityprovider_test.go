@@ -2,11 +2,13 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -308,6 +310,87 @@ func TestKeycloakIdentityProviderE2E(t *testing.T) {
 		require.Contains(t, updated.Status.TokenExchange.Message, missing,
 			"waiting message should name the missing client (%s)", missing)
 		t.Logf("TE soft-wait surfaced: %s", updated.Status.TokenExchange.Message)
+	})
+
+	t.Run("RealmToRealmBrokering", func(t *testing.T) {
+		// A confidential KeycloakClient in a source realm whose generated Secret
+		// is chained into a keycloak-oidc IdP in this realm via configSecretRef.
+		// configSecretRef merges Secret keys verbatim, so the client must write
+		// its Secret with Keycloak's IdP config key names.
+		skipIfNoKeycloakAccess(t)
+
+		sourceRealm := createTestRealm(t, instanceName, "idp-broker-src")
+		suffix := time.Now().UnixNano()
+		clientName := fmt.Sprintf("broker-client-%d", suffix)
+		secretName := clientName + "-oidc"
+		idpName := fmt.Sprintf("broker-idp-%d", suffix)
+
+		clientDef := rawJSON(fmt.Sprintf(`{
+			"enabled": true,
+			"protocol": "openid-connect",
+			"publicClient": false,
+			"standardFlowEnabled": true,
+			"redirectUris": ["http://keycloak.keycloak.svc.cluster.local/realms/%s/broker/%s/endpoint"]
+		}`, realmName, idpName))
+		kcClient := &keycloakv1beta1.KeycloakClient{
+			ObjectMeta: metav1.ObjectMeta{Name: clientName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakClientSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: sourceRealm},
+				ClientId:   strPtr(clientName),
+				Definition: &clientDef,
+				ClientSecretRef: &keycloakv1beta1.ClientSecretRefSpec{
+					Name:            secretName,
+					ClientIdKey:     strPtr("clientId"),
+					ClientSecretKey: strPtr("clientSecret"),
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcClient))
+		t.Cleanup(func() { _ = k8sClient.Delete(ctx, kcClient) })
+
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			got := &keycloakv1beta1.KeycloakClient{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clientName, Namespace: testNamespace}, got); err != nil || !got.Status.Ready {
+				return false, nil
+			}
+			secret := &corev1.Secret{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: secretName, Namespace: testNamespace}, secret); err != nil {
+				return false, nil
+			}
+			return len(secret.Data["clientId"]) > 0 && len(secret.Data["clientSecret"]) > 0, nil
+		}), "client %s did not become ready with clientId/clientSecret keys in its Secret", clientName)
+
+		idpDef := rawJSON(fmt.Sprintf(`{
+			"providerId": "keycloak-oidc",
+			"enabled": true,
+			"config": {
+				"authorizationUrl": "http://keycloak.keycloak.svc.cluster.local/realms/%[1]s/protocol/openid-connect/auth",
+				"tokenUrl": "http://keycloak.keycloak.svc.cluster.local/realms/%[1]s/protocol/openid-connect/token"
+			}
+		}`, sourceRealm))
+		idp := &keycloakv1beta1.KeycloakIdentityProvider{
+			ObjectMeta: metav1.ObjectMeta{Name: idpName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakIdentityProviderSpec{
+				RealmRef:        &keycloakv1beta1.ResourceRef{Name: realmName},
+				Alias:           strPtr(idpName),
+				ConfigSecretRef: &keycloakv1beta1.ConfigSecretRef{Name: secretName},
+				Definition:      idpDef,
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, idp))
+		t.Cleanup(func() { _ = k8sClient.Delete(ctx, idp) })
+		waitForIDPReady(t, idp.Name, idp.Namespace)
+
+		raw, err := getInternalKeycloakClient(t).GetIdentityProviderRaw(ctx, realmName, idpName)
+		require.NoError(t, err)
+		var idpMap map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &idpMap))
+		config, _ := idpMap["config"].(map[string]interface{})
+		require.NotNil(t, config, "config map missing on IdP read-back")
+		require.Equal(t, clientName, config["clientId"])
+		require.Equal(t, "**********", config["clientSecret"], "Keycloak masks clientSecret on read-back")
+		require.NotContains(t, config, "client-id")
+		require.NotContains(t, config, "client-secret")
 	})
 
 	t.Run("RejectsInlineOrganizationID", func(t *testing.T) {

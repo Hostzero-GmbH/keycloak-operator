@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,6 +37,19 @@ func waitForFlowReady(t *testing.T, name string) *keycloakv1beta1.KeycloakAuthen
 	})
 	require.NoError(t, err, "Authentication flow %s did not become ready: %s", name, updated.Status.Message)
 	return updated
+}
+
+// waitForRealmStatus waits until the realm is Ready with the given status reason.
+func waitForRealmStatus(t *testing.T, name, status string) {
+	t.Helper()
+	updated := &keycloakv1beta1.KeycloakRealm{}
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, updated); err != nil {
+			return false, nil
+		}
+		return updated.Status.Ready && updated.Status.Status == status, nil
+	})
+	require.NoError(t, err, "Realm %s did not reach status %s: %s/%s", name, status, updated.Status.Status, updated.Status.Message)
 }
 
 func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
@@ -131,6 +145,24 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 
 		waitForFlowReady(t, flow.Name)
 		t.Logf("Registration flow %s is ready", flowAlias)
+
+		if !canConnectToKeycloak() {
+			return
+		}
+		// Regression for #152: a form-flow must be wired to a FormAuthenticator,
+		// otherwise the registration page fails at runtime.
+		kc := getInternalKeycloakClient(t)
+		execs, err := kc.GetFlowExecutions(ctx, realmName, flowAlias)
+		require.NoError(t, err)
+		var sawFormFlow bool
+		for _, e := range execs {
+			if e.AuthenticationFlow != nil && *e.AuthenticationFlow && e.DisplayName != nil && *e.DisplayName == flowAlias+"-registration-form" {
+				sawFormFlow = true
+				require.NotNil(t, e.ProviderID)
+				require.Equal(t, "registration-page-form", *e.ProviderID, "form-flow execution must use the FormAuthenticator, not the flow type")
+			}
+		}
+		require.True(t, sawFormFlow, "registration form sub-flow must be present")
 	})
 
 	t.Run("FlowWithDeeplyNestedSubFlows", func(t *testing.T) {
@@ -197,17 +229,9 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 		require.NoError(t, k8sClient.Create(ctx, realm))
 		t.Cleanup(func() { k8sClient.Delete(ctx, realm) })
 
-		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
-			updated := &keycloakv1beta1.KeycloakRealm{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
-				Name:      realm.Name,
-				Namespace: realm.Namespace,
-			}, updated); err != nil {
-				return false, nil
-			}
-			return updated.Status.Ready, nil
-		})
-		require.NoError(t, err, "Realm with deferred custom browserFlow did not become ready")
+		// Ready (so the flow can be created against it) but with a status
+		// reason that exposes the pending binding.
+		waitForRealmStatus(t, realm.Name, "FlowBindingsDeferred")
 
 		flow := &keycloakv1beta1.KeycloakAuthenticationFlow{
 			ObjectMeta: metav1.ObjectMeta{Name: flowAlias, Namespace: testNamespace},
@@ -225,7 +249,7 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 		waitForFlowReady(t, flow.Name)
 
 		kc := getInternalKeycloakClient(t)
-		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 			realmRaw, err := kc.GetRealmRaw(ctx, customRealmName)
 			if err != nil {
 				return false, nil
@@ -238,6 +262,53 @@ func TestKeycloakAuthenticationFlowE2E(t *testing.T) {
 		})
 		require.NoError(t, err, "Realm did not bind browserFlow to the custom flow")
 		t.Logf("Realm %s bound browserFlow to %s", customRealmName, flowAlias)
+
+		waitForRealmStatus(t, realm.Name, "Ready")
+	})
+
+	// A flow applied before its realm must converge as soon as the realm
+	// becomes Ready, via the realm watch, rather than after the dependent's
+	// error requeue (which is as long as the poll timeout here).
+	t.Run("FlowAppliedBeforeRealm", func(t *testing.T) {
+		skipIfNoKeycloakAccess(t)
+
+		customRealmName := fmt.Sprintf("test-realm-flow-first-%d", time.Now().UnixNano())
+		flowAlias := fmt.Sprintf("flow-first-%d", time.Now().UnixNano())
+		flow := &keycloakv1beta1.KeycloakAuthenticationFlow{
+			ObjectMeta: metav1.ObjectMeta{Name: flowAlias, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakAuthenticationFlowSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: customRealmName},
+				Alias:      flowAlias,
+				ProviderId: "basic-flow",
+				Executions: rawExecutions(`[{"authenticator":"auth-cookie","requirement":"ALTERNATIVE"}]`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, flow))
+		t.Cleanup(func() { k8sClient.Delete(ctx, flow) })
+
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakAuthenticationFlow{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: flow.Name, Namespace: flow.Namespace}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Status == "RealmNotReady" &&
+				strings.Contains(updated.Status.Message, "not found"), nil
+		})
+		require.NoError(t, err, "Flow did not report the missing realm")
+
+		realm := &keycloakv1beta1.KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{Name: customRealmName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakRealmSpec{
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(customRealmName),
+				Definition:  rawJSON(`{"enabled": true}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, realm))
+		t.Cleanup(func() { k8sClient.Delete(ctx, realm) })
+
+		waitForRealmStatus(t, realm.Name, "Ready")
+		waitForFlowReady(t, flow.Name)
 	})
 
 	// Regression: a realm referencing a not-yet-created
