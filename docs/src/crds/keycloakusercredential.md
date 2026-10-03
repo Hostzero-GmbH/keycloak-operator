@@ -63,6 +63,10 @@ spec:
 | `userSecret.passwordPolicy.includeNumbers` | boolean | Include numbers in password | No (default: true) |
 | `userSecret.passwordPolicy.includeSymbols` | boolean | Include symbols in password | No (default: true) |
 
+Generated passwords are drawn from `a-z` and `A-Z`, plus `0-9` when `includeNumbers` is set and
+`` !#%*+-.:=?@_ `` when `includeSymbols` is set. Each enabled class is guaranteed to appear at
+least once, so a realm policy requiring a digit or a special character is satisfied.
+
 ## Status
 
 | Field | Type | Description |
