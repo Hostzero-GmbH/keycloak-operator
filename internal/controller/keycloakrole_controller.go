@@ -116,46 +116,43 @@ func (r *KeycloakRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	isClientRole := role.Spec.ClientRef != nil
 
-	var roleID string
+	getRaw := func() (json.RawMessage, error) { return kc.GetRealmRoleRaw(ctx, realmName, roleName) }
+	create := func() (string, error) { return kc.CreateRealmRole(ctx, realmName, definition) }
+	update := func() error { return kc.UpdateRealmRole(ctx, realmName, roleName, definition) }
 	if isClientRole {
-		existingRole, err := kc.GetClientRole(ctx, realmName, clientUUID, roleName)
-		if err != nil || existingRole == nil {
-			log.Info("creating client role", "name", roleName, "realm", realmName, "client", clientUUID)
-			roleID, err = kc.CreateClientRole(ctx, realmName, clientUUID, definition)
-			if err != nil {
-				RecordError(controllerName, "keycloak_api_error")
-				return r.updateStatus(ctx, role, false, "CreateFailed", fmt.Sprintf("Failed to create client role: %v", err), "", "", true, clientUUID)
-			}
-			log.Info("client role created successfully", "name", roleName, "id", roleID)
-		} else {
-			roleID = *existingRole.ID
-			definition = mergeIDIntoDefinition(definition, existingRole.ID)
-			log.Info("updating client role", "name", roleName, "realm", realmName, "client", clientUUID)
-			if err := kc.UpdateClientRole(ctx, realmName, clientUUID, roleName, definition); err != nil {
-				RecordError(controllerName, "keycloak_api_error")
-				return r.updateStatus(ctx, role, false, "UpdateFailed", fmt.Sprintf("Failed to update client role: %v", err), roleID, roleName, true, clientUUID)
-			}
-			log.Info("client role updated successfully", "name", roleName)
+		getRaw = func() (json.RawMessage, error) { return kc.GetClientRoleRaw(ctx, realmName, clientUUID, roleName) }
+		create = func() (string, error) { return kc.CreateClientRole(ctx, realmName, clientUUID, definition) }
+		update = func() error { return kc.UpdateClientRole(ctx, realmName, clientUUID, roleName, definition) }
+	}
+
+	var roleID string
+	currentRaw, err := getRaw()
+	if err != nil || currentRaw == nil {
+		log.Info("creating role", "name", roleName, "realm", realmName, "clientRole", isClientRole)
+		roleID, err = create()
+		if err != nil {
+			RecordError(controllerName, "keycloak_api_error")
+			return r.updateStatus(ctx, role, false, "CreateFailed", fmt.Sprintf("Failed to create role: %v", err), "", "", isClientRole, clientUUID)
 		}
+		log.Info("role created successfully", "name", roleName, "id", roleID)
 	} else {
-		existingRole, err := kc.GetRealmRole(ctx, realmName, roleName)
-		if err != nil || existingRole == nil {
-			log.Info("creating realm role", "name", roleName, "realm", realmName)
-			roleID, err = kc.CreateRealmRole(ctx, realmName, definition)
-			if err != nil {
-				RecordError(controllerName, "keycloak_api_error")
-				return r.updateStatus(ctx, role, false, "CreateFailed", fmt.Sprintf("Failed to create realm role: %v", err), "", "", false, "")
-			}
-			log.Info("realm role created successfully", "name", roleName, "id", roleID)
+		existingID := idFromRaw(currentRaw)
+		if existingID == nil || *existingID == "" {
+			RecordError(controllerName, "keycloak_api_error")
+			return r.updateStatus(ctx, role, false, "UpdateFailed", "Existing role has no id", "", roleName, isClientRole, clientUUID)
+		}
+		roleID = *existingID
+		definition = mergeIDIntoDefinition(definition, existingID)
+
+		if definitionsMatch(definition, currentRaw) {
+			log.V(1).Info("role already in sync, skipping update", "name", roleName)
 		} else {
-			roleID = *existingRole.ID
-			definition = mergeIDIntoDefinition(definition, existingRole.ID)
-			log.Info("updating realm role", "name", roleName, "realm", realmName)
-			if err := kc.UpdateRealmRole(ctx, realmName, roleName, definition); err != nil {
+			log.Info("updating role", "name", roleName, "realm", realmName, "clientRole", isClientRole)
+			if err := update(); err != nil {
 				RecordError(controllerName, "keycloak_api_error")
-				return r.updateStatus(ctx, role, false, "UpdateFailed", fmt.Sprintf("Failed to update realm role: %v", err), roleID, roleName, false, "")
+				return r.updateStatus(ctx, role, false, "UpdateFailed", fmt.Sprintf("Failed to update role: %v", err), roleID, roleName, isClientRole, clientUUID)
 			}
-			log.Info("realm role updated successfully", "name", roleName)
+			log.Info("role updated successfully", "name", roleName)
 		}
 	}
 

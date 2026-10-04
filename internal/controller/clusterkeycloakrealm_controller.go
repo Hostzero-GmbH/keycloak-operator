@@ -148,7 +148,7 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 		log.Info("realm created successfully", "realm", realmName)
 	} else {
 		// Realm exists — check if update is needed
-		definition = mergeIDIntoDefinition(definition, realmIDFromRaw(currentRaw))
+		definition = mergeIDIntoDefinition(definition, idFromRaw(currentRaw))
 		definition = preserveRealmFieldsResetOnUpdate(definition, currentRaw)
 
 		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash

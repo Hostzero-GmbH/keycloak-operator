@@ -908,8 +908,8 @@ var realmFieldsResetOnUpdate = []string{
 	"browserSecurityHeaders",
 }
 
-// realmIDFromRaw extracts the id field of a raw realm representation.
-func realmIDFromRaw(raw json.RawMessage) *string {
+// idFromRaw extracts the id field of a raw Keycloak representation.
+func idFromRaw(raw json.RawMessage) *string {
 	var rep struct {
 		ID *string `json:"id"`
 	}

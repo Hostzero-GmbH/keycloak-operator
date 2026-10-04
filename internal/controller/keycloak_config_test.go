@@ -906,14 +906,14 @@ func TestPreserveRealmFieldsResetOnUpdate(t *testing.T) {
 	})
 }
 
-func TestRealmIDFromRaw(t *testing.T) {
-	if id := realmIDFromRaw(json.RawMessage(`{"id":"abc","realm":"r"}`)); id == nil || *id != "abc" {
+func TestIDFromRaw(t *testing.T) {
+	if id := idFromRaw(json.RawMessage(`{"id":"abc","realm":"r"}`)); id == nil || *id != "abc" {
 		t.Fatalf("expected id abc, got %v", id)
 	}
-	if id := realmIDFromRaw(json.RawMessage(`{"realm":"r"}`)); id != nil {
+	if id := idFromRaw(json.RawMessage(`{"realm":"r"}`)); id != nil {
 		t.Fatalf("expected nil id, got %q", *id)
 	}
-	if id := realmIDFromRaw(json.RawMessage(`not json`)); id != nil {
+	if id := idFromRaw(json.RawMessage(`not json`)); id != nil {
 		t.Fatalf("expected nil id on bad input, got %q", *id)
 	}
 }
