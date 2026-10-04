@@ -470,6 +470,56 @@ func TestDriftSkip(t *testing.T) {
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, final))
 		require.True(t, final.Status.Ready, "organization should remain Ready after skipped reconcile")
 	})
+
+	t.Run("KeycloakRole_SkipsUpdate", func(t *testing.T) {
+		realmName := createTestRealm(t, instanceName, "drift-role")
+
+		roleName := fmt.Sprintf("drift-role-%d", time.Now().UnixNano())
+		// attributes is not part of keycloak.RoleRepresentation, so the
+		// controller must diff against the raw GET for this to stay in sync.
+		role := &keycloakv1beta1.KeycloakRole{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      roleName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakRoleSpec{
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:     strPtr(roleName),
+				Definition: rawJSON(`{
+					"description": "drift role",
+					"attributes": {"permission": ["read", "write"]}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, role))
+		t.Cleanup(func() { k8sClient.Delete(ctx, role) })
+
+		waitForRoleReady(t, role.Name, role.Namespace)
+
+		updated := &keycloakv1beta1.KeycloakRole{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, updated))
+
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+
+		assertOperatorLogged(t, since, "role already in sync, skipping update", "name", roleName)
+
+		final := &keycloakv1beta1.KeycloakRole{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, final))
+		require.True(t, final.Status.Ready, "role should remain Ready after skipped reconcile")
+	})
+}
+
+func waitForRoleReady(t *testing.T, name, namespace string) {
+	t.Helper()
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		role := &keycloakv1beta1.KeycloakRole{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, role); err != nil {
+			return false, nil
+		}
+		return role.Status.Ready, nil
+	})
+	require.NoError(t, err, "KeycloakRole %s did not become ready", name)
 }
 
 // bumpReconcile patches an annotation onto the given object to force the

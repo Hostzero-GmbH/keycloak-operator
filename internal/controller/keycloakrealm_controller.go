@@ -160,7 +160,7 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	} else {
 		// Realm exists — check if update is needed (drift-detection)
-		definition = mergeIDIntoDefinition(definition, realmIDFromRaw(currentRaw))
+		definition = mergeIDIntoDefinition(definition, idFromRaw(currentRaw))
 		definition = preserveRealmFieldsResetOnUpdate(definition, currentRaw)
 
 		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash
