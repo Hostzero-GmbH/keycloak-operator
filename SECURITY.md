@@ -2,9 +2,8 @@
 
 ## Supported Versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+Only the latest minor release receives security fixes. Upgrade to the latest
+version before reporting.
 
 ## Reporting a Vulnerability
 
@@ -47,12 +46,33 @@ This security policy covers:
 - Third-party dependencies (report to the respective maintainers, but let us know)
 - Infrastructure not managed by us
 
+## Security Model
+
+The operator reads Secrets with its own service account and sends their
+contents to the Keycloak server named in the custom resource. The right to
+create or update a resource is therefore equivalent to reading every Secret
+that resource can reference:
+
+| Permission | Equivalent to |
+|------------|---------------|
+| `create`/`update` `KeycloakInstance` (and other namespaced CRs) in namespace X | Read any Secret in namespace X |
+| `create`/`update` `ClusterKeycloakInstance` or `ClusterKeycloakRealm` | Read any Secret in the cluster |
+
+Namespaced resources only ever read Secrets and ConfigMaps from their own
+namespace. Do not grant the cluster-scoped kinds to anyone who is not already
+a cluster administrator, and do not grant the namespaced kinds to users who
+should not be able to read Secrets in that namespace.
+
+If you need a stronger guarantee, add an admission policy (ValidatingAdmissionPolicy,
+Kyverno, Gatekeeper) that restricts `spec.baseUrl` to your Keycloak hostnames.
+
 ## Security Best Practices
 
 When deploying the operator:
 
-1. **Use RBAC**: Deploy with minimal required permissions
-2. **Network Policies**: Restrict operator network access to only Keycloak
+1. **Use RBAC**: Deploy with minimal required permissions, see above
+2. **Network Policies**: Restrict operator egress to the Keycloak server. The
+   Helm chart ships a `NetworkPolicy` template for this
 3. **Secrets Management**: Use Kubernetes secrets or external secret managers
 4. **Image Verification**: Verify container image signatures when available
 5. **Keep Updated**: Run the latest stable version

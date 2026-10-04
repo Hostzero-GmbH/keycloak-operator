@@ -55,13 +55,10 @@ type CACertSource struct {
 }
 
 // CACertSecretRefSpec references a Secret key holding a PEM-encoded CA bundle.
+// The Secret must live in the KeycloakInstance namespace.
 type CACertSecretRefSpec struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-
-	// Namespace defaults to the KeycloakInstance namespace when unset.
-	// +optional
-	Namespace *string `json:"namespace,omitempty"`
 
 	// +kubebuilder:default="ca.crt"
 	// +optional
@@ -69,14 +66,11 @@ type CACertSecretRefSpec struct {
 }
 
 // CACertConfigMapRefSpec references a ConfigMap key holding a PEM-encoded CA
-// bundle (e.g. kube-root-ca.crt or a cert-manager CA bundle).
+// bundle (e.g. kube-root-ca.crt or a cert-manager CA bundle). The ConfigMap
+// must live in the KeycloakInstance namespace.
 type CACertConfigMapRefSpec struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-
-	// Namespace defaults to the KeycloakInstance namespace when unset.
-	// +optional
-	Namespace *string `json:"namespace,omitempty"`
 
 	// +kubebuilder:default="ca.crt"
 	// +optional
@@ -109,13 +103,10 @@ type PasswordGrantSpec struct {
 }
 
 // PasswordGrantSecretRefSpec references a Secret containing admin credentials.
+// The Secret must live in the KeycloakInstance namespace.
 type PasswordGrantSecretRefSpec struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-
-	// Namespace defaults to the KeycloakInstance namespace when unset.
-	// +optional
-	Namespace *string `json:"namespace,omitempty"`
 
 	// UsernameKey is ignored when PasswordGrantSpec.Username is set.
 	// +kubebuilder:default="username"
@@ -139,13 +130,10 @@ type ClientCredentialsSpec struct {
 }
 
 // ClientCredentialsSecretRefSpec references a Secret containing client credentials.
+// The Secret must live in the KeycloakInstance namespace.
 type ClientCredentialsSecretRefSpec struct {
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-
-	// Namespace defaults to the KeycloakInstance namespace when unset.
-	// +optional
-	Namespace *string `json:"namespace,omitempty"`
 
 	// ClientIdKey is ignored when ClientCredentialsSpec.ClientID is set.
 	// +kubebuilder:default="client-id"

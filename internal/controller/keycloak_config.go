@@ -133,13 +133,14 @@ func GetKeycloakConfigFromClusterInstance(ctx context.Context, c client.Client, 
 }
 
 // resolvePasswordGrant loads the admin credentials Secret referenced by spec
-// and returns (username, password). The inline Username takes precedence over
-// the value stored under SecretRef.UsernameKey.
-func resolvePasswordGrant(ctx context.Context, c client.Client, spec *keycloakv1beta1.PasswordGrantSpec, defaultNamespace string) (string, string, error) {
-	namespace := defaultNamespace
-	if spec.SecretRef.Namespace != nil {
-		namespace = *spec.SecretRef.Namespace
-	}
+// from the instance namespace and returns (username, password). The inline
+// Username takes precedence over the value stored under SecretRef.UsernameKey.
+//
+// Secrets are never read from another namespace: a namespaced KeycloakInstance
+// is created with namespace-scoped RBAC, and combined with an attacker-chosen
+// baseUrl a cross-namespace ref would let its creator exfiltrate any Secret in
+// the cluster.
+func resolvePasswordGrant(ctx context.Context, c client.Client, spec *keycloakv1beta1.PasswordGrantSpec, namespace string) (string, string, error) {
 	secret := &corev1.Secret{}
 	if err := c.Get(ctx, types.NamespacedName{Name: spec.SecretRef.Name, Namespace: namespace}, secret); err != nil {
 		return "", "", fmt.Errorf("failed to get credentials secret: %w", err)
@@ -171,13 +172,10 @@ func resolvePasswordGrant(ctx context.Context, c client.Client, spec *keycloakv1
 }
 
 // resolveClientCredentials loads the client-credentials Secret referenced by
-// spec and returns (clientID, clientSecret). The inline ClientID takes
-// precedence over the value stored under SecretRef.ClientIdKey.
-func resolveClientCredentials(ctx context.Context, c client.Client, spec *keycloakv1beta1.ClientCredentialsSpec, defaultNamespace string) (string, string, error) {
-	namespace := defaultNamespace
-	if spec.SecretRef.Namespace != nil {
-		namespace = *spec.SecretRef.Namespace
-	}
+// spec from the instance namespace and returns (clientID, clientSecret). The
+// inline ClientID takes precedence over the value stored under
+// SecretRef.ClientIdKey. See resolvePasswordGrant on why the namespace is fixed.
+func resolveClientCredentials(ctx context.Context, c client.Client, spec *keycloakv1beta1.ClientCredentialsSpec, namespace string) (string, string, error) {
 	secret := &corev1.Secret{}
 	if err := c.Get(ctx, types.NamespacedName{Name: spec.SecretRef.Name, Namespace: namespace}, secret); err != nil {
 		return "", "", fmt.Errorf("failed to get client credentials secret: %w", err)
@@ -242,15 +240,12 @@ func resolveClusterPasswordGrant(ctx context.Context, c client.Client, spec *key
 }
 
 // resolveCACert loads a PEM-encoded CA bundle from the referenced Secret or
-// ConfigMap. The CEL XValidation on CACertSource guarantees exactly one of
-// secretRef / configMapRef is set.
-func resolveCACert(ctx context.Context, c client.Client, src *keycloakv1beta1.CACertSource, defaultNamespace string) (string, error) {
+// ConfigMap in the instance namespace. The CEL XValidation on CACertSource
+// guarantees exactly one of secretRef / configMapRef is set. See
+// resolvePasswordGrant on why the namespace is fixed.
+func resolveCACert(ctx context.Context, c client.Client, src *keycloakv1beta1.CACertSource, namespace string) (string, error) {
 	switch {
 	case src.SecretRef != nil:
-		namespace := defaultNamespace
-		if src.SecretRef.Namespace != nil {
-			namespace = *src.SecretRef.Namespace
-		}
 		key := src.SecretRef.Key
 		if key == "" {
 			key = "ca.crt"
@@ -265,10 +260,6 @@ func resolveCACert(ctx context.Context, c client.Client, src *keycloakv1beta1.CA
 		}
 		return string(data), nil
 	case src.ConfigMapRef != nil:
-		namespace := defaultNamespace
-		if src.ConfigMapRef.Namespace != nil {
-			namespace = *src.ConfigMapRef.Namespace
-		}
 		key := src.ConfigMapRef.Key
 		if key == "" {
 			key = "ca.crt"

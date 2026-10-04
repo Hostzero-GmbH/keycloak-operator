@@ -162,30 +162,86 @@ func TestGetKeycloakConfigFromInstance_PasswordGrant_CustomKeys(t *testing.T) {
 	}
 }
 
-func TestGetKeycloakConfigFromInstance_PasswordGrant_SecretInOtherNamespace(t *testing.T) {
-	secret := mkSecret("admin", "secrets", map[string]string{
-		"username": "admin",
-		"password": "p",
-	})
-	instance := &keycloakv1beta1.KeycloakInstance{
-		ObjectMeta: metav1.ObjectMeta{Name: "kci", Namespace: "kc"},
-		Spec: keycloakv1beta1.KeycloakInstanceSpec{
-			Auth: keycloakv1beta1.AuthSpec{
-				PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
-					SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{
-						Name:      "admin",
-						Namespace: strPtr("secrets"),
+// A namespaced KeycloakInstance must only ever read Secrets/ConfigMaps from its
+// own namespace. Each case places the referenced object only in "victim" and
+// the instance in "attacker" and expects a not-found error.
+func TestGetKeycloakConfigFromInstance_NeverReadsOtherNamespace(t *testing.T) {
+	victimAdmin := mkSecret("admin", "victim", map[string]string{"username": "admin", "password": "p"})
+	victimSvc := mkSecret("svc", "victim", map[string]string{"client-id": "id", "client-secret": "s"})
+	victimCASecret := mkSecret("ca", "victim", map[string]string{"ca.crt": testCAPEM})
+	victimCACM := mkConfigMap("ca", "victim", map[string]string{"ca.crt": testCAPEM})
+	attackerAdmin := mkSecret("admin", "attacker", map[string]string{"username": "a", "password": "a"})
+
+	passwordGrant := keycloakv1beta1.AuthSpec{
+		PasswordGrant: &keycloakv1beta1.PasswordGrantSpec{
+			SecretRef: keycloakv1beta1.PasswordGrantSecretRefSpec{Name: "admin"},
+		},
+	}
+
+	cases := []struct {
+		name    string
+		objs    []client.Object
+		spec    keycloakv1beta1.KeycloakInstanceSpec
+		wantErr string
+	}{
+		{
+			name:    "passwordGrant secret",
+			objs:    []client.Object{victimAdmin},
+			spec:    keycloakv1beta1.KeycloakInstanceSpec{Auth: passwordGrant},
+			wantErr: "failed to get credentials secret",
+		},
+		{
+			name: "clientCredentials secret",
+			objs: []client.Object{victimSvc},
+			spec: keycloakv1beta1.KeycloakInstanceSpec{
+				Auth: keycloakv1beta1.AuthSpec{
+					ClientCredentials: &keycloakv1beta1.ClientCredentialsSpec{
+						SecretRef: keycloakv1beta1.ClientCredentialsSecretRefSpec{Name: "svc"},
 					},
 				},
 			},
+			wantErr: "failed to get client credentials secret",
+		},
+		{
+			name: "caCert secret",
+			objs: []client.Object{attackerAdmin, victimCASecret},
+			spec: keycloakv1beta1.KeycloakInstanceSpec{
+				Auth: passwordGrant,
+				TLS: &keycloakv1beta1.TLSSpec{
+					CACert: &keycloakv1beta1.CACertSource{
+						SecretRef: &keycloakv1beta1.CACertSecretRefSpec{Name: "ca"},
+					},
+				},
+			},
+			wantErr: "failed to get caCert secret",
+		},
+		{
+			name: "caCert configmap",
+			objs: []client.Object{attackerAdmin, victimCACM},
+			spec: keycloakv1beta1.KeycloakInstanceSpec{
+				Auth: passwordGrant,
+				TLS: &keycloakv1beta1.TLSSpec{
+					CACert: &keycloakv1beta1.CACertSource{
+						ConfigMapRef: &keycloakv1beta1.CACertConfigMapRefSpec{Name: "ca"},
+					},
+				},
+			},
+			wantErr: "failed to get caCert configmap",
 		},
 	}
-	cfg, err := GetKeycloakConfigFromInstance(context.Background(), newAuthTestClient(t, secret, instance), instance)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.Username != "admin" {
-		t.Errorf("got %q want admin", cfg.Username)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			instance := &keycloakv1beta1.KeycloakInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "kci", Namespace: "attacker"},
+				Spec:       tc.spec,
+			}
+			objs := append([]client.Object{instance}, tc.objs...)
+			_, err := GetKeycloakConfigFromInstance(context.Background(), newAuthTestClient(t, objs...), instance)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("got error %v, want it to contain %q", err, tc.wantErr)
+			}
+		})
 	}
 }
 
