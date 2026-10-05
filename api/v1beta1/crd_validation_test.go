@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -283,6 +284,40 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 			}
 		})
 	}
+
+	// Regression: a namespaced KeycloakInstance must not be able to point its
+	// Secret/ConfigMap refs at another namespace. The schema has no such field,
+	// so the API server prunes it.
+	t.Run("KeycloakInstance prunes cross-namespace refs", func(t *testing.T) {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(GroupVersion.WithKind("KeycloakInstance"))
+		obj.SetName("instance-xns")
+		obj.SetNamespace(namespace)
+		obj.Object["spec"] = map[string]interface{}{
+			"baseUrl": "http://attacker.example",
+			"auth": map[string]interface{}{
+				"passwordGrant": map[string]interface{}{
+					"secretRef": map[string]interface{}{"name": "admin", "namespace": "victim"},
+				},
+			},
+			"tls": map[string]interface{}{
+				"caCert": map[string]interface{}{
+					"secretRef": map[string]interface{}{"name": "ca", "namespace": "victim"},
+				},
+			},
+		}
+		if err := k8sClient.Create(ctx, obj); err != nil {
+			t.Fatalf("create instance: %v", err)
+		}
+		for _, path := range [][]string{
+			{"spec", "auth", "passwordGrant", "secretRef", "namespace"},
+			{"spec", "tls", "caCert", "secretRef", "namespace"},
+		} {
+			if _, found, _ := unstructured.NestedString(obj.Object, path...); found {
+				t.Errorf("%s was persisted; it must be pruned by the schema", strings.Join(path, "."))
+			}
+		}
+	})
 
 	t.Run("KeycloakComponent rejects a parentComponentRef change", func(t *testing.T) {
 		component := &KeycloakComponent{}

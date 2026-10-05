@@ -76,8 +76,9 @@ spec:
                           The client ID is not a secret, so providing it inline is allowed.
                         type: string
                       secretRef:
-                        description: ClientCredentialsSecretRefSpec references a Secret
-                          containing client credentials.
+                        description: |-
+                          ClientCredentialsSecretRefSpec references a Secret containing client credentials.
+                          The Secret must live in the KeycloakInstance namespace.
                         properties:
                           clientIdKey:
                             default: client-id
@@ -88,10 +89,6 @@ spec:
                             default: client-secret
                             type: string
                           name:
-                            type: string
-                          namespace:
-                            description: Namespace defaults to the KeycloakInstance
-                              namespace when unset.
                             type: string
                         required:
                         - name
@@ -105,14 +102,11 @@ spec:
                       against a user account (typically the master-realm admin).
                     properties:
                       secretRef:
-                        description: PasswordGrantSecretRefSpec references a Secret
-                          containing admin credentials.
+                        description: |-
+                          PasswordGrantSecretRefSpec references a Secret containing admin credentials.
+                          The Secret must live in the KeycloakInstance namespace.
                         properties:
                           name:
-                            type: string
-                          namespace:
-                            description: Namespace defaults to the KeycloakInstance
-                              namespace when unset.
                             type: string
                           passwordKey:
                             default: password
@@ -156,32 +150,26 @@ spec:
                       configMapRef:
                         description: |-
                           CACertConfigMapRefSpec references a ConfigMap key holding a PEM-encoded CA
-                          bundle (e.g. kube-root-ca.crt or a cert-manager CA bundle).
+                          bundle (e.g. kube-root-ca.crt or a cert-manager CA bundle). The ConfigMap
+                          must live in the KeycloakInstance namespace.
                         properties:
                           key:
                             default: ca.crt
                             type: string
                           name:
-                            type: string
-                          namespace:
-                            description: Namespace defaults to the KeycloakInstance
-                              namespace when unset.
                             type: string
                         required:
                         - name
                         type: object
                       secretRef:
-                        description: CACertSecretRefSpec references a Secret key holding
-                          a PEM-encoded CA bundle.
+                        description: |-
+                          CACertSecretRefSpec references a Secret key holding a PEM-encoded CA bundle.
+                          The Secret must live in the KeycloakInstance namespace.
                         properties:
                           key:
                             default: ca.crt
                             type: string
                           name:
-                            type: string
-                          namespace:
-                            description: Namespace defaults to the KeycloakInstance
-                              namespace when unset.
                             type: string
                         required:
                         - name

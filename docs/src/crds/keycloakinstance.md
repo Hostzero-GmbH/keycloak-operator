@@ -23,8 +23,6 @@ spec:
       username: admin
       secretRef:
         name: keycloak-admin
-        # Optional: namespace of the secret (defaults to resource namespace)
-        namespace: keycloak-operator
         # Optional: keys inside the secret (defaults shown)
         usernameKey: username
         passwordKey: password
@@ -35,7 +33,6 @@ spec:
       clientId: keycloak-operator
       secretRef:
         name: keycloak-operator-client
-        namespace: keycloak-operator
         clientIdKey: client-id
         clientSecretKey: client-secret
 
@@ -46,8 +43,6 @@ spec:
       # Use either secretRef OR configMapRef (mutually exclusive)
       secretRef:
         name: keycloak-ca
-        # Optional: defaults to the KeycloakInstance namespace
-        namespace: keycloak-operator
         # Optional: key inside the secret (default: ca.crt)
         key: ca.crt
       # configMapRef:
@@ -62,6 +57,14 @@ spec:
     tokenKey: token
     expiresKey: expires
 ```
+
+All referenced Secrets and ConfigMaps must live in the same namespace as the
+`KeycloakInstance`; there is no `namespace` field on the references. Whoever
+can create a `KeycloakInstance` can direct the operator to send the referenced
+credential to any `baseUrl`, so a cross-namespace reference would amount to
+cluster-wide Secret read for anyone with namespace-scoped RBAC. To share one
+Keycloak across namespaces, use a
+[`ClusterKeycloakInstance`](clusterkeycloakinstance.md) instead.
 
 ## TLS
 

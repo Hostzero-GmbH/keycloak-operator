@@ -46,12 +46,14 @@ Same rules as [`KeycloakInstance`](keycloakinstance.md): exactly one of
 always live in a Secret; `username` / `clientId` may be inlined.
 
 The only difference: `secretRef.namespace` is **required** because the resource
-is cluster-scoped.
+is cluster-scoped. Since the credential is sent to `baseUrl`, the right to
+create a `ClusterKeycloakInstance` is equivalent to reading any Secret in the
+cluster; grant it only to cluster administrators.
 
 ## TLS
 
 `spec.tls` mirrors the namespaced `KeycloakInstance.spec.tls` shape, with one
-difference: every `namespace` field is **required**.
+difference: `secretRef` / `configMapRef` carry a **required** `namespace`.
 
 ```yaml
 spec:
@@ -93,7 +95,7 @@ both is rejected by admission.
 | Aspect | KeycloakInstance | ClusterKeycloakInstance |
 |--------|------------------|-------------------------|
 | Scope | Namespaced | Cluster |
-| Secret namespace | Optional (defaults to same as resource) | Required |
+| Secret namespace | Always the resource namespace (no field) | Required |
 | Accessible from | Same namespace only | Any namespace |
 | Short name | `kci` | `ckci` |
 
