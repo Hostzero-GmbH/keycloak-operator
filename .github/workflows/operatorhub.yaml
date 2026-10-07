@@ -139,24 +139,28 @@ jobs:
           fi
           echo "owner=${OWNER}" >> "$GITHUB_OUTPUT"
 
+      # Both pipelines reject PRs that are not rebased on upstream main. The
+      # sync happens server-side so the runner never clones the catalog's full
+      # history (over 1 GB for community-operators-prod). Pushing upstream's
+      # .github/workflows files to the fork requires the PAT to have the
+      # `workflow` scope.
+      - name: Sync fork with upstream main
+        env:
+          GH_TOKEN: ${{ secrets.OPERATORHUB_PAT }}
+        run: gh repo sync "${{ steps.fork.outputs.owner }}/${{ matrix.fork_repo }}" --source "${{ matrix.upstream }}" --branch main --force
+
       - name: Checkout catalog fork
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ steps.fork.outputs.owner }}/${{ matrix.fork_repo }}
+          ref: main
           path: catalog
           token: ${{ secrets.OPERATORHUB_PAT }}
-          fetch-depth: 0
+          fetch-depth: 1
 
-      # Both pipelines reject PRs that are not rebased on upstream main, so the
-      # branch must be based there even though pushing upstream's
-      # .github/workflows files to the fork requires the PAT to have the
-      # `workflow` scope.
-      - name: Sync fork with upstream main
+      - name: Create release branch
         working-directory: catalog
-        run: |
-          git remote add upstream "https://github.com/${{ matrix.upstream }}.git"
-          git fetch upstream main
-          git checkout -B "release-keycloak-operator-${VERSION}" upstream/main
+        run: git checkout -B "release-keycloak-operator-${VERSION}"
 
       - name: Copy bundle into catalog
         run: |
