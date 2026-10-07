@@ -4,6 +4,7 @@
 - [Installation](./installation.md)
   - [Quick Start](./installation/quick-start.md)
   - [Helm Chart](./installation/helm.md)
+  - [Air-Gapped](./installation/air-gapped.md)
   - [Kind Cluster](./installation/kind.md)
 - [Exporting Resources](./export.md)
 - [Configuration](./configuration.md)

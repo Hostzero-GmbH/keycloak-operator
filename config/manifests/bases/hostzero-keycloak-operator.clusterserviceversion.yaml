@@ -6,6 +6,18 @@ metadata:
     categories: Security,Integration & Delivery
     certified: "false"
     description: A Kubernetes operator for managing Keycloak resources declaratively
+    # OpenShift console infrastructure-feature filters. proxy-aware holds because the
+    # Keycloak HTTP client uses Go's default transport (honours HTTP(S)_PROXY/NO_PROXY).
+    features.operators.openshift.io/cnf: "false"
+    features.operators.openshift.io/cni: "false"
+    features.operators.openshift.io/csi: "false"
+    features.operators.openshift.io/disconnected: "true"
+    features.operators.openshift.io/fips-compliant: "false"
+    features.operators.openshift.io/proxy-aware: "true"
+    features.operators.openshift.io/tls-profiles: "false"
+    features.operators.openshift.io/token-auth-aws: "false"
+    features.operators.openshift.io/token-auth-azure: "false"
+    features.operators.openshift.io/token-auth-gcp: "false"
     repository: https://github.com/Hostzero-GmbH/keycloak-operator
     support: Hostzero GmbH
   name: hostzero-keycloak-operator.v0.0.0
