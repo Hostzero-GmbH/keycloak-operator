@@ -1,18 +1,22 @@
-name: Publish to OperatorHub.io
+name: Publish to OperatorHub catalogs
 
-# Manual trigger. Generates the OLM bundle for the requested version and
-# opens a PR against k8s-operatorhub/community-operators. The community-operators
-# pipeline auto-merges once CI passes, provided the reviewers listed in
-# operators/hostzero-keycloak-operator/ci.yaml approve via the bot.
+# Manual trigger. Generates the OLM bundle once and opens one PR per catalog:
+#   operatorhub  k8s-operatorhub/community-operators            (OperatorHub.io)
+#   openshift    redhat-openshift-ecosystem/community-operators-prod (OpenShift/OKD embedded OperatorHub)
+# Both pipelines auto-merge once CI passes, provided the PR author is listed as
+# a reviewer in operators/hostzero-keycloak-operator/ci.yaml on their main
+# branch. The very first PR to a catalog ships that ci.yaml (from hack/olm/)
+# and is merged manually by the upstream maintainers.
 #
 # Required secrets:
-#   OPERATORHUB_FORK_OWNER  GitHub user/org that owns the community-operators fork.
-#                           (Defaults to ${{ github.repository_owner }} if unset.)
+#   OPERATORHUB_FORK_OWNER  GitHub user/org that owns the forks of both catalog repos
+#                           (community-operators, community-operators-prod).
+#                           Defaults to ${{ github.repository_owner }} if unset.
 #   OPERATORHUB_PAT         Classic PAT with the `public_repo` and `workflow` scopes.
 #                           `workflow` is needed because syncing the fork with
 #                           upstream main pushes upstream's .github/workflows files.
 #                           A fine-grained PAT does not work for cross-repo PR
-#                           creation against the upstream community-operators repo.
+#                           creation against the upstream catalog repos.
 on:
   workflow_dispatch:
     inputs:
@@ -20,8 +24,17 @@ on:
         description: 'Operator version to publish (without leading v, e.g. 0.8.0). Defaults to the Helm chart version.'
         required: false
         type: string
+      target:
+        description: 'Catalog(s) to publish to.'
+        required: false
+        type: choice
+        options:
+          - all
+          - operatorhub
+          - openshift
+        default: all
       dry_run:
-        description: 'Generate the bundle and upload it as an artifact without opening a PR.'
+        description: 'Generate the bundle and upload it as an artifact without opening PRs.'
         required: false
         type: boolean
         default: false
@@ -30,9 +43,12 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Generate bundle and open PR
+  bundle:
+    name: Generate bundle
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -52,6 +68,23 @@ jobs:
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Publishing version ${VERSION}"
 
+      - name: Build publish matrix
+        id: matrix
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          ALL='[
+            {"name":"operatorhub","upstream":"k8s-operatorhub/community-operators","fork_repo":"community-operators"},
+            {"name":"openshift","upstream":"redhat-openshift-ecosystem/community-operators-prod","fork_repo":"community-operators-prod"}
+          ]'
+          if [ "$TARGET" = "all" ]; then
+            MATRIX=$(echo "$ALL" | jq -c .)
+          else
+            MATRIX=$(echo "$ALL" | jq -c --arg t "$TARGET" '[.[] | select(.name == $t)]')
+          fi
+          echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
+          echo "Targets: ${MATRIX}"
+
       - name: Generate OLM bundle
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -63,9 +96,9 @@ jobs:
           CSV="bundle/manifests/hostzero-keycloak-operator.clusterserviceversion.yaml"
           # operator-sdk emits the current date but using yq normalises formatting.
           CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) yq -i '.metadata.annotations.createdAt = strenv(CREATED_AT)' "$CSV"
-          # The operator runs in semver mode on OperatorHub (see ci.yaml in
-          # community-operators): the upgrade graph is derived from version
-          # numbers and a `replaces`/`skips` key in the CSV fails their CI.
+          # Both catalogs run the operator in semver mode (see hack/olm/ci.yaml):
+          # the upgrade graph is derived from version numbers and a
+          # `replaces`/`skips` key in the CSV fails their CI.
           yq -i 'del(.spec.replaces)' "$CSV"
 
       - name: Validate bundle
@@ -77,8 +110,27 @@ jobs:
           name: bundle-${{ steps.version.outputs.version }}
           path: bundle/
 
+  publish:
+    name: Open PR (${{ matrix.name }})
+    needs: bundle
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.bundle.outputs.matrix) }}
+    env:
+      VERSION: ${{ needs.bundle.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download bundle artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bundle-${{ env.VERSION }}
+          path: bundle
+
       - name: Determine fork owner
-        if: ${{ !inputs.dry_run }}
         id: fork
         run: |
           OWNER="${{ secrets.OPERATORHUB_FORK_OWNER }}"
@@ -87,44 +139,41 @@ jobs:
           fi
           echo "owner=${OWNER}" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout community-operators fork
-        if: ${{ !inputs.dry_run }}
+      - name: Checkout catalog fork
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: ${{ steps.fork.outputs.owner }}/community-operators
-          path: community-operators
+          repository: ${{ steps.fork.outputs.owner }}/${{ matrix.fork_repo }}
+          path: catalog
           token: ${{ secrets.OPERATORHUB_PAT }}
           fetch-depth: 0
 
-      # The community-operators pipeline rejects PRs that are not rebased on
-      # upstream main, so the branch must be based there even though pushing
-      # upstream's .github/workflows files to the fork requires the PAT to have
-      # the `workflow` scope.
+      # Both pipelines reject PRs that are not rebased on upstream main, so the
+      # branch must be based there even though pushing upstream's
+      # .github/workflows files to the fork requires the PAT to have the
+      # `workflow` scope.
       - name: Sync fork with upstream main
-        if: ${{ !inputs.dry_run }}
-        working-directory: community-operators
+        working-directory: catalog
         run: |
-          git remote add upstream https://github.com/k8s-operatorhub/community-operators.git
+          git remote add upstream "https://github.com/${{ matrix.upstream }}.git"
           git fetch upstream main
-          git checkout -B release-keycloak-operator-${{ steps.version.outputs.version }} upstream/main
+          git checkout -B "release-keycloak-operator-${VERSION}" upstream/main
 
-      - name: Copy bundle into community-operators
-        if: ${{ !inputs.dry_run }}
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+      - name: Copy bundle into catalog
         run: |
-          DEST="community-operators/operators/hostzero-keycloak-operator/$VERSION"
+          OPERATOR_DIR="catalog/operators/hostzero-keycloak-operator"
+          DEST="$OPERATOR_DIR/$VERSION"
           rm -rf "$DEST"
           mkdir -p "$DEST"
           cp -r bundle/manifests "$DEST/"
           cp -r bundle/metadata "$DEST/"
           if [ -d bundle/tests ]; then cp -r bundle/tests "$DEST/"; fi
+          # First submission to a catalog: ship ci.yaml so later PRs auto-merge.
+          if [ ! -f "$OPERATOR_DIR/ci.yaml" ]; then
+            cp hack/olm/ci.yaml "$OPERATOR_DIR/ci.yaml"
+          fi
 
       - name: Commit and push branch
-        if: ${{ !inputs.dry_run }}
-        working-directory: community-operators
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
+        working-directory: catalog
         run: |
           git config user.name "hostzero-bot"
           git config user.email "opensource@hostzero.com"
@@ -133,14 +182,12 @@ jobs:
           git push --force origin HEAD
 
       - name: Open pull request
-        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.OPERATORHUB_PAT }}
-          VERSION: ${{ steps.version.outputs.version }}
           FORK_OWNER: ${{ steps.fork.outputs.owner }}
         run: |
           gh pr create \
-            --repo k8s-operatorhub/community-operators \
+            --repo "${{ matrix.upstream }}" \
             --head "${FORK_OWNER}:release-keycloak-operator-${VERSION}" \
             --base main \
             --title "operator hostzero-keycloak-operator (${VERSION})" \

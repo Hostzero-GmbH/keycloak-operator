@@ -245,19 +245,27 @@ This operator is developed and maintained by [**Hostzero GmbH**](https://hostzer
 
 [Contact us](https://hostzero.com/contact-us) for enterprise licensing and support options.
 
-## Publishing to OperatorHub.io
+## Publishing to OperatorHub catalogs
 
-The operator is also distributed via [OperatorHub.io](https://operatorhub.io/operator/hostzero-keycloak-operator). New versions are published by:
+The operator is also distributed as an OLM bundle via two community catalogs:
+
+- [OperatorHub.io](https://operatorhub.io/operator/hostzero-keycloak-operator) (`k8s-operatorhub/community-operators`), used by plain Kubernetes clusters.
+- The OpenShift/OKD community catalog (`redhat-openshift-ecosystem/community-operators-prod`), which ships pre-configured in every OpenShift and OKD cluster's embedded OperatorHub.
+
+New versions are published by:
 
 1. Tagging a release (`vX.Y.Z`) so the regular `Release` workflow ships the controller image and Helm chart.
-2. Running the `Publish to OperatorHub.io` workflow manually (`Actions → Publish to OperatorHub.io → Run workflow`) with the same version (and the previous version under `replaces` to wire the upgrade graph).
+2. Running the `Publish to OperatorHub catalogs` workflow manually (`Actions → Publish to OperatorHub catalogs → Run workflow`) with the same version. The `target` input selects `all` (default), `operatorhub` or `openshift`.
 
-That workflow regenerates the OLM bundle (`make bundle`), copies it into a fork of `k8s-operatorhub/community-operators` and opens a PR. The upstream pipeline merges automatically once its CI passes (the reviewers in `operators/hostzero-keycloak-operator/ci.yaml` are pre-approved).
+The workflow regenerates the OLM bundle once (`make bundle`), then for each target copies it into a fork of the catalog repo and opens a PR upstream. Both catalogs run in semver mode, so the upgrade graph is derived from version numbers and the workflow strips `spec.replaces` from the CSV.
 
-Repository secrets required by the workflow:
+Upstream PRs merge automatically once their CI passes, as long as the PR author is listed under `reviewers` in `operators/hostzero-keycloak-operator/ci.yaml` on the catalog's `main` branch. The first PR to a catalog ships that file (from [`hack/olm/ci.yaml`](hack/olm/ci.yaml)) together with the first bundle version and is merged manually by the upstream maintainers after CI is green.
 
-- `OPERATORHUB_PAT` — **classic** PAT with the `public_repo` scope. A fine-grained PAT does not work here: opening a PR against the upstream `k8s-operatorhub/community-operators` calls a GraphQL mutation on that repo, which fine-grained tokens cannot be authorised for (they can only grant permissions on repos owned by the token's account).
-- `OPERATORHUB_FORK_OWNER` — owner of the fork (defaults to the org running the workflow).
+Prerequisites:
+
+- Forks of both catalog repos (`community-operators` and `community-operators-prod`) under the `OPERATORHUB_FORK_OWNER` account.
+- `OPERATORHUB_PAT` secret — **classic** PAT with the `public_repo` and `workflow` scopes, owned by a user listed in `ci.yaml`. A fine-grained PAT does not work here: opening a PR against the upstream catalog repos calls a GraphQL mutation on those repos, which fine-grained tokens cannot be authorised for (they can only grant permissions on repos owned by the token's account). `workflow` is needed because syncing the fork with upstream `main` pushes upstream's `.github/workflows` files.
+- `OPERATORHUB_FORK_OWNER` secret — owner of the forks (defaults to the org running the workflow).
 
 To regenerate the bundle locally:
 
