@@ -23,6 +23,14 @@ helm install keycloak-operator oci://ghcr.io/hostzero-gmbh/charts/keycloak-opera
 
 For detailed Helm configuration options, see the [Helm Chart documentation](./installation/helm.md).
 
+## OpenShift / OKD
+
+The operator is listed in the community catalog that ships with OpenShift and OKD. Install it from the console under OperatorHub or via a `Subscription` to the `hostzero-keycloak-operator` package on the `stable` channel. Plain Kubernetes clusters running OLM find it on [OperatorHub.io](https://operatorhub.io/operator/hostzero-keycloak-operator).
+
+## Air-Gapped
+
+Mirror the image and chart (or the OLM catalog entry on OpenShift) into an internal registry. See [Air-Gapped Installation](./installation/air-gapped.md).
+
 ## Kustomize
 
 You can also deploy using kustomize:

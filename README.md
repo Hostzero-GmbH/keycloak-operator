@@ -257,7 +257,7 @@ New versions are published by:
 1. Tagging a release (`vX.Y.Z`) so the regular `Release` workflow ships the controller image and Helm chart.
 2. Running the `Publish to OperatorHub catalogs` workflow manually (`Actions → Publish to OperatorHub catalogs → Run workflow`) with the same version. The `target` input selects `all` (default), `operatorhub` or `openshift`.
 
-The workflow regenerates the OLM bundle once (`make bundle`), then for each target copies it into a fork of the catalog repo and opens a PR upstream. Both catalogs run in semver mode, so the upgrade graph is derived from version numbers and the workflow strips `spec.replaces` from the CSV.
+The workflow regenerates the OLM bundle once (`make bundle`) with the controller image pinned to the digest of the released tag (required for disconnected installs via `oc-mirror`), then for each target copies it into a fork of the catalog repo and opens a PR upstream. Both catalogs run in semver mode, so the upgrade graph is derived from version numbers and the workflow strips `spec.replaces` from the CSV.
 
 Upstream PRs merge automatically once their CI passes, as long as the PR author is listed under `reviewers` in `operators/hostzero-keycloak-operator/ci.yaml` on the catalog's `main` branch. The first PR to a catalog ships that file (from [`hack/olm/ci.yaml`](hack/olm/ci.yaml)) together with the first bundle version and is merged manually by the upstream maintainers after CI is green.
 

@@ -1,6 +1,7 @@
 name: Publish to OperatorHub catalogs
 
-# Manual trigger. Generates the OLM bundle once and opens one PR per catalog:
+# Manual trigger. Generates the OLM bundle once (image pinned by digest) and
+# opens one PR per catalog:
 #   operatorhub  k8s-operatorhub/community-operators            (OperatorHub.io)
 #   openshift    redhat-openshift-ecosystem/community-operators-prod (OpenShift/OKD embedded OperatorHub)
 # Both pipelines auto-merge once CI passes, provided the PR author is listed as
@@ -85,11 +86,25 @@ jobs:
           echo "matrix=${MATRIX}" >> "$GITHUB_OUTPUT"
           echo "Targets: ${MATRIX}"
 
-      - name: Generate OLM bundle
+      # Disconnected OLM installs (oc-mirror) resolve images by digest, so the
+      # bundle references the multi-arch index digest instead of the tag.
+      # Fails if the release image for this version has not been pushed yet.
+      - name: Resolve image digest
+        id: image
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          make bundle VERSION="$VERSION" OPERATOR_IMG="ghcr.io/hostzero-gmbh/keycloak-operator:v$VERSION"
+          REPO="ghcr.io/hostzero-gmbh/keycloak-operator"
+          DIGEST=$(docker buildx imagetools inspect "${REPO}:v${VERSION}" --format '{{.Manifest.Digest}}')
+          echo "ref=${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Image: ${REPO}:v${VERSION} -> ${DIGEST}"
+
+      - name: Generate OLM bundle
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          OPERATOR_IMG: ${{ steps.image.outputs.ref }}
+        run: |
+          make bundle VERSION="$VERSION" OPERATOR_IMG="$OPERATOR_IMG"
 
       - name: Inject createdAt into CSV
         run: |

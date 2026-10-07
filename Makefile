@@ -344,6 +344,8 @@ bundle: manifests kustomize operator-sdk ## Generate the OLM bundle under bundle
 	# OperatorHub's pipeline requires metadata.annotations.containerImage to match the
 	# image referenced in the deployment. operator-sdk doesn't set it on its own.
 	OPERATOR_IMG=$(OPERATOR_IMG) yq -i '.metadata.annotations.containerImage = strenv(OPERATOR_IMG)' bundle/manifests/hostzero-keycloak-operator.clusterserviceversion.yaml
+	# relatedImages lets oc-mirror/OLM mirror the image for disconnected clusters. The manager is the only image.
+	OPERATOR_IMG=$(OPERATOR_IMG) yq -i '.spec.relatedImages = [{"name": "manager", "image": strenv(OPERATOR_IMG)}]' bundle/manifests/hostzero-keycloak-operator.clusterserviceversion.yaml
 	# OpenShift versions the bundle is distributed to (open-ended range). Ignored by OperatorHub.io.
 	yq -i '.annotations."com.redhat.openshift.versions" = "v4.12"' bundle/metadata/annotations.yaml
 	$(OPERATOR_SDK) bundle validate ./bundle
