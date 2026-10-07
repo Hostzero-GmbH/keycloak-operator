@@ -1,0 +1,8 @@
+# Copied into operators/hostzero-keycloak-operator/ci.yaml of the catalog
+# repos by the publish workflow when the file does not exist there yet.
+# PRs opened by a listed reviewer merge automatically once upstream CI passes.
+updateGraph: semver-mode
+reviewers:
+  - ljuborados
+  - Svoellmecke
+  - pehlert

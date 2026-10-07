@@ -304,7 +304,7 @@ kind-reset: ## Reset cluster to clean state.
 kind-delete: ## Delete the Kind cluster.
 	./hack/setup-kind.sh delete
 
-##@ OLM Bundle (OperatorHub.io)
+##@ OLM Bundle (OperatorHub.io and OpenShift community catalog)
 
 # VERSION is the operator version baked into the bundle (no `v` prefix, e.g. 0.8.0).
 # Defaults to the Helm chart version so a single source of truth drives releases.
@@ -329,7 +329,8 @@ BUNDLE_GEN_FLAGS ?= -q --overwrite --version $(VERSION) $(BUNDLE_METADATA_OPTS)
 OPERATOR_IMG ?= $(IMAGE_TAG_BASE):v$(VERSION)
 
 # Package name baked into the bundle. Must match the operators/<name>/ directory
-# in k8s-operatorhub/community-operators. We pass this on the CLI rather than
+# in k8s-operatorhub/community-operators and
+# redhat-openshift-ecosystem/community-operators-prod. We pass this on the CLI rather than
 # storing it in a PROJECT file because the CSV base in config/manifests/ is
 # hand-maintained — there's no scaffolding to keep in sync.
 BUNDLE_PACKAGE ?= hostzero-keycloak-operator
@@ -343,6 +344,8 @@ bundle: manifests kustomize operator-sdk ## Generate the OLM bundle under bundle
 	# OperatorHub's pipeline requires metadata.annotations.containerImage to match the
 	# image referenced in the deployment. operator-sdk doesn't set it on its own.
 	OPERATOR_IMG=$(OPERATOR_IMG) yq -i '.metadata.annotations.containerImage = strenv(OPERATOR_IMG)' bundle/manifests/hostzero-keycloak-operator.clusterserviceversion.yaml
+	# OpenShift versions the bundle is distributed to (open-ended range). Ignored by OperatorHub.io.
+	yq -i '.annotations."com.redhat.openshift.versions" = "v4.12"' bundle/metadata/annotations.yaml
 	$(OPERATOR_SDK) bundle validate ./bundle
 
 .PHONY: bundle-build
