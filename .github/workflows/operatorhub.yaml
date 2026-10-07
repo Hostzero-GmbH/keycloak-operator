@@ -205,6 +205,12 @@ jobs:
           GH_TOKEN: ${{ secrets.OPERATORHUB_PAT }}
           FORK_OWNER: ${{ steps.fork.outputs.owner }}
         run: |
+          # Re-running for the same version force-pushes the branch; the open PR picks it up.
+          EXISTING=$(gh api "repos/${{ matrix.upstream }}/pulls?state=open&head=${FORK_OWNER}:release-keycloak-operator-${VERSION}" --jq '.[0].html_url')
+          if [ -n "$EXISTING" ]; then
+            echo "PR already open, updated in place: ${EXISTING}"
+            exit 0
+          fi
           gh pr create \
             --repo "${{ matrix.upstream }}" \
             --head "${FORK_OWNER}:release-keycloak-operator-${VERSION}" \
