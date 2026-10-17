@@ -53,6 +53,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 	mapperName := "mapper"
 	groupName := "group"
 	componentName := "mapper"
+	groupPath := "/parent/group"
 
 	tests := []struct {
 		name        string
@@ -141,7 +142,39 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 					Role: &RoleDefinition{Name: "role"},
 				},
 			},
-			wantErrText: "exactly one of userRef, groupRef, or serviceAccountRef must be set",
+			wantErrText: "exactly one of userRef, groupRef, existingGroup, or serviceAccountRef must be set",
+		},
+		{
+			name: "KeycloakRoleMapping accepts an existing group by path",
+			object: &KeycloakRoleMapping{
+				ObjectMeta: metav1.ObjectMeta{Name: "mapping-inline-group", Namespace: namespace},
+				Spec: KeycloakRoleMappingSpec{
+					Subject: RoleMappingSubject{ExistingGroup: &ExistingGroupRef{Path: &groupPath, RealmRef: &ResourceRef{Name: "realm"}}},
+					Role:    &RoleDefinition{Name: "role"},
+				},
+			},
+		},
+		{
+			name: "KeycloakRoleMapping rejects two group selectors",
+			object: &KeycloakRoleMapping{
+				ObjectMeta: metav1.ObjectMeta{Name: "mapping-group-both", Namespace: namespace},
+				Spec: KeycloakRoleMappingSpec{
+					Subject: RoleMappingSubject{ExistingGroup: &ExistingGroupRef{Name: &groupName, Path: &groupPath, RealmRef: &ResourceRef{Name: "realm"}}},
+					Role:    &RoleDefinition{Name: "role"},
+				},
+			},
+			wantErrText: "exactly one of name or path must be set",
+		},
+		{
+			name: "KeycloakRoleMapping rejects group without realm",
+			object: &KeycloakRoleMapping{
+				ObjectMeta: metav1.ObjectMeta{Name: "mapping-group-no-realm", Namespace: namespace},
+				Spec: KeycloakRoleMappingSpec{
+					Subject: RoleMappingSubject{ExistingGroup: &ExistingGroupRef{Name: &groupName}},
+					Role:    &RoleDefinition{Name: "role"},
+				},
+			},
+			wantErrText: "exactly one of realmRef or clusterRealmRef must be set",
 		},
 		{
 			name: "KeycloakRoleMapping accepts a service account subject alone",
@@ -161,7 +194,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 					Role: &RoleDefinition{Name: "role"},
 				},
 			},
-			wantErrText: "exactly one of userRef, groupRef, or serviceAccountRef must be set",
+			wantErrText: "exactly one of userRef, groupRef, existingGroup, or serviceAccountRef must be set",
 		},
 		{
 			name: "KeycloakGroup accepts a parent group alone",
