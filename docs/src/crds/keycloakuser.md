@@ -175,7 +175,7 @@ spec:
       - viewer
   groups:
     - developers
-    - team-alpha
+    - /engineering/team-alpha   # nested group, referenced by full path
 ```
 
 ### Service Account User
@@ -230,7 +230,7 @@ Each field is **authoritative when set**:
 - Omitted (`nil`): the operator does not touch that category of assignments.
 - Set (even to an empty list): the operator reconciles Keycloak to exactly that set, removing anything else. For `clientRoles`, roles on clients absent from the map are also removed.
 
-Groups are matched by top-level group name. Roles and groups must already exist in the realm (e.g. via `KeycloakRole` or `KeycloakGroup`); unknown names are skipped with a log message.
+Groups are matched by top-level group name, or by full path when the entry starts with `/` (e.g. `/engineering/team-alpha`), which is required for nested groups. Roles and groups must already exist in the realm (e.g. via `KeycloakRole` or `KeycloakGroup`); unknown names are skipped with a log message.
 
 Because these fields are authoritative, do not combine them with `KeycloakRoleMapping` resources targeting the same user — the user's reconciler would remove the mappings again.
 

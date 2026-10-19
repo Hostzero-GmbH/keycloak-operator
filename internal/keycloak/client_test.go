@@ -385,6 +385,30 @@ func TestIdentityProviderMappers_PathEscaping(t *testing.T) {
 	assert.Equal(t, "/admin/realms/my-realm/identity-provider/instances/my%2Fweird%20alias/mappers", seenPath)
 }
 
+// TestGetGroupByPath_PathEscaping verifies that each path segment is escaped
+// individually while the separators between nested groups are preserved.
+func TestGetGroupByPath_PathEscaping(t *testing.T) {
+	var seenPath string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/realms/master/protocol/openid-connect/token", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"test","expires_in":300,"token_type":"Bearer"}`))
+	})
+	mux.HandleFunc("/admin/realms/my-realm/group-by-path/", func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.EscapedPath()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"g-1","name":"child group","path":"/parent/child group"}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv.URL)
+	group, err := c.GetGroupByPath(context.Background(), "my-realm", "/parent/child group")
+	require.NoError(t, err)
+	assert.Equal(t, "/admin/realms/my-realm/group-by-path/parent/child%20group", seenPath)
+	require.NotNil(t, group.ID)
+	assert.Equal(t, "g-1", *group.ID)
+}
+
 // TestGetClients_Paginated wires the production GetClients helper end to end
 // against the fake server to prove the public API actually returns more than
 // one Keycloak page worth of results.

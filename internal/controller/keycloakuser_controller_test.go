@@ -26,6 +26,7 @@ type fakeUserKeycloak struct {
 	clientRoles    map[string][]keycloak.RoleRepresentation
 	userClient     map[string][]keycloak.RoleRepresentation
 	groups         []keycloak.GroupRepresentation
+	groupsByPath   map[string]keycloak.GroupRepresentation
 	userGroups     []keycloak.GroupRepresentation
 	addRealmCall   int
 	delRealmCall   int
@@ -45,6 +46,7 @@ func newFakeUserKeycloak(t *testing.T) *fakeUserKeycloak {
 		delClient:      make(map[string]int),
 		addGroup:       make(map[string]int),
 		delGroup:       make(map[string]int),
+		groupsByPath:   make(map[string]keycloak.GroupRepresentation),
 	}
 }
 
@@ -165,6 +167,17 @@ func (f *fakeUserKeycloak) handler() http.Handler {
 			return
 		}
 		http.Error(w, "not found", http.StatusNotFound)
+	})
+
+	// GET /admin/realms/{realm}/group-by-path/{path} — look up a group by path
+	mux.HandleFunc("/admin/realms/test/group-by-path/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path[len("/admin/realms/test/group-by-path"):]
+		g, ok := f.groupsByPath[path]
+		if r.Method != http.MethodGet || !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		writeUserJSON(w, g)
 	})
 
 	// GET /admin/realms/{realm}/users/{id}/groups — list user's groups
@@ -428,6 +441,48 @@ func TestReconcileUserGroups_JoinAndLeave(t *testing.T) {
 	// Should join developers (g-2), leave viewers (g-3)
 	if fake.addGroup["g-2"] != 1 {
 		t.Errorf("add group 'developers' call count = %d, want 1", fake.addGroup["g-2"])
+	}
+}
+
+// Entries starting with "/" are resolved by full path, so nested groups can be
+// joined, and existing nested memberships listed in the spec are kept.
+func TestReconcileUserGroups_NestedPaths(t *testing.T) {
+	fake := newFakeUserKeycloak(t)
+	fake.groups = []keycloak.GroupRepresentation{
+		{ID: strPtr("g-1"), Name: strPtr("this"), Path: strPtr("/this")},
+	}
+	fake.groupsByPath["/this/should/work"] = keycloak.GroupRepresentation{
+		ID: strPtr("g-2"), Name: strPtr("work"), Path: strPtr("/this/should/work"),
+	}
+	fake.groupsByPath["/this/also/kept"] = keycloak.GroupRepresentation{
+		ID: strPtr("g-3"), Name: strPtr("kept"), Path: strPtr("/this/also/kept"),
+	}
+	fake.userGroups = []keycloak.GroupRepresentation{
+		{ID: strPtr("g-3"), Name: strPtr("kept"), Path: strPtr("/this/also/kept")},
+		{ID: strPtr("g-4"), Name: strPtr("stale"), Path: strPtr("/this/stale")},
+	}
+
+	srv := httptest.NewServer(fake.handler())
+	t.Cleanup(srv.Close)
+	kc := fake.client(srv.URL)
+
+	r := &KeycloakUserReconciler{}
+	err := r.reconcileUserGroups(context.Background(), kc, "test", "user-123",
+		[]string{"this", "/this/should/work", "/this/also/kept", "/does/not/exist"})
+	if err != nil {
+		t.Fatalf("reconcileUserGroups: %v", err)
+	}
+	if fake.addGroup["g-1"] != 1 {
+		t.Errorf("add top-level group 'this' call count = %d, want 1", fake.addGroup["g-1"])
+	}
+	if fake.addGroup["g-2"] != 1 {
+		t.Errorf("add nested group '/this/should/work' call count = %d, want 1", fake.addGroup["g-2"])
+	}
+	if fake.addGroup["g-3"] != 0 || fake.delGroup["g-3"] != 0 {
+		t.Errorf("existing nested membership must be left alone, got add=%d del=%d", fake.addGroup["g-3"], fake.delGroup["g-3"])
+	}
+	if fake.delGroup["g-4"] != 1 {
+		t.Errorf("remove stale nested group call count = %d, want 1", fake.delGroup["g-4"])
 	}
 }
 
