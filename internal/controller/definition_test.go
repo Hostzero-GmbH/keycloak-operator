@@ -3,6 +3,8 @@ package controller
 import (
 	"strings"
 	"testing"
+
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 )
 
 func TestRejectDefinitionKey(t *testing.T) {
@@ -127,7 +129,7 @@ func TestRealmNestedCollectionsNameKnownKinds(t *testing.T) {
 		"KeycloakIdentityProviderMapper": true, "KeycloakOrganization": true,
 		"KeycloakRequiredAction": true, "KeycloakRole": true, "KeycloakUser": true,
 	}
-	for key, kind := range realmNestedCollections {
+	for key, kind := range keycloakv1beta1.RealmNestedCollections {
 		if !known[kind] {
 			t.Errorf("%s maps to unknown kind %q", key, kind)
 		}

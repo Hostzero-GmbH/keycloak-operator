@@ -39,8 +39,11 @@ func (t *Transformer) SetOrganizationNames(names map[string]string) {
 
 // TransformRealm transforms a realm JSON to KeycloakRealm
 func (t *Transformer) TransformRealm(raw json.RawMessage, realmName string) (ExportedResource, error) {
-	// Remove server-managed fields
-	definition := removeServerFields(raw, "id")
+	// Remove server-managed fields, plus the nested collections the realm CRD
+	// rejects: each is exported as its own CRD, and Keycloak versions before 26
+	// still inline identityProviders/identityProviderMappers on the realm GET.
+	fields := append([]string{"id"}, keycloakv1beta1.RealmNestedCollectionKeys()...)
+	definition := removeServerFields(raw, fields...)
 
 	realm := &keycloakv1beta1.KeycloakRealm{
 		TypeMeta: metav1.TypeMeta{

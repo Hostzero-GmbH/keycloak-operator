@@ -142,3 +142,39 @@ func TestTransformOrganizationSetsName(t *testing.T) {
 	_, hasID := def["id"]
 	require.False(t, hasID)
 }
+
+// Keycloak versions before 26 inline identityProviders and their mappers on
+// the realm GET; those (and every other nested collection) are exported as
+// their own CRDs and are rejected by the KeycloakRealm controller, so the
+// exported realm must not carry them.
+func TestTransformRealm_StripsNestedCollections(t *testing.T) {
+	tr := NewTransformer(TransformerOptions{InstanceRef: "kc", TargetNamespace: "ns"})
+	raw := json.RawMessage(`{
+		"id": "abc",
+		"realm": "demo",
+		"enabled": true,
+		"browserFlow": "custom-browser",
+		"identityProviders": [{"alias": "github", "providerId": "github"}],
+		"identityProviderMappers": [{"name": "m", "identityProviderAlias": "github"}],
+		"clients": [{"clientId": "app"}],
+		"authenticationFlows": [{"alias": "custom-browser"}],
+		"components": {"org.keycloak.userprofile.UserProfileProvider": []}
+	}`)
+	res, err := tr.TransformRealm(raw, "demo")
+	if err != nil {
+		t.Fatalf("TransformRealm: %v", err)
+	}
+	realm := res.Object.(*keycloakv1beta1.KeycloakRealm)
+	var def map[string]interface{}
+	if err := json.Unmarshal(realm.Spec.Definition.Raw, &def); err != nil {
+		t.Fatalf("definition is not JSON: %v", err)
+	}
+	for _, key := range append([]string{"id"}, keycloakv1beta1.RealmNestedCollectionKeys()...) {
+		if _, present := def[key]; present {
+			t.Errorf("exported realm definition still contains %q", key)
+		}
+	}
+	if def["enabled"] != true || def["browserFlow"] != "custom-browser" {
+		t.Errorf("top-level attributes were not preserved: %v", def)
+	}
+}
