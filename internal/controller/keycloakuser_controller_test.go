@@ -25,7 +25,6 @@ type fakeUserKeycloak struct {
 	clientIDByUUID map[string]string
 	clientRoles    map[string][]keycloak.RoleRepresentation
 	userClient     map[string][]keycloak.RoleRepresentation
-	groups         []keycloak.GroupRepresentation
 	groupsByPath   map[string]keycloak.GroupRepresentation
 	userGroups     []keycloak.GroupRepresentation
 	addRealmCall   int
@@ -158,15 +157,6 @@ func (f *fakeUserKeycloak) handler() http.Handler {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
-
-	// GET /admin/realms/{realm}/groups — list all groups
-	mux.HandleFunc("/admin/realms/test/groups", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			writeUserJSON(w, f.groups)
-			return
-		}
-		http.Error(w, "not found", http.StatusNotFound)
 	})
 
 	// GET /admin/realms/{realm}/group-by-path/{path} — look up a group by path
@@ -418,11 +408,9 @@ func TestReconcileUserClientRoles_StaleClientCleanedUp(t *testing.T) {
 
 func TestReconcileUserGroups_JoinAndLeave(t *testing.T) {
 	fake := newFakeUserKeycloak(t)
-	fake.groups = []keycloak.GroupRepresentation{
-		{ID: strPtr("g-1"), Name: strPtr("admins")},
-		{ID: strPtr("g-2"), Name: strPtr("developers")},
-		{ID: strPtr("g-3"), Name: strPtr("viewers")},
-	}
+	fake.groupsByPath["/admins"] = keycloak.GroupRepresentation{ID: strPtr("g-1"), Name: strPtr("admins"), Path: strPtr("/admins")}
+	fake.groupsByPath["/developers"] = keycloak.GroupRepresentation{ID: strPtr("g-2"), Name: strPtr("developers"), Path: strPtr("/developers")}
+	fake.groupsByPath["/viewers"] = keycloak.GroupRepresentation{ID: strPtr("g-3"), Name: strPtr("viewers"), Path: strPtr("/viewers")}
 	// user is already in admins and viewers
 	fake.userGroups = []keycloak.GroupRepresentation{
 		{ID: strPtr("g-1"), Name: strPtr("admins")},
@@ -442,14 +430,21 @@ func TestReconcileUserGroups_JoinAndLeave(t *testing.T) {
 	if fake.addGroup["g-2"] != 1 {
 		t.Errorf("add group 'developers' call count = %d, want 1", fake.addGroup["g-2"])
 	}
+	if fake.addGroup["g-1"] != 0 || fake.delGroup["g-1"] != 0 {
+		t.Errorf("existing membership 'admins' must be left alone, got add=%d del=%d", fake.addGroup["g-1"], fake.delGroup["g-1"])
+	}
+	if fake.delGroup["g-3"] != 1 {
+		t.Errorf("remove group 'viewers' call count = %d, want 1", fake.delGroup["g-3"])
+	}
 }
 
-// Entries starting with "/" are resolved by full path, so nested groups can be
-// joined, and existing nested memberships listed in the spec are kept.
+// Entries are resolved by full path, so nested groups can be joined, and
+// existing nested memberships listed in the spec are kept. A bare name refers
+// to the top-level group.
 func TestReconcileUserGroups_NestedPaths(t *testing.T) {
 	fake := newFakeUserKeycloak(t)
-	fake.groups = []keycloak.GroupRepresentation{
-		{ID: strPtr("g-1"), Name: strPtr("this"), Path: strPtr("/this")},
+	fake.groupsByPath["/this"] = keycloak.GroupRepresentation{
+		ID: strPtr("g-1"), Name: strPtr("this"), Path: strPtr("/this"),
 	}
 	fake.groupsByPath["/this/should/work"] = keycloak.GroupRepresentation{
 		ID: strPtr("g-2"), Name: strPtr("work"), Path: strPtr("/this/should/work"),
@@ -483,6 +478,33 @@ func TestReconcileUserGroups_NestedPaths(t *testing.T) {
 	}
 	if fake.delGroup["g-4"] != 1 {
 		t.Errorf("remove stale nested group call count = %d, want 1", fake.delGroup["g-4"])
+	}
+}
+
+// A bare name must resolve to the top-level group even when the user is
+// already in a nested group with the same name.
+func TestReconcileUserGroups_BareNameIsTopLevel(t *testing.T) {
+	fake := newFakeUserKeycloak(t)
+	fake.groupsByPath["/dev"] = keycloak.GroupRepresentation{
+		ID: strPtr("g-top"), Name: strPtr("dev"), Path: strPtr("/dev"),
+	}
+	fake.userGroups = []keycloak.GroupRepresentation{
+		{ID: strPtr("g-nested"), Name: strPtr("dev"), Path: strPtr("/eng/dev")},
+	}
+
+	srv := httptest.NewServer(fake.handler())
+	t.Cleanup(srv.Close)
+	kc := fake.client(srv.URL)
+
+	r := &KeycloakUserReconciler{}
+	if err := r.reconcileUserGroups(context.Background(), kc, "test", "user-123", []string{"dev"}); err != nil {
+		t.Fatalf("reconcileUserGroups: %v", err)
+	}
+	if fake.addGroup["g-top"] != 1 {
+		t.Errorf("add top-level group '/dev' call count = %d, want 1", fake.addGroup["g-top"])
+	}
+	if fake.delGroup["g-nested"] != 1 {
+		t.Errorf("remove nested group '/eng/dev' call count = %d, want 1", fake.delGroup["g-nested"])
 	}
 }
 

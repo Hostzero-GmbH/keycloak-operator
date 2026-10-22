@@ -167,6 +167,96 @@ func TestKeycloakUserRolesGroupsE2E(t *testing.T) {
 		}), "group membership was not removed")
 	})
 
+	// Nested groups are referenced by full path (#187).
+	t.Run("NestedGroupByPath", func(t *testing.T) {
+		if !canConnectToKeycloak() {
+			t.Skip("Skipping - cannot connect to Keycloak from test environment")
+		}
+
+		suffix := time.Now().UnixNano()
+		parentName := fmt.Sprintf("parent-%d", suffix)
+		childName := fmt.Sprintf("child-%d", suffix)
+
+		parent := &keycloakv1beta1.KeycloakGroup{
+			ObjectMeta: metav1.ObjectMeta{Name: parentName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakGroupSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(parentName),
+				Definition: rawJSON(`{}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, parent))
+		t.Cleanup(func() { k8sClient.Delete(ctx, parent) })
+
+		child := &keycloakv1beta1.KeycloakGroup{
+			ObjectMeta: metav1.ObjectMeta{Name: childName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakGroupSpec{
+				ParentGroupRef: &keycloakv1beta1.ResourceRef{Name: parentName},
+				Name:           strPtr(childName),
+				Definition:     rawJSON(`{}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, child))
+		t.Cleanup(func() { k8sClient.Delete(ctx, child) })
+
+		for _, name := range []string{parentName, childName} {
+			err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+				updated := &keycloakv1beta1.KeycloakGroup{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: testNamespace}, updated); err != nil {
+					return false, nil
+				}
+				return updated.Status.Ready, nil
+			})
+			require.NoError(t, err, "KeycloakGroup %s did not become ready", name)
+		}
+
+		childPath := "/" + parentName + "/" + childName
+		userName := fmt.Sprintf("nested-user-%d", suffix)
+		userDef := rawJSON(`{"enabled": true}`)
+		kcUser := &keycloakv1beta1.KeycloakUser{
+			ObjectMeta: metav1.ObjectMeta{Name: userName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakUserSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
+				Definition: &userDef,
+				Groups:     &[]string{childPath},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcUser))
+		t.Cleanup(func() { k8sClient.Delete(ctx, kcUser) })
+
+		updated := waitUserReady(t, userName)
+		userID := updated.Status.UserID
+		require.NotEmpty(t, userID)
+
+		kc := getInternalKeycloakClient(t)
+
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			groups, err := kc.GetUserGroups(ctx, realmName, userID)
+			if err != nil {
+				return false, nil
+			}
+			for _, g := range groups {
+				if g.Path != nil && *g.Path == childPath {
+					return true, nil
+				}
+			}
+			return false, nil
+		}), "user should be a member of %s", childPath)
+
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: userName, Namespace: testNamespace}, kcUser))
+		kcUser.Spec.Groups = &[]string{}
+		require.NoError(t, k8sClient.Update(ctx, kcUser))
+
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			groups, err := kc.GetUserGroups(ctx, realmName, userID)
+			if err != nil {
+				return false, nil
+			}
+			return len(groups) == 0, nil
+		}), "nested group membership was not removed")
+	})
+
 	// Regression for #124. spec.clientRoles drives the composite role-mappings
 	// cleanup path, which no other subtest reaches. The user must reach Ready
 	// rather than RoleGroupReconcileError, and dropping a client from the map

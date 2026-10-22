@@ -480,7 +480,6 @@ func (r *KeycloakUserReconciler) reconcileUserGroups(ctx context.Context, kc *ke
 	}
 
 	existingByID := make(map[string]string)
-	existingByName := make(map[string]string)
 	existingByPath := make(map[string]string)
 	for _, g := range existingGroups {
 		if g.ID == nil {
@@ -488,7 +487,6 @@ func (r *KeycloakUserReconciler) reconcileUserGroups(ctx context.Context, kc *ke
 		}
 		label := *g.ID
 		if g.Name != nil {
-			existingByName[*g.Name] = *g.ID
 			label = *g.Name
 		}
 		if g.Path != nil {
@@ -498,69 +496,32 @@ func (r *KeycloakUserReconciler) reconcileUserGroups(ctx context.Context, kc *ke
 		existingByID[*g.ID] = label
 	}
 
-	// Top-level groups are only listed when a plain name has to be resolved.
-	var groupByName map[string]string
-	lookupByName := func(name string) (string, bool, error) {
-		if groupByName == nil {
-			allGroups, err := kc.GetGroups(ctx, realmName, nil)
-			if err != nil {
-				return "", false, fmt.Errorf("failed to list realm groups: %w", err)
-			}
-			groupByName = make(map[string]string)
-			for _, g := range allGroups {
-				if g.Name != nil && g.ID != nil {
-					groupByName[*g.Name] = *g.ID
-				}
-			}
-		}
-		groupID, found := groupByName[name]
-		return groupID, found, nil
-	}
-
-	// Entries starting with "/" are full group paths (supporting nested
-	// groups); anything else is a top-level group name.
+	// Every entry is resolved as a full group path; a bare name such as "dev"
+	// refers to the top-level group "/dev".
 	want := make(map[string]bool)
 	for _, ref := range groups {
-		if strings.HasPrefix(ref, "/") {
-			if groupID, joined := existingByPath[ref]; joined {
-				want[groupID] = true
-				continue
-			}
-			group, err := kc.GetGroupByPath(ctx, realmName, ref)
-			if err != nil || group.ID == nil {
-				log.Info("group not found in realm, skipping", "group", ref, "error", err)
-				continue
-			}
-			want[*group.ID] = true
-			if _, joined := existingByID[*group.ID]; joined {
-				continue
-			}
-			if err := kc.AddUserToGroup(ctx, realmName, userID, *group.ID); err != nil {
-				log.Error(err, "failed to add user to group", "group", ref)
-				continue
-			}
-			log.V(1).Info("added to group", "group", ref)
-			continue
+		path := ref
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
 		}
-
-		if groupID, joined := existingByName[ref]; joined {
+		if groupID, joined := existingByPath[path]; joined {
 			want[groupID] = true
 			continue
 		}
-		groupID, found, err := lookupByName(ref)
-		if err != nil {
-			return err
-		}
-		if !found {
-			log.Info("group not found in realm, skipping", "group", ref)
+		group, err := kc.GetGroupByPath(ctx, realmName, path)
+		if err != nil || group.ID == nil {
+			log.Info("group not found in realm, skipping", "group", path, "error", err)
 			continue
 		}
-		want[groupID] = true
-		if err := kc.AddUserToGroup(ctx, realmName, userID, groupID); err != nil {
-			log.Error(err, "failed to add user to group", "group", ref)
+		want[*group.ID] = true
+		if _, joined := existingByID[*group.ID]; joined {
 			continue
 		}
-		log.V(1).Info("added to group", "group", ref)
+		if err := kc.AddUserToGroup(ctx, realmName, userID, *group.ID); err != nil {
+			log.Error(err, "failed to add user to group", "group", path)
+			continue
+		}
+		log.V(1).Info("added to group", "group", path)
 	}
 
 	for groupID, label := range existingByID {
