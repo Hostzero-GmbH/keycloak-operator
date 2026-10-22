@@ -1,37 +1,85 @@
 name: E2E
 
 # Full end-to-end suite against a Kind cluster with the operator and Keycloak
-# deployed. It runs on pull requests, but the job is bound to the "e2e"
-# environment, whose required reviewers (the maintainers) have to approve each
-# run before it starts: open the run and click "Review deployments".
-# Fork PRs get a read-only token and no secrets, which is fine, nothing here
-# needs either.
+# deployed. It does not run on its own: a repo admin or maintainer starts it by
+# commenting "/e2e" on a pull request, or via "Run workflow" with a PR number.
+# The result lands as a commit status on the PR's head commit.
+#
+# Comment-triggered workflows always run this file as it is on main, so a PR
+# cannot change the job itself; only the PR's code under test runs here. The
+# token can read the repo and write statuses and PR reactions, nothing else,
+# and no secrets are involved, so fork PRs work the same way.
 
 on:
-  pull_request:
-    branches:
-      - main
+  issue_comment:
+    types: [created]
   workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: string
 
 permissions:
   contents: read
-
-concurrency:
-  group: e2e-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  statuses: write
+  pull-requests: write
 
 env:
   GO_VERSION: '1.26'
   KIND_VERSION: v0.33.0
+  STATUS_CONTEXT: E2E (kind)
 
 jobs:
   e2e:
     name: E2E (kind)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request && startsWith(github.event.comment.body, '/e2e'))
     runs-on: ubuntu-latest
-    environment: e2e
     timeout-minutes: 45
+    concurrency:
+      group: e2e-${{ github.event.issue.number || github.event.inputs.pr }}
+      cancel-in-progress: true
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.issue.number || github.event.inputs.pr }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
+      - name: Check who asked
+        # Only repo admins and maintainers may start a run from a comment. A
+        # manual dispatch already requires write access to the repo.
+        if: github.event_name == 'issue_comment'
+        env:
+          COMMENTER: ${{ github.event.comment.user.login }}
+        run: |
+          role=$(gh api "repos/${GITHUB_REPOSITORY}/collaborators/${COMMENTER}/permission" --jq .role_name)
+          echo "${COMMENTER} has role '${role}'"
+          case "$role" in
+            admin|maintain) ;;
+            *) echo "::error::Only repo admins and maintainers can trigger e2e runs"; exit 1 ;;
+          esac
+
+      - name: Look up the PR head
+        id: pr
+        run: |
+          sha=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Testing PR #$PR_NUMBER at $sha"
+
+      - name: Report status pending
+        run: |
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${{ steps.pr.outputs.sha }}" \
+            -f state=pending -f context="$STATUS_CONTEXT" -f target_url="$RUN_URL" \
+            -f description="e2e run started" > /dev/null
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/comments/${{ github.event.comment.id }}/reactions" \
+              -f content=rocket > /dev/null || true
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -74,3 +122,15 @@ jobs:
           echo "::group::keycloak logs"
           kubectl logs -n keycloak -l app=keycloak --tail=300 || true
           echo "::endgroup::"
+
+      - name: Report status result
+        if: always() && steps.pr.outputs.sha != ''
+        run: |
+          case "${{ job.status }}" in
+            success) state=success; desc="e2e passed" ;;
+            cancelled) state=error; desc="e2e run cancelled" ;;
+            *) state=failure; desc="e2e failed" ;;
+          esac
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${{ steps.pr.outputs.sha }}" \
+            -f state="$state" -f context="$STATUS_CONTEXT" -f target_url="$RUN_URL" \
+            -f description="$desc" > /dev/null
