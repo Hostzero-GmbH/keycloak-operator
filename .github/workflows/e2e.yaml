@@ -97,6 +97,17 @@ jobs:
           KIND_CONFIG: ${{ github.workspace }}/hack/kind-config-ci.yaml
         run: ./hack/setup-kind.sh all
 
+      - name: Wait for the KeycloakInstance to be ready
+        # The tests create realms against dev-keycloak right away and only
+        # wait 30s for each to become ready. A realm cannot be ready before the
+        # operator has connected to Keycloak, and a failed attempt requeues on
+        # the error delay, so make sure the instance is ready before starting.
+        run: |
+          if ! kubectl wait --for=jsonpath='{.status.ready}'=true keycloakinstance/dev-keycloak -n keycloak-operator --timeout=180s; then
+            kubectl get keycloakinstance dev-keycloak -n keycloak-operator -o yaml
+            exit 1
+          fi
+
       - name: Check Keycloak is reachable from the runner
         # The Kind config maps the Keycloak NodePort to localhost:8080, so the
         # tests that talk to Keycloak directly run instead of being skipped.
