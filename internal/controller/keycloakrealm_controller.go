@@ -107,6 +107,15 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Nested collections (clients, flows, components, ...) have their own CRDs.
+	// Keycloak imports them only at realm creation and ignores them on the
+	// realm PUT, so accepting them here would be a second home that never
+	// updates and never settles in drift detection (#172).
+	if err := rejectRealmNestedCollections(realm.Spec.Definition.Raw); err != nil {
+		RecordError(controllerName, "unsupported_definition_field")
+		return r.updateStatus(ctx, realm, false, UnsupportedDefinitionFieldReason, err.Error(), instanceRef)
+	}
+
 	realmName, err := resolveIdentifier("realmName", realm.Spec.RealmName, realmDef.Realm)
 	if err != nil {
 		RecordError(controllerName, "invalid_identifier")
