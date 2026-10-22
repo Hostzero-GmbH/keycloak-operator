@@ -61,6 +61,12 @@ spec:
               value: "true"
             - name: KC_METRICS_ENABLED
               value: "true"
+            # Keep the heap well under the container limit. Without this the
+            # JVM sizes it at 70% of the limit and the rest of the process
+            # (metaspace, threads, Infinispan off-heap) pushes the container
+            # over the limit under the e2e suite's realm churn: OOMKilled.
+            - name: JAVA_OPTS_KC_HEAP
+              value: "-Xms512m -Xmx1536m"
           ports:
             - name: http
               containerPort: 8080
@@ -81,15 +87,16 @@ spec:
             periodSeconds: 30
             failureThreshold: 5
           # The e2e suite creates and deletes dozens of realms in a few
-          # minutes. With a 1Gi / 1 CPU limit Keycloak restarted mid-run on
-          # the CI runner and the tests in that window failed.
+          # minutes. Keycloak was OOM-killed mid-run at 1Gi and once at 2Gi
+          # on the CI runner, and the tests in that window failed. The heap
+          # is capped above, so the limit now has real headroom.
           resources:
             requests:
               cpu: 500m
               memory: 1Gi
             limits:
               cpu: 2000m
-              memory: 2Gi
+              memory: 3Gi
 ---
 apiVersion: v1
 kind: Service
