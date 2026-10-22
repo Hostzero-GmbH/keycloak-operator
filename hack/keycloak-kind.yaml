@@ -80,13 +80,16 @@ spec:
             initialDelaySeconds: 90
             periodSeconds: 30
             failureThreshold: 5
+          # The e2e suite creates and deletes dozens of realms in a few
+          # minutes. With a 1Gi / 1 CPU limit Keycloak restarted mid-run on
+          # the CI runner and the tests in that window failed.
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
-            limits:
-              cpu: 1000m
+              cpu: 500m
               memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
 ---
 apiVersion: v1
 kind: Service

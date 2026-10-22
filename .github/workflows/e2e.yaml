@@ -131,6 +131,15 @@ jobs:
           echo "::group::keycloak logs"
           kubectl logs -n keycloak -l app=keycloak --tail=300 || true
           echo "::endgroup::"
+          echo "::group::keycloak previous container logs (if it restarted)"
+          kubectl logs -n keycloak -l app=keycloak --previous --tail=200 || true
+          echo "::endgroup::"
+          echo "::group::keycloak pod describe"
+          kubectl describe pod -n keycloak -l app=keycloak || true
+          echo "::endgroup::"
+          echo "::group::recent events"
+          kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true
+          echo "::endgroup::"
 
       - name: Report status result
         if: always() && steps.pr.outputs.sha != ''
