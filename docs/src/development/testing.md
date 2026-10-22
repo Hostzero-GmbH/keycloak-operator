@@ -202,10 +202,10 @@ func TestDriftDetection(t *testing.T) {
 
 ## CI/CD
 
-Tests run automatically in GitHub Actions:
+Tests run in GitHub Actions:
 
-- Unit tests on every PR
-- E2E tests on merge to main
+- Unit tests, lint and builds run on every PR and on `main` (`ci.yaml`).
+- The e2e suite (`e2e.yaml`) runs against a single-node Kind cluster with the operator and Keycloak deployed, on demand: a repo admin or maintainer comments `/e2e` on the pull request, or starts the workflow by hand via "Run workflow" with the PR number. The result is reported as the `E2E (kind)` commit status on the PR's head commit, and the comment gets a 🚀 reaction when the run starts.
 
 ## Test Utilities
 

@@ -1,0 +1,13 @@
+# Kind cluster configuration for CI (.github/workflows/e2e.yaml).
+# Single node to keep the runner light. Only the Keycloak NodePort is mapped,
+# which is what the e2e tests reach via KEYCLOAK_URL=http://localhost:8080.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: keycloak-operator-dev
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Keycloak HTTP
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
