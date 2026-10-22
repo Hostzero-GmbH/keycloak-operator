@@ -19,7 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-keycloak-operator-dev}"
-KIND_CONFIG="${SCRIPT_DIR}/kind-config.yaml"
+KIND_CONFIG="${KIND_CONFIG:-${SCRIPT_DIR}/kind-config.yaml}"
 KEYCLOAK_MANIFEST="${SCRIPT_DIR}/keycloak-kind.yaml"
 OPERATOR_IMAGE="${IMG:-keycloak-operator:dev}"
 KEYCLOAK_NAMESPACE="keycloak"
@@ -366,9 +366,10 @@ run_e2e_tests() {
     log_info "Running e2e tests against Kind cluster..."
     
     cd "${PROJECT_ROOT}"
+    # The suite creates its own KeycloakInstance in the test namespace. Do not
+    # point it at dev-keycloak: a realm's instanceRef only resolves within the
+    # realm's own namespace, so an instance in ${OPERATOR_NAMESPACE} is never found.
     export USE_EXISTING_CLUSTER=true
-    export KEYCLOAK_INSTANCE_NAME="dev-keycloak"
-    export KEYCLOAK_INSTANCE_NAMESPACE="${OPERATOR_NAMESPACE}"
     
     # Set up port-forward to Keycloak so reconciliation tests can connect directly
     log_info "Setting up port-forward to Keycloak..."
@@ -423,6 +424,7 @@ print_usage() {
     echo "Environment variables:"
     echo "  KIND_CLUSTER_NAME  Cluster name (default: keycloak-operator-dev)"
     echo "  IMG                Operator image (default: keycloak-operator:dev)"
+    echo "  KIND_CONFIG        Kind cluster config (default: hack/kind-config.yaml)"
     echo ""
 }
 

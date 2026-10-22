@@ -39,6 +39,8 @@ Feature suggestions are welcome! Please:
 5. **Update documentation** if needed
 6. **Submit a pull request** with a clear description
 
+Unit tests, lint and builds run automatically on every pull request. The e2e suite runs on demand: a maintainer comments `/e2e` on the PR and the result shows up as the `E2E (kind)` status.
+
 ## Development Setup
 
 ### Prerequisites
