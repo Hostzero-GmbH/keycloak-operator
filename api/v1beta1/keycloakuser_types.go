@@ -57,8 +57,10 @@ type KeycloakUserSpec struct {
 	// +optional
 	ClientRoles *map[string][]string `json:"clientRoles,omitempty"`
 
-	// Groups is the authoritative set of group names this user belongs to,
-	// reconciled via the Keycloak group-membership endpoints. When omitted,
+	// Groups is the authoritative set of groups this user belongs to, given as
+	// full group paths (e.g. "/parent/child"). An entry without a leading "/"
+	// is treated as a top-level group, so "dev" is the same as "/dev".
+	// Reconciled via the Keycloak group-membership endpoints. When omitted,
 	// group memberships are not managed; an empty list removes all memberships.
 	// +optional
 	Groups *[]string `json:"groups,omitempty"`

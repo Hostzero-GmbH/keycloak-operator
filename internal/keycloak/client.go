@@ -693,6 +693,20 @@ func (c *Client) GetGroupByName(ctx context.Context, realmName, name string) (*G
 	return nil, fmt.Errorf("group not found: %s", name)
 }
 
+// GetGroupByPath finds a group by its full path (e.g. "/parent/child").
+// Each path segment is escaped individually so the separators are preserved.
+func (c *Client) GetGroupByPath(ctx context.Context, realmName, path string) (*GroupRepresentation, error) {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	var group GroupRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/group-by-path/"+strings.Join(segments, "/"), &group); err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
 // UpdateGroup updates a group
 func (c *Client) UpdateGroup(ctx context.Context, realmName, groupID string, groupDef json.RawMessage) error {
 	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/groups/"+url.PathEscape(groupID), groupDef)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	stderrors "errors"
@@ -478,52 +479,58 @@ func (r *KeycloakUserReconciler) reconcileUserGroups(ctx context.Context, kc *ke
 		return fmt.Errorf("failed to get existing user groups: %w", err)
 	}
 
-	existingByName := make(map[string]string)
+	existingByID := make(map[string]string)
+	existingByPath := make(map[string]string)
 	for _, g := range existingGroups {
-		if g.Name != nil && g.ID != nil {
-			existingByName[*g.Name] = *g.ID
+		if g.ID == nil {
+			continue
 		}
-	}
-
-	allGroups, err := kc.GetGroups(ctx, realmName, nil)
-	if err != nil {
-		return fmt.Errorf("failed to list realm groups: %w", err)
-	}
-
-	groupByName := make(map[string]string)
-	for _, g := range allGroups {
-		if g.Name != nil && g.ID != nil {
-			groupByName[*g.Name] = *g.ID
+		label := *g.ID
+		if g.Name != nil {
+			label = *g.Name
 		}
+		if g.Path != nil {
+			existingByPath[*g.Path] = *g.ID
+			label = *g.Path
+		}
+		existingByID[*g.ID] = label
 	}
 
+	// Every entry is resolved as a full group path; a bare name such as "dev"
+	// refers to the top-level group "/dev".
 	want := make(map[string]bool)
-	for _, name := range groups {
-		want[name] = true
-	}
-
-	for _, name := range groups {
-		if _, joined := existingByName[name]; !joined {
-			groupID, found := groupByName[name]
-			if !found {
-				log.Info("group not found in realm, skipping", "group", name)
-				continue
-			}
-			if err := kc.AddUserToGroup(ctx, realmName, userID, groupID); err != nil {
-				log.Error(err, "failed to add user to group", "group", name)
-				continue
-			}
-			log.V(1).Info("added to group", "group", name)
+	for _, ref := range groups {
+		path := ref
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
 		}
+		if groupID, joined := existingByPath[path]; joined {
+			want[groupID] = true
+			continue
+		}
+		group, err := kc.GetGroupByPath(ctx, realmName, path)
+		if err != nil || group.ID == nil {
+			log.Info("group not found in realm, skipping", "group", path, "error", err)
+			continue
+		}
+		want[*group.ID] = true
+		if _, joined := existingByID[*group.ID]; joined {
+			continue
+		}
+		if err := kc.AddUserToGroup(ctx, realmName, userID, *group.ID); err != nil {
+			log.Error(err, "failed to add user to group", "group", path)
+			continue
+		}
+		log.V(1).Info("added to group", "group", path)
 	}
 
-	for name, groupID := range existingByName {
-		if !want[name] {
+	for groupID, label := range existingByID {
+		if !want[groupID] {
 			if err := kc.RemoveUserFromGroup(ctx, realmName, userID, groupID); err != nil {
-				log.Error(err, "failed to remove user from group", "group", name)
+				log.Error(err, "failed to remove user from group", "group", label)
 				continue
 			}
-			log.V(1).Info("removed from group", "group", name)
+			log.V(1).Info("removed from group", "group", label)
 		}
 	}
 
