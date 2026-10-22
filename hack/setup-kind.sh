@@ -366,9 +366,10 @@ run_e2e_tests() {
     log_info "Running e2e tests against Kind cluster..."
     
     cd "${PROJECT_ROOT}"
+    # The suite creates its own KeycloakInstance in the test namespace. Do not
+    # point it at dev-keycloak: a realm's instanceRef only resolves within the
+    # realm's own namespace, so an instance in ${OPERATOR_NAMESPACE} is never found.
     export USE_EXISTING_CLUSTER=true
-    export KEYCLOAK_INSTANCE_NAME="dev-keycloak"
-    export KEYCLOAK_INSTANCE_NAMESPACE="${OPERATOR_NAMESPACE}"
     
     # Set up port-forward to Keycloak so reconciliation tests can connect directly
     log_info "Setting up port-forward to Keycloak..."

@@ -97,11 +97,11 @@ jobs:
           KIND_CONFIG: ${{ github.workspace }}/hack/kind-config-ci.yaml
         run: ./hack/setup-kind.sh all
 
-      - name: Wait for the KeycloakInstance to be ready
-        # The tests create realms against dev-keycloak right away and only
-        # wait 30s for each to become ready. A realm cannot be ready before the
-        # operator has connected to Keycloak, and a failed attempt requeues on
-        # the error delay, so make sure the instance is ready before starting.
+      - name: Wait for the operator to connect to Keycloak
+        # dev-keycloak is the instance the setup script creates. The tests do
+        # not use it (they create their own in the test namespace, since a
+        # realm's instanceRef only resolves within the realm's namespace), but
+        # it proves the operator can reach Keycloak before the suite starts.
         run: |
           if ! kubectl wait --for=jsonpath='{.status.ready}'=true keycloakinstance/dev-keycloak -n keycloak-operator --timeout=180s; then
             kubectl get keycloakinstance dev-keycloak -n keycloak-operator -o yaml
@@ -117,8 +117,6 @@ jobs:
         env:
           USE_EXISTING_CLUSTER: "true"
           KEYCLOAK_URL: http://localhost:8080
-          KEYCLOAK_INSTANCE_NAME: dev-keycloak
-          KEYCLOAK_INSTANCE_NAMESPACE: keycloak-operator
           OPERATOR_NAMESPACE: keycloak-operator
         run: go test -v -timeout 30m ./test/e2e/...
 
