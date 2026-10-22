@@ -1,0 +1,76 @@
+name: E2E
+
+# Full end-to-end suite against a Kind cluster with the operator and Keycloak
+# deployed. It runs on pull requests, but the job is bound to the "e2e"
+# environment, whose required reviewers (the maintainers) have to approve each
+# run before it starts: open the run and click "Review deployments".
+# Fork PRs get a read-only token and no secrets, which is fine, nothing here
+# needs either.
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: '1.26'
+  KIND_VERSION: v0.33.0
+
+jobs:
+  e2e:
+    name: E2E (kind)
+    runs-on: ubuntu-latest
+    environment: e2e
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+
+      - name: Install kind
+        run: go install sigs.k8s.io/kind@${{ env.KIND_VERSION }}
+
+      - name: Create cluster, deploy operator and Keycloak
+        env:
+          KIND_CONFIG: ${{ github.workspace }}/hack/kind-config-ci.yaml
+        run: ./hack/setup-kind.sh all
+
+      - name: Check Keycloak is reachable from the runner
+        # The Kind config maps the Keycloak NodePort to localhost:8080, so the
+        # tests that talk to Keycloak directly run instead of being skipped.
+        run: curl --fail --silent --show-error --retry 10 --retry-delay 5 --retry-all-errors http://localhost:8080/realms/master > /dev/null
+
+      - name: Run e2e tests
+        env:
+          USE_EXISTING_CLUSTER: "true"
+          KEYCLOAK_URL: http://localhost:8080
+          KEYCLOAK_INSTANCE_NAME: dev-keycloak
+          KEYCLOAK_INSTANCE_NAMESPACE: keycloak-operator
+          OPERATOR_NAMESPACE: keycloak-operator
+        run: go test -v -timeout 30m ./test/e2e/...
+
+      - name: Dump cluster state
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl get keycloakinstances,keycloakrealms,keycloakclients,keycloakusers,keycloakgroups -A || true
+          echo "::group::operator logs"
+          kubectl logs -n keycloak-operator -l app.kubernetes.io/name=keycloak-operator --tail=1000 || true
+          echo "::endgroup::"
+          echo "::group::keycloak logs"
+          kubectl logs -n keycloak -l app=keycloak --tail=300 || true
+          echo "::endgroup::"
