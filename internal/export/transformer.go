@@ -160,8 +160,11 @@ func (t *Transformer) TransformClientScope(raw json.RawMessage) (ExportedResourc
 	}, nil
 }
 
-// TransformUser transforms a user JSON to KeycloakUser
-func (t *Transformer) TransformUser(raw json.RawMessage) (ExportedResource, error) {
+// TransformUser transforms a user JSON to KeycloakUser. groupPaths are the
+// user's group memberships as absolute paths; when non-empty they become
+// spec.groups, otherwise spec.groups is left unset so the operator does not
+// manage memberships for that user.
+func (t *Transformer) TransformUser(raw json.RawMessage, groupPaths []string) (ExportedResource, error) {
 	var parsed struct {
 		Username string `json:"username"`
 	}
@@ -188,6 +191,10 @@ func (t *Transformer) TransformUser(raw json.RawMessage) (ExportedResource, erro
 			Username:   strPtr(parsed.Username),
 			Definition: &runtime.RawExtension{Raw: definition},
 		},
+	}
+	if len(groupPaths) > 0 {
+		groups := append([]string(nil), groupPaths...)
+		user.Spec.Groups = &groups
 	}
 
 	return ExportedResource{
