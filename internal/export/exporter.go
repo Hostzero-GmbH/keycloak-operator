@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -370,7 +371,18 @@ func (e *Exporter) exportUsers(ctx context.Context) ([]ExportedResource, error) 
 			continue
 		}
 
-		resource, err := e.transformer.TransformUser(raw)
+		// Group memberships are not part of the user representation; they come
+		// from the dedicated membership endpoint and land in spec.groups as
+		// absolute paths, which is what KeycloakUser reconciles against.
+		var groupPaths []string
+		if e.filter.ShouldIncludeType(ResourceTypeGroups) {
+			groupPaths, err = e.userGroupPaths(ctx, user.ID)
+			if err != nil {
+				e.log.Error(err, "Failed to get groups for user", "username", user.Username)
+			}
+		}
+
+		resource, err := e.transformer.TransformUser(raw, groupPaths)
 		if err != nil {
 			e.log.Error(err, "Failed to transform user", "username", user.Username)
 			continue
@@ -389,6 +401,28 @@ func (e *Exporter) exportUsers(ctx context.Context) ([]ExportedResource, error) 
 	}
 
 	return resources, nil
+}
+
+// userGroupPaths returns the absolute paths of the groups a user belongs to,
+// sorted. Keycloak reports the path on every membership; a group without one
+// (never seen in practice) falls back to "/" + name so it still resolves as a
+// top-level group.
+func (e *Exporter) userGroupPaths(ctx context.Context, userID string) ([]string, error) {
+	groups, err := e.client.GetUserGroups(ctx, e.opts.Realm, userID)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(groups))
+	for _, g := range groups {
+		switch {
+		case g.Path != nil && *g.Path != "":
+			paths = append(paths, *g.Path)
+		case g.Name != nil && *g.Name != "":
+			paths = append(paths, "/"+*g.Name)
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func (e *Exporter) exportRealmRoles(ctx context.Context) ([]ExportedResource, error) {

@@ -38,6 +38,11 @@ type fakeKeycloak struct {
 	// pagination and the post-23 fallback.
 	childrenCalls map[string]int
 
+	// users is the response body for GET /users; userGroups maps a user ID to
+	// the memberships returned by GET /users/{id}/groups.
+	users      []json.RawMessage
+	userGroups map[string][]json.RawMessage
+
 	// components is the response body for GET /components for the test realm.
 	components []json.RawMessage
 }
@@ -48,6 +53,7 @@ func newFakeKeycloak(t *testing.T) *fakeKeycloak {
 		children:      map[string][]json.RawMessage{},
 		realmRoles:    map[string][]json.RawMessage{},
 		childrenCalls: map[string]int{},
+		userGroups:    map[string][]json.RawMessage{},
 	}
 }
 
@@ -84,6 +90,25 @@ func (f *fakeKeycloak) handler() http.Handler {
 		default:
 			http.NotFound(w, r)
 		}
+	})
+
+	mux.HandleFunc("/admin/realms/test/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin/realms/test/users" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, paginate(f.users, r.URL.Query()))
+	})
+
+	mux.HandleFunc("/admin/realms/test/users/", func(w http.ResponseWriter, r *http.Request) {
+		// /admin/realms/test/users/{id}/groups
+		rest := r.URL.Path[len("/admin/realms/test/users/"):]
+		if len(rest) > len("/groups") && rest[len(rest)-len("/groups"):] == "/groups" {
+			id := rest[:len(rest)-len("/groups")]
+			writeJSON(w, paginate(f.userGroups[id], r.URL.Query()))
+			return
+		}
+		http.NotFound(w, r)
 	})
 
 	mux.HandleFunc("/admin/realms/test/components", func(w http.ResponseWriter, _ *http.Request) {
@@ -138,6 +163,14 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 
 func newTestExporter(t *testing.T, fake *fakeKeycloak) (*Exporter, *httptest.Server) {
 	t.Helper()
+	return newTestExporterWithOptions(t, fake, ExporterOptions{
+		Realm:           "test",
+		TargetNamespace: "default",
+	})
+}
+
+func newTestExporterWithOptions(t *testing.T, fake *fakeKeycloak, opts ExporterOptions) (*Exporter, *httptest.Server) {
+	t.Helper()
 	srv := httptest.NewServer(fake.handler())
 	t.Cleanup(srv.Close)
 
@@ -148,10 +181,7 @@ func newTestExporter(t *testing.T, fake *fakeKeycloak) (*Exporter, *httptest.Ser
 		ClientSecret: "secret",
 	}, testr.New(t))
 
-	exp := NewExporter(client, testr.New(t), ExporterOptions{
-		Realm:           "test",
-		TargetNamespace: "default",
-	})
+	exp := NewExporter(client, testr.New(t), opts)
 	return exp, srv
 }
 
@@ -394,6 +424,89 @@ func resourceKinds(rs []ExportedResource) []string {
 		out = append(out, r.Kind+"/"+r.Name)
 	}
 	return out
+}
+
+// Group memberships are not in the user representation (#186). When groups
+// are part of the export, each user's memberships land in spec.groups as
+// sorted absolute paths; users without memberships leave spec.groups unset.
+func TestExportUsers_GroupsAsPaths(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.users = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "u-1", "username": "alice", "enabled": true}),
+		mustJSON(t, map[string]interface{}{"id": "u-2", "username": "bob", "enabled": true}),
+	}
+	fake.userGroups["u-1"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "g-2", "name": "team-alpha", "path": "/engineering/team-alpha"}),
+		mustJSON(t, map[string]interface{}{"id": "g-1", "name": "developers", "path": "/developers"}),
+		mustJSON(t, map[string]interface{}{"id": "g-3", "name": "legacy"}), // no path: falls back to /name
+	}
+
+	exp, _ := newTestExporterWithOptions(t, fake, ExporterOptions{
+		Realm: "test", TargetNamespace: "default", Include: []string{"users", "groups"},
+	})
+	resources, err := exp.exportUsers(context.Background())
+	if err != nil {
+		t.Fatalf("exportUsers: %v", err)
+	}
+
+	users := map[string]*keycloakv1beta1.KeycloakUser{}
+	for _, r := range resources {
+		if u, ok := r.Object.(*keycloakv1beta1.KeycloakUser); ok {
+			users[*u.Spec.Username] = u
+		}
+	}
+	if len(users) != 2 {
+		t.Fatalf("expected 2 users, got %d (%v)", len(users), resourceKinds(resources))
+	}
+	if users["alice"].Spec.Groups == nil {
+		t.Fatal("alice: spec.groups should be set")
+	}
+	want := []string{"/developers", "/engineering/team-alpha", "/legacy"}
+	if got := *users["alice"].Spec.Groups; !equalStrings(got, want) {
+		t.Errorf("alice: spec.groups = %v, want %v", got, want)
+	}
+	if users["bob"].Spec.Groups != nil {
+		t.Errorf("bob has no memberships, spec.groups should be unset, got %v", *users["bob"].Spec.Groups)
+	}
+}
+
+// With the groups type excluded no membership lookup happens and spec.groups
+// stays unset.
+func TestExportUsers_GroupsExcluded(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.users = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "u-1", "username": "alice", "enabled": true}),
+	}
+	fake.userGroups["u-1"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "g-1", "name": "developers", "path": "/developers"}),
+	}
+
+	exp, _ := newTestExporterWithOptions(t, fake, ExporterOptions{
+		Realm: "test", TargetNamespace: "default", Include: []string{"users"},
+	})
+	resources, err := exp.exportUsers(context.Background())
+	if err != nil {
+		t.Fatalf("exportUsers: %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(resources))
+	}
+	user := resources[0].Object.(*keycloakv1beta1.KeycloakUser)
+	if user.Spec.Groups != nil {
+		t.Errorf("spec.groups should be unset when groups are excluded, got %v", *user.Spec.Groups)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Components are listed without a parent filter, so LDAP mappers come back
