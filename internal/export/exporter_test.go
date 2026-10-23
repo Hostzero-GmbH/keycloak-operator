@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr/testr"
+	"github.com/stretchr/testify/require"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
@@ -45,6 +47,15 @@ type fakeKeycloak struct {
 
 	// components is the response body for GET /components for the test realm.
 	components []json.RawMessage
+
+	// clients is the response body for GET /clients; realmRoleList for
+	// GET /roles; clientRoles maps a client UUID to GET /clients/{id}/roles;
+	// composites maps "<role>" or "<clientUUID>/<role>" to the members
+	// returned by the respective composites endpoint.
+	clients       []json.RawMessage
+	realmRoleList []json.RawMessage
+	clientRoles   map[string][]json.RawMessage
+	composites    map[string][]json.RawMessage
 }
 
 func newFakeKeycloak(t *testing.T) *fakeKeycloak {
@@ -53,6 +64,8 @@ func newFakeKeycloak(t *testing.T) *fakeKeycloak {
 		children:      map[string][]json.RawMessage{},
 		realmRoles:    map[string][]json.RawMessage{},
 		childrenCalls: map[string]int{},
+		clientRoles:   map[string][]json.RawMessage{},
+		composites:    map[string][]json.RawMessage{},
 		userGroups:    map[string][]json.RawMessage{},
 	}
 }
@@ -116,12 +129,51 @@ func (f *fakeKeycloak) handler() http.Handler {
 	})
 
 	mux.HandleFunc("/admin/realms/test/clients", func(w http.ResponseWriter, _ *http.Request) {
-		// Returning an empty client list is enough: exportGroupRoleMappings
-		// only iterates clients to fetch client-role mappings.
-		writeJSON(w, []json.RawMessage{})
+		// Group role-mapping export only iterates clients; composite role
+		// export resolves client UUIDs through this list.
+		writeJSON(w, paginateNonNil(f.clients))
+	})
+
+	mux.HandleFunc("/admin/realms/test/clients/", func(w http.ResponseWriter, r *http.Request) {
+		// /admin/realms/test/clients/{uuid}/roles
+		// /admin/realms/test/clients/{uuid}/roles/{name}/composites
+		rest := r.URL.Path[len("/admin/realms/test/clients/"):]
+		parts := strings.Split(rest, "/")
+		switch {
+		case len(parts) == 2 && parts[1] == "roles":
+			writeJSON(w, paginateNonNil(f.clientRoles[parts[0]]))
+		case len(parts) == 4 && parts[1] == "roles" && parts[3] == "composites":
+			writeJSON(w, paginateNonNil(f.composites[parts[0]+"/"+parts[2]]))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	mux.HandleFunc("/admin/realms/test/roles", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, paginate(f.realmRoleList, r.URL.Query()))
+	})
+
+	mux.HandleFunc("/admin/realms/test/roles/", func(w http.ResponseWriter, r *http.Request) {
+		// /admin/realms/test/roles/{name}/composites
+		rest := r.URL.Path[len("/admin/realms/test/roles/"):]
+		parts := strings.Split(rest, "/")
+		if len(parts) == 2 && parts[1] == "composites" {
+			writeJSON(w, paginateNonNil(f.composites[parts[0]]))
+			return
+		}
+		http.NotFound(w, r)
 	})
 
 	return mux
+}
+
+// paginateNonNil returns an empty list instead of nil so the fake never
+// serialises "null" for a missing entry.
+func paginateNonNil(items []json.RawMessage) []json.RawMessage {
+	if items == nil {
+		return []json.RawMessage{}
+	}
+	return items
 }
 
 func paginate(items []json.RawMessage, q map[string][]string) []json.RawMessage {
@@ -568,4 +620,67 @@ func TestExportComponents_SubComponentsReferenceParent(t *testing.T) {
 	if mapper.Spec.ParentComponentRef == nil || mapper.Spec.ParentComponentRef.Name != "userstorageprovider-corporate-ldap" {
 		t.Errorf("parentComponentRef = %+v, want the provider's CR name", mapper.Spec.ParentComponentRef)
 	}
+}
+
+// A composite role's members live behind the composites endpoint, not in the
+// role listing. The export must carry them in the shape the KeycloakRole
+// controller consumes, or the applied role ends up empty.
+func TestExportRoles_CompositeMembers(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.clients = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "client-uuid-1", "clientId": "app"}),
+	}
+	fake.realmRoleList = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "r1", "name": "editor", "composite": true}),
+		mustJSON(t, map[string]interface{}{"id": "r2", "name": "viewer", "composite": false}),
+	}
+	fake.composites["editor"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "r2", "name": "viewer", "clientRole": false, "containerId": "realm-id"}),
+		mustJSON(t, map[string]interface{}{"id": "cr1", "name": "app-admin", "clientRole": true, "containerId": "client-uuid-1"}),
+		mustJSON(t, map[string]interface{}{"id": "cr0", "name": "app-user", "clientRole": true, "containerId": "client-uuid-1"}),
+	}
+	fake.clientRoles["client-uuid-1"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "cr9", "name": "app-super", "composite": true}),
+	}
+	fake.composites["client-uuid-1/app-super"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "cr1", "name": "app-admin", "clientRole": true, "containerId": "client-uuid-1"}),
+	}
+
+	exp, _ := newTestExporter(t, fake)
+
+	type composites struct {
+		Realm  []string            `json:"realm"`
+		Client map[string][]string `json:"client"`
+	}
+	definitionOf := func(res ExportedResource) map[string]json.RawMessage {
+		role := res.Object.(*keycloakv1beta1.KeycloakRole)
+		var def map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(role.Spec.Definition.Raw, &def))
+		return def
+	}
+
+	realmRoles, err := exp.exportRealmRoles(context.Background())
+	require.NoError(t, err)
+	require.Len(t, realmRoles, 2)
+	byName := map[string]ExportedResource{}
+	for _, r := range realmRoles {
+		byName[r.Name] = r
+	}
+
+	editor := definitionOf(byName["editor"])
+	require.Contains(t, editor, "composites", "composite role must export its members")
+	var got composites
+	require.NoError(t, json.Unmarshal(editor["composites"], &got))
+	require.Equal(t, composites{Realm: []string{"viewer"}, Client: map[string][]string{"app": {"app-admin", "app-user"}}}, got)
+
+	viewer := definitionOf(byName["viewer"])
+	require.NotContains(t, viewer, "composites", "a plain role gets no composites block")
+
+	clientRoles, err := exp.exportClientRolesForClient(context.Background(), "client-uuid-1", "app")
+	require.NoError(t, err)
+	require.Len(t, clientRoles, 1)
+	super := definitionOf(clientRoles[0])
+	var gotClient composites
+	require.NoError(t, json.Unmarshal(super["composites"], &gotClient))
+	require.Equal(t, composites{Client: map[string][]string{"app": {"app-admin"}}}, gotClient)
 }

@@ -210,8 +210,10 @@ func (t *Transformer) TransformGroup(raw json.RawMessage, parentGroupName string
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields and subgroups (exported separately)
-	definition := removeServerFields(raw, "id", "subGroups", "path")
+	// Remove server-managed fields and subgroups (exported separately).
+	// parentId is the parent's Keycloak UUID (Keycloak 23+ returns it on
+	// subgroups); the placement is carried by parentGroupRef instead.
+	definition := removeServerFields(raw, "id", "subGroups", "path", "parentId")
 
 	name := parsed.Name
 	if parentGroupName != "" {
@@ -228,18 +230,20 @@ func (t *Transformer) TransformGroup(raw json.RawMessage, parentGroupName string
 			Namespace: t.opts.TargetNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakGroupSpec{
-			RealmRef: &keycloakv1beta1.ResourceRef{
-				Name: t.opts.RealmRef,
-			},
 			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
 
-	// Add parent reference if this is a subgroup
+	// A group names exactly one parent: the realm for top-level groups, the
+	// parent group for subgroups (the realm is derived from it).
 	if parentGroupName != "" {
 		group.Spec.ParentGroupRef = &keycloakv1beta1.ResourceRef{
 			Name: sanitizeName(parentGroupName),
+		}
+	} else {
+		group.Spec.RealmRef = &keycloakv1beta1.ResourceRef{
+			Name: t.opts.RealmRef,
 		}
 	}
 
@@ -278,18 +282,21 @@ func (t *Transformer) TransformRole(raw json.RawMessage, clientID, clientUUID st
 			Namespace: t.opts.TargetNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakRoleSpec{
-			RealmRef: &keycloakv1beta1.ResourceRef{
-				Name: t.opts.RealmRef,
-			},
 			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
 
 	// Add client reference if this is a client role
+	// A role names exactly one parent: the realm for realm roles, the client
+	// for client roles (the realm is derived from it).
 	if clientID != "" {
 		role.Spec.ClientRef = &keycloakv1beta1.ResourceRef{
 			Name: sanitizeName(clientID),
+		}
+	} else {
+		role.Spec.RealmRef = &keycloakv1beta1.ResourceRef{
+			Name: t.opts.RealmRef,
 		}
 	}
 
