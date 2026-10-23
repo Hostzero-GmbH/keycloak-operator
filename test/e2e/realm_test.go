@@ -179,18 +179,12 @@ func TestKeycloakRealmE2E(t *testing.T) {
 		require.NoError(t, err, "KeycloakRealm with smtpSecretRef did not become ready")
 		t.Logf("KeycloakRealm %s with smtpSecretRef is ready", realmName)
 
-		// Verify SMTP credentials were injected by reading realm from Keycloak
+		// Verify SMTP credentials were injected by reading realm from Keycloak.
+		// Ready can land while a follow-up PUT of the same definition is still
+		// in flight, so poll until the user is visible instead of reading once.
 		if canConnectToKeycloak() {
 			kc := getInternalKeycloakClient(t)
-			realmRaw, err := kc.GetRealmRaw(ctx, realmName)
-			require.NoError(t, err, "Failed to get realm from Keycloak")
-
-			var realmData map[string]interface{}
-			require.NoError(t, json.Unmarshal(realmRaw, &realmData))
-
-			smtp, ok := realmData["smtpServer"].(map[string]interface{})
-			require.True(t, ok, "smtpServer should exist in realm")
-			require.Equal(t, "smtp-user@example.com", smtp["user"], "SMTP user should be injected from secret")
+			smtp := waitForRealmSmtpUser(t, kc, realmName, "smtp-user@example.com")
 			// Keycloak masks the password in API responses, so we just verify it's present
 			require.NotEmpty(t, smtp["password"], "SMTP password should be set")
 			require.Equal(t, "smtp.example.com", smtp["host"], "Existing SMTP fields should be preserved")
@@ -260,15 +254,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 
 		if canConnectToKeycloak() {
 			kc := getInternalKeycloakClient(t)
-			realmRaw, err := kc.GetRealmRaw(ctx, realmName)
-			require.NoError(t, err)
-
-			var realmData map[string]interface{}
-			require.NoError(t, json.Unmarshal(realmRaw, &realmData))
-
-			smtp, ok := realmData["smtpServer"].(map[string]interface{})
-			require.True(t, ok, "smtpServer should exist")
-			require.Equal(t, "custom-user@example.com", smtp["user"])
+			smtp := waitForRealmSmtpUser(t, kc, realmName, "custom-user@example.com")
 			// Keycloak masks the password in API responses
 			require.NotEmpty(t, smtp["password"], "SMTP password should be set")
 			t.Log("Verified: Custom SMTP secret keys work correctly")
@@ -813,4 +799,32 @@ func requireRefNamespacePruned(t *testing.T, kind, name, refField string) {
 	ref, _, _ := unstructured.NestedMap(stored.Object, "spec", refField)
 	_, hasNamespace := ref["namespace"]
 	require.False(t, hasNamespace, "spec.%s.namespace should be pruned by the CRD schema", refField)
+}
+
+// waitForRealmSmtpUser polls the realm in Keycloak until smtpServer.user equals
+// want and returns the smtpServer map. The realm reconciler may issue a second
+// PUT right after reporting Ready (its status write can conflict and requeue),
+// and a GET racing that PUT has been observed to return smtpServer without
+// user on Keycloak 26.8, so a single read right after Ready is not reliable.
+func waitForRealmSmtpUser(t *testing.T, kc *keycloak.Client, realmName, want string) map[string]interface{} {
+	t.Helper()
+	var smtp map[string]interface{}
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		realmRaw, err := kc.GetRealmRaw(ctx, realmName)
+		if err != nil {
+			return false, nil
+		}
+		var realmData map[string]interface{}
+		if err := json.Unmarshal(realmRaw, &realmData); err != nil {
+			return false, err
+		}
+		current, ok := realmData["smtpServer"].(map[string]interface{})
+		if !ok || current["user"] != want {
+			return false, nil
+		}
+		smtp = current
+		return true, nil
+	})
+	require.NoError(t, err, "smtpServer.user %q was not visible on realm %s", want, realmName)
+	return smtp
 }
