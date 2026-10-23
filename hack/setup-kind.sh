@@ -21,6 +21,8 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-keycloak-operator-dev}"
 KIND_CONFIG="${KIND_CONFIG:-${SCRIPT_DIR}/kind-config.yaml}"
 KEYCLOAK_MANIFEST="${SCRIPT_DIR}/keycloak-kind.yaml"
+# Override the Keycloak image in the manifest, e.g. quay.io/keycloak/keycloak:25.0 (CI matrix).
+KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-}"
 OPERATOR_IMAGE="${IMG:-keycloak-operator:dev}"
 KEYCLOAK_NAMESPACE="keycloak"
 OPERATOR_NAMESPACE="keycloak-operator"
@@ -258,7 +260,12 @@ deploy_keycloak() {
     log_info "Deploying Keycloak to cluster for testing..."
     
     # Use manifest-based deployment (no Helm dependency)
-    kubectl apply -f "${KEYCLOAK_MANIFEST}"
+    if [ -n "${KEYCLOAK_IMAGE}" ]; then
+        log_info "Using Keycloak image ${KEYCLOAK_IMAGE}"
+        sed "s|image: quay.io/keycloak/keycloak:[^[:space:]]*|image: ${KEYCLOAK_IMAGE}|" "${KEYCLOAK_MANIFEST}" | kubectl apply -f -
+    else
+        kubectl apply -f "${KEYCLOAK_MANIFEST}"
+    fi
     
     log_info "Waiting for Keycloak deployment to be available..."
     kubectl wait --for=condition=Available deployment/keycloak \
@@ -425,6 +432,7 @@ print_usage() {
     echo "  KIND_CLUSTER_NAME  Cluster name (default: keycloak-operator-dev)"
     echo "  IMG                Operator image (default: keycloak-operator:dev)"
     echo "  KIND_CONFIG        Kind cluster config (default: hack/kind-config.yaml)"
+    echo "  KEYCLOAK_IMAGE     Keycloak image to deploy (default: the one in hack/keycloak-kind.yaml)"
     echo ""
 }
 
