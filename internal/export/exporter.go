@@ -5,12 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/go-logr/logr"
 
-	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
@@ -49,6 +49,10 @@ type Exporter struct {
 	opts        ExporterOptions
 	filter      *Filter
 	transformer *Transformer
+
+	// clientIDsByUUID caches client UUID -> clientId for resolving the
+	// client members of composite roles. Loaded on first use.
+	clientIDsByUUID map[string]string
 }
 
 // NewExporter creates a new exporter
@@ -370,7 +374,18 @@ func (e *Exporter) exportUsers(ctx context.Context) ([]ExportedResource, error) 
 			continue
 		}
 
-		resource, err := e.transformer.TransformUser(raw)
+		// Group memberships are not part of the user representation; they come
+		// from the dedicated membership endpoint and land in spec.groups as
+		// absolute paths, which is what KeycloakUser reconciles against.
+		var groupPaths []string
+		if e.filter.ShouldIncludeType(ResourceTypeGroups) {
+			groupPaths, err = e.userGroupPaths(ctx, user.ID)
+			if err != nil {
+				e.log.Error(err, "Failed to get groups for user", "username", user.Username)
+			}
+		}
+
+		resource, err := e.transformer.TransformUser(raw, groupPaths)
 		if err != nil {
 			e.log.Error(err, "Failed to transform user", "username", user.Username)
 			continue
@@ -389,6 +404,28 @@ func (e *Exporter) exportUsers(ctx context.Context) ([]ExportedResource, error) 
 	}
 
 	return resources, nil
+}
+
+// userGroupPaths returns the absolute paths of the groups a user belongs to,
+// sorted. Keycloak reports the path on every membership; a group without one
+// (never seen in practice) falls back to "/" + name so it still resolves as a
+// top-level group.
+func (e *Exporter) userGroupPaths(ctx context.Context, userID string) ([]string, error) {
+	groups, err := e.client.GetUserGroups(ctx, e.opts.Realm, userID)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(groups))
+	for _, g := range groups {
+		switch {
+		case g.Path != nil && *g.Path != "":
+			paths = append(paths, *g.Path)
+		case g.Name != nil && *g.Name != "":
+			paths = append(paths, "/"+*g.Name)
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 func (e *Exporter) exportRealmRoles(ctx context.Context) ([]ExportedResource, error) {
@@ -410,6 +447,9 @@ func (e *Exporter) exportRealmRoles(ctx context.Context) ([]ExportedResource, er
 			continue
 		}
 
+		raw = e.withComposites(ctx, raw, role.Name, func() ([]keycloak.RoleRepresentation, error) {
+			return e.client.GetRealmRoleComposites(ctx, e.opts.Realm, role.Name)
+		})
 		resource, err := e.transformer.TransformRole(raw, "", "")
 		if err != nil {
 			e.log.Error(err, "Failed to transform realm role", "name", role.Name)
@@ -445,6 +485,9 @@ func (e *Exporter) exportClientRolesForClient(ctx context.Context, clientUUID, c
 			continue
 		}
 
+		raw = e.withComposites(ctx, raw, clientID+"/"+role.Name, func() ([]keycloak.RoleRepresentation, error) {
+			return e.client.GetClientRoleComposites(ctx, e.opts.Realm, clientUUID, role.Name)
+		})
 		resource, err := e.transformer.TransformRole(raw, clientID, clientUUID)
 		if err != nil {
 			e.log.Error(err, "Failed to transform client role", "name", role.Name, "client", clientID)
@@ -456,19 +499,102 @@ func (e *Exporter) exportClientRolesForClient(ctx context.Context, clientUUID, c
 	return resources, nil
 }
 
+// withComposites adds a "composites" block to a composite role's raw
+// representation. The role listing only carries composite=true; the members
+// live behind the composites endpoint, so without this an exported composite
+// role would be applied as an empty one. The block uses the shape the
+// KeycloakRole controller consumes: realm member names under "realm", client
+// member names under "client" keyed by clientId.
+func (e *Exporter) withComposites(ctx context.Context, raw json.RawMessage, label string, fetch func() ([]keycloak.RoleRepresentation, error)) json.RawMessage {
+	var role struct {
+		Composite bool `json:"composite"`
+	}
+	if err := json.Unmarshal(raw, &role); err != nil || !role.Composite {
+		return raw
+	}
+
+	members, err := fetch()
+	if err != nil {
+		e.log.Error(err, "Failed to get composite role members; exporting the role without them", "role", label)
+		return raw
+	}
+
+	var realm []string
+	client := map[string][]string{}
+	for _, m := range members {
+		if m.Name == nil {
+			continue
+		}
+		if m.ClientRole == nil || !*m.ClientRole {
+			realm = append(realm, *m.Name)
+			continue
+		}
+		if m.ContainerID == nil {
+			continue
+		}
+		clientID, ok := e.clientIDByUUID(ctx, *m.ContainerID)
+		if !ok {
+			e.log.Error(nil, "Composite member belongs to an unknown client; skipping it", "role", label, "member", *m.Name, "clientUUID", *m.ContainerID)
+			continue
+		}
+		client[clientID] = append(client[clientID], *m.Name)
+	}
+
+	composites := map[string]interface{}{}
+	if len(realm) > 0 {
+		sort.Strings(realm)
+		composites["realm"] = realm
+	}
+	if len(client) > 0 {
+		for _, names := range client {
+			sort.Strings(names)
+		}
+		composites["client"] = client
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return raw
+	}
+	data["composites"] = composites
+	out, err := json.Marshal(data)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+// clientIDByUUID resolves a client's UUID to its clientId, listing the realm's
+// clients once on first use.
+func (e *Exporter) clientIDByUUID(ctx context.Context, uuid string) (string, bool) {
+	if e.clientIDsByUUID == nil {
+		e.clientIDsByUUID = map[string]string{}
+		clients, err := e.client.GetClients(ctx, e.opts.Realm, nil)
+		if err != nil {
+			e.log.Error(err, "Failed to list clients for composite role resolution")
+		}
+		for _, c := range clients {
+			if c.ID != nil && c.ClientID != nil {
+				e.clientIDsByUUID[*c.ID] = *c.ClientID
+			}
+		}
+	}
+	clientID, ok := e.clientIDsByUUID[uuid]
+	return clientID, ok
+}
+
 func (e *Exporter) exportIdentityProviders(ctx context.Context) ([]ExportedResource, error) {
 	rawIDPs, err := e.client.GetIdentityProvidersRaw(ctx, e.opts.Realm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get identity providers: %w", err)
 	}
 
-	e.transformer.SetOrganizationNames(e.loadOrganizationNames(ctx))
+	e.transformer.SetIdentityProviderOrganizations(e.loadIdentityProviderOrganizations(ctx, e.loadOrganizationNames(ctx)))
 
 	var resources []ExportedResource
 	for _, raw := range rawIDPs {
 		var idp struct {
-			Alias          string `json:"alias"`
-			OrganizationID string `json:"organizationId"`
+			Alias string `json:"alias"`
 		}
 		if err := json.Unmarshal(raw, &idp); err != nil {
 			continue
@@ -478,11 +604,6 @@ func (e *Exporter) exportIdentityProviders(ctx context.Context) ([]ExportedResou
 		if err != nil {
 			e.log.Error(err, "Failed to transform identity provider", "alias", idp.Alias)
 			continue
-		}
-		if idp.OrganizationID != "" {
-			if exported, ok := resource.Object.(*keycloakv1beta1.KeycloakIdentityProvider); !ok || exported.Spec.OrganizationRef == nil {
-				e.log.Info("dropping unresolved organizationId on identity provider", "alias", idp.Alias, "organizationId", idp.OrganizationID)
-			}
 		}
 		resources = append(resources, resource)
 
@@ -525,29 +646,86 @@ func (e *Exporter) exportIdentityProviderMappers(ctx context.Context, alias stri
 	return resources, nil
 }
 
+// componentHeader captures the fields needed to place a component in the
+// parent chain before it is transformed.
+type componentHeader struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	ProviderType string `json:"providerType"`
+	ParentID     string `json:"parentId"`
+
+	raw json.RawMessage
+}
+
+// exportComponents exports every component of the realm. The listing has no
+// parent filter, so sub-components such as LDAP mappers are included; those
+// are emitted with parentComponentRef pointing at the parent's CR (#167). A
+// sub-component whose parent is not exported (filtered out) is skipped rather
+// than emitted with a dangling reference.
 func (e *Exporter) exportComponents(ctx context.Context) ([]ExportedResource, error) {
 	rawComponents, err := e.client.GetComponentsRaw(ctx, e.opts.Realm, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get components: %w", err)
 	}
 
-	var resources []ExportedResource
+	// Index every component by ID so parentId can be classified: a parentId
+	// that is not a component is the realm's own ID, i.e. top-level.
+	headers := make([]componentHeader, 0, len(rawComponents))
+	byID := make(map[string]componentHeader, len(rawComponents))
 	for _, raw := range rawComponents {
-		var component struct {
-			Name         string `json:"name"`
-			ProviderType string `json:"providerType"`
-		}
-		if err := json.Unmarshal(raw, &component); err != nil {
+		var h componentHeader
+		if err := json.Unmarshal(raw, &h); err != nil {
 			continue
 		}
+		h.raw = raw
+		headers = append(headers, h)
+		if h.ID != "" {
+			byID[h.ID] = h
+		}
+	}
 
-		if e.filter.ShouldSkipComponent(component.Name, component.ProviderType) {
+	// resourceName resolves a component's CR name through its parent chain;
+	// ok is false when the component or an ancestor is filtered out. Memoised
+	// because Keycloak returns components in arbitrary order.
+	names := make(map[string]string, len(headers))
+	var resourceName func(h componentHeader, depth int) (string, bool)
+	resourceName = func(h componentHeader, depth int) (string, bool) {
+		if name, done := names[h.ID]; done {
+			return name, name != ""
+		}
+		if e.filter.ShouldSkipComponent(h.Name, h.ProviderType) || depth > len(headers) {
+			names[h.ID] = ""
+			return "", false
+		}
+		parentName := ""
+		if parent, isSub := byID[h.ParentID]; isSub {
+			name, ok := resourceName(parent, depth+1)
+			if !ok {
+				names[h.ID] = ""
+				return "", false
+			}
+			parentName = name
+		}
+		name := componentResourceName(parentName, h.ProviderType, h.Name)
+		names[h.ID] = name
+		return name, true
+	}
+
+	var resources []ExportedResource
+	for _, h := range headers {
+		if _, ok := resourceName(h, 0); !ok {
+			if !e.filter.ShouldSkipComponent(h.Name, h.ProviderType) {
+				e.log.Info("Skipping sub-component whose parent is not exported", "name", h.Name, "providerType", h.ProviderType)
+			}
 			continue
 		}
-
-		resource, err := e.transformer.TransformComponent(raw)
+		parentName := ""
+		if parent, isSub := byID[h.ParentID]; isSub {
+			parentName = names[parent.ID]
+		}
+		resource, err := e.transformer.TransformComponent(h.raw, parentName)
 		if err != nil {
-			e.log.Error(err, "Failed to transform component", "name", component.Name)
+			e.log.Error(err, "Failed to transform component", "name", h.Name)
 			continue
 		}
 		resources = append(resources, resource)
@@ -581,6 +759,49 @@ func (e *Exporter) loadOrganizationNames(ctx context.Context) map[string]string 
 		names[org.ID] = sanitizeName(org.Name)
 	}
 	return names
+}
+
+// loadIdentityProviderOrganizations asks every organization which identity
+// providers it links (GET /organizations/{org}/identity-providers) and returns
+// an alias → organization CR name map. The organization endpoints are the only
+// place the link is visible on Keycloak 26.8, where organizationId on the
+// identity provider representation is no longer populated (#198). An alias
+// linked to several organizations (possible on 26.8) keeps the first one in
+// organization-name order so the export is deterministic.
+func (e *Exporter) loadIdentityProviderOrganizations(ctx context.Context, orgNames map[string]string) map[string]string {
+	if len(orgNames) == 0 {
+		return nil
+	}
+	orgIDs := make([]string, 0, len(orgNames))
+	for id := range orgNames {
+		orgIDs = append(orgIDs, id)
+	}
+	sort.Slice(orgIDs, func(i, j int) bool {
+		if orgNames[orgIDs[i]] != orgNames[orgIDs[j]] {
+			return orgNames[orgIDs[i]] < orgNames[orgIDs[j]]
+		}
+		return orgIDs[i] < orgIDs[j]
+	})
+
+	byAlias := make(map[string]string)
+	for _, orgID := range orgIDs {
+		idps, err := e.client.GetOrganizationIdentityProviders(ctx, e.opts.Realm, orgID)
+		if err != nil {
+			e.log.Error(err, "Failed to list identity providers of organization", "organizationId", orgID, "organization", orgNames[orgID])
+			continue
+		}
+		for _, idp := range idps {
+			if idp.Alias == nil || *idp.Alias == "" {
+				continue
+			}
+			if existing, dup := byAlias[*idp.Alias]; dup {
+				e.log.Info("identity provider is linked to several organizations; exporting the first", "alias", *idp.Alias, "organizationRef", existing, "ignored", orgNames[orgID])
+				continue
+			}
+			byAlias[*idp.Alias] = orgNames[orgID]
+		}
+	}
+	return byAlias
 }
 
 func (e *Exporter) exportOrganizations(ctx context.Context) ([]ExportedResource, error) {

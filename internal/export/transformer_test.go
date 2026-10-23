@@ -16,10 +16,12 @@ func TestTransformIdentityProviderSetsAliasAndStripsOrganizationID(t *testing.T)
 		TargetNamespace: "ns",
 		RealmRef:        "my-realm",
 	})
-	transformer.SetOrganizationNames(map[string]string{
-		"org-uuid-1": "acme-corp",
+	transformer.SetIdentityProviderOrganizations(map[string]string{
+		"acme-sso": "acme-corp",
 	})
 
+	// organizationId is what Keycloak < 26.8 reports; it must be stripped
+	// whether or not it is present.
 	raw := json.RawMessage(`{
 		"alias": "acme-sso",
 		"internalId": "idp-internal",
@@ -50,12 +52,18 @@ func TestTransformIdentityProviderSetsAliasAndStripsOrganizationID(t *testing.T)
 	require.False(t, hasSecret)
 }
 
-func TestTransformIdentityProviderDropsUnresolvedOrganizationID(t *testing.T) {
+// TestTransformIdentityProviderIgnoresOrganizationIDOnRepresentation pins
+// that organizationId on the identity provider itself is never the source of
+// spec.organizationRef: only the alias map from the organization endpoints is.
+func TestTransformIdentityProviderIgnoresOrganizationIDOnRepresentation(t *testing.T) {
 	t.Parallel()
 
 	transformer := NewTransformer(TransformerOptions{
 		TargetNamespace: "ns",
 		RealmRef:        "my-realm",
+	})
+	transformer.SetIdentityProviderOrganizations(map[string]string{
+		"some-other-idp": "acme-corp",
 	})
 
 	raw := json.RawMessage(`{
@@ -98,7 +106,7 @@ func TestTransformComponentStripsBindCredential(t *testing.T) {
 		}
 	}`)
 
-	resource, err := transformer.TransformComponent(raw)
+	resource, err := transformer.TransformComponent(raw, "")
 	require.NoError(t, err)
 
 	component := resource.Object.(*keycloakv1beta1.KeycloakComponent)
@@ -177,4 +185,86 @@ func TestTransformRealm_StripsNestedCollections(t *testing.T) {
 	if def["enabled"] != true || def["browserFlow"] != "custom-browser" {
 		t.Errorf("top-level attributes were not preserved: %v", def)
 	}
+}
+
+// A sub-component (an LDAP mapper under its provider) is exported with
+// parentComponentRef instead of realmRef, keeps its parent's CR name as a
+// prefix so sibling mappers under other providers do not collide, and still
+// has parentId stripped: the controller injects it from the reference (#167).
+func TestTransformComponentSubComponentParentRef(t *testing.T) {
+	t.Parallel()
+
+	transformer := NewTransformer(TransformerOptions{TargetNamespace: "ns", RealmRef: "my-realm"})
+
+	provider, err := transformer.TransformComponent(json.RawMessage(`{
+		"id": "ldap-id",
+		"parentId": "realm-id",
+		"name": "corporate-ldap",
+		"providerId": "ldap",
+		"providerType": "org.keycloak.storage.UserStorageProvider",
+		"config": {"enabled": ["true"]}
+	}`), "")
+	require.NoError(t, err)
+	require.Equal(t, "userstorageprovider-corporate-ldap", provider.Name)
+
+	mapper, err := transformer.TransformComponent(json.RawMessage(`{
+		"id": "mapper-id",
+		"parentId": "ldap-id",
+		"name": "username",
+		"providerId": "user-attribute-ldap-mapper",
+		"providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+		"config": {"ldap.attribute": ["uid"]}
+	}`), provider.Name)
+	require.NoError(t, err)
+
+	component := mapper.Object.(*keycloakv1beta1.KeycloakComponent)
+	require.Equal(t, "userstorageprovider-corporate-ldap-ldapstoragemapper-username", mapper.Name)
+	require.Nil(t, component.Spec.RealmRef, "sub-component must not carry realmRef")
+	require.Nil(t, component.Spec.ClusterRealmRef)
+	require.NotNil(t, component.Spec.ParentComponentRef)
+	require.Equal(t, provider.Name, component.Spec.ParentComponentRef.Name)
+	require.Equal(t, "username", *component.Spec.Name)
+
+	var def map[string]interface{}
+	require.NoError(t, json.Unmarshal(component.Spec.Definition.Raw, &def))
+	_, hasParent := def["parentId"]
+	require.False(t, hasParent, "parentId is injected by the controller")
+	require.Equal(t, "org.keycloak.storage.ldap.mappers.LDAPStorageMapper", def["providerType"])
+}
+
+// A KeycloakRole or KeycloakGroup names exactly one parent; the CRDs reject a
+// realmRef next to clientRef or parentGroupRef at admission, so an export
+// that set both could never be applied.
+func TestTransformRole_ClientRoleHasOnlyClientRef(t *testing.T) {
+	tr := NewTransformer(TransformerOptions{InstanceRef: "kc", TargetNamespace: "ns", RealmRef: "realm"})
+	res, err := tr.TransformRole(json.RawMessage(`{"id": "r1", "name": "editor", "containerId": "c1"}`), "app", "c1")
+	require.NoError(t, err)
+	role := res.Object.(*keycloakv1beta1.KeycloakRole)
+	require.NotNil(t, role.Spec.ClientRef)
+	require.Equal(t, "app", role.Spec.ClientRef.Name)
+	require.Nil(t, role.Spec.RealmRef, "client role must not also carry realmRef")
+
+	res, err = tr.TransformRole(json.RawMessage(`{"id": "r2", "name": "admin"}`), "", "")
+	require.NoError(t, err)
+	role = res.Object.(*keycloakv1beta1.KeycloakRole)
+	require.Nil(t, role.Spec.ClientRef)
+	require.NotNil(t, role.Spec.RealmRef)
+	require.Equal(t, "realm", role.Spec.RealmRef.Name)
+}
+
+func TestTransformGroup_SubgroupHasOnlyParentGroupRef(t *testing.T) {
+	tr := NewTransformer(TransformerOptions{InstanceRef: "kc", TargetNamespace: "ns", RealmRef: "realm"})
+	res, err := tr.TransformGroup(json.RawMessage(`{"id": "g2", "name": "child", "path": "/parent/child", "parentId": "g1"}`), "parent")
+	require.NoError(t, err)
+	group := res.Object.(*keycloakv1beta1.KeycloakGroup)
+	require.NotNil(t, group.Spec.ParentGroupRef)
+	require.Equal(t, "parent", group.Spec.ParentGroupRef.Name)
+	require.Nil(t, group.Spec.RealmRef, "subgroup must not also carry realmRef")
+	require.NotContains(t, string(group.Spec.Definition.Raw), "parentId", "parent UUID must not leak into the definition")
+
+	res, err = tr.TransformGroup(json.RawMessage(`{"id": "g1", "name": "parent", "path": "/parent"}`), "")
+	require.NoError(t, err)
+	group = res.Object.(*keycloakv1beta1.KeycloakGroup)
+	require.Nil(t, group.Spec.ParentGroupRef)
+	require.NotNil(t, group.Spec.RealmRef)
 }

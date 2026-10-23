@@ -171,7 +171,7 @@ Reconciliation is idempotent. On each periodic resync the operator fetches the c
 
 ## Linking Identity Providers
 
-To map an identity provider exclusively to this organization, set `organizationRef` on the [KeycloakIdentityProvider](./keycloakidentityprovider.md) to this CR's name. The operator injects `status.organizationID` into the identity provider; do not copy the ID by hand.
+To map an identity provider to this organization, set `organizationRef` on the [KeycloakIdentityProvider](./keycloakidentityprovider.md) to this CR's name. The operator links the identity provider through this organization's identity-provider endpoint once both are ready; do not copy `status.organizationID` into the identity provider definition by hand.
 
 ## Notes
 

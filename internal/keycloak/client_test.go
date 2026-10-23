@@ -385,6 +385,96 @@ func TestIdentityProviderMappers_PathEscaping(t *testing.T) {
 	assert.Equal(t, "/admin/realms/my-realm/identity-provider/instances/my%2Fweird%20alias/mappers", seenPath)
 }
 
+// TestOrganizationIdentityProviders_PathEscaping verifies the organization
+// identity-provider link endpoints: the organization ID and alias are
+// path-escaped, the link body is the alias as a JSON string, and the list
+// endpoint decodes identity provider representations.
+func TestOrganizationIdentityProviders_PathEscaping(t *testing.T) {
+	var (
+		seenPaths   []string
+		seenMethods []string
+		seenBody    string
+	)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/realms/master/protocol/openid-connect/token", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"test","expires_in":300,"token_type":"Bearer"}`))
+	})
+	mux.HandleFunc("/admin/realms/my-realm/organizations/org%2F1/identity-providers", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.EscapedPath())
+		seenMethods = append(seenMethods, r.Method)
+		switch r.Method {
+		case http.MethodGet:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"alias":"my/weird alias","providerId":"oidc","enabled":true}]`))
+		case http.MethodPost:
+			body, _ := io.ReadAll(r.Body)
+			seenBody = string(body)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/admin/realms/my-realm/organizations/org%2F1/identity-providers/my%2Fweird%20alias", func(w http.ResponseWriter, r *http.Request) {
+		seenPaths = append(seenPaths, r.URL.EscapedPath())
+		seenMethods = append(seenMethods, r.Method)
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv.URL)
+	ctx := context.Background()
+
+	require.NoError(t, c.LinkIdentityProviderToOrganization(ctx, "my-realm", "org/1", "my/weird alias"))
+	assert.Equal(t, `"my/weird alias"`, seenBody, "alias must be sent as a JSON string literal")
+
+	idps, err := c.GetOrganizationIdentityProviders(ctx, "my-realm", "org/1")
+	require.NoError(t, err)
+	require.Len(t, idps, 1)
+	require.NotNil(t, idps[0].Alias)
+	assert.Equal(t, "my/weird alias", *idps[0].Alias)
+
+	require.NoError(t, c.UnlinkIdentityProviderFromOrganization(ctx, "my-realm", "org/1", "my/weird alias"))
+
+	assert.Equal(t, []string{http.MethodPost, http.MethodGet, http.MethodDelete}, seenMethods)
+	assert.Equal(t, []string{
+		"/admin/realms/my-realm/organizations/org%2F1/identity-providers",
+		"/admin/realms/my-realm/organizations/org%2F1/identity-providers",
+		"/admin/realms/my-realm/organizations/org%2F1/identity-providers/my%2Fweird%20alias",
+	}, seenPaths)
+}
+
+// TestIsNotFound pins the error shape the generic CRUD helpers produce for a
+// 404 so callers can distinguish "gone" from other API failures.
+func TestIsNotFound(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/realms/master/protocol/openid-connect/token", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"test","expires_in":300,"token_type":"Bearer"}`))
+	})
+	mux.HandleFunc("/admin/realms/my-realm/organizations/missing/identity-providers", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"Organization not found"}`, http.StatusNotFound)
+	})
+	mux.HandleFunc("/admin/realms/my-realm/organizations/broken/identity-providers", func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"error":"boom"}`, http.StatusInternalServerError)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv.URL)
+	_, err := c.GetOrganizationIdentityProviders(context.Background(), "my-realm", "missing")
+	require.Error(t, err)
+	assert.True(t, IsNotFound(err))
+
+	_, err = c.GetOrganizationIdentityProviders(context.Background(), "my-realm", "broken")
+	require.Error(t, err)
+	assert.False(t, IsNotFound(err))
+	assert.False(t, IsNotFound(nil))
+}
+
 // TestGetGroupByPath_PathEscaping verifies that each path segment is escaped
 // individually while the separators between nested groups are preserved.
 func TestGetGroupByPath_PathEscaping(t *testing.T) {

@@ -8,9 +8,11 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr/testr"
+	"github.com/stretchr/testify/require"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
@@ -37,14 +39,50 @@ type fakeKeycloak struct {
 	// childrenCalls counts requests per group ID for assertions about
 	// pagination and the post-23 fallback.
 	childrenCalls map[string]int
+
+	// users is the response body for GET /users; userGroups maps a user ID to
+	// the memberships returned by GET /users/{id}/groups.
+	users      []json.RawMessage
+	userGroups map[string][]json.RawMessage
+
+	// components is the response body for GET /components for the test realm.
+	components []json.RawMessage
+
+	// clients is the response body for GET /clients; realmRoleList for
+	// GET /roles; clientRoles maps a client UUID to GET /clients/{id}/roles;
+	// composites maps "<role>" or "<clientUUID>/<role>" to the members
+	// returned by the respective composites endpoint.
+	clients       []json.RawMessage
+	realmRoleList []json.RawMessage
+	clientRoles   map[string][]json.RawMessage
+	composites    map[string][]json.RawMessage
+
+	// identityProviders is the response body for GET /identity-provider/instances.
+	identityProviders []json.RawMessage
+
+	// organizations is the response body for GET /organizations; nil answers
+	// 404 like a Keycloak without the feature.
+	organizations []json.RawMessage
+
+	// orgIdentityProviders maps an organization ID to the body of
+	// GET /organizations/{id}/identity-providers.
+	orgIdentityProviders map[string][]json.RawMessage
+
+	// orgIdentityProviderCalls counts those requests per organization ID.
+	orgIdentityProviderCalls map[string]int
 }
 
 func newFakeKeycloak(t *testing.T) *fakeKeycloak {
 	return &fakeKeycloak{
-		t:             t,
-		children:      map[string][]json.RawMessage{},
-		realmRoles:    map[string][]json.RawMessage{},
-		childrenCalls: map[string]int{},
+		t:                        t,
+		children:                 map[string][]json.RawMessage{},
+		realmRoles:               map[string][]json.RawMessage{},
+		childrenCalls:            map[string]int{},
+		clientRoles:              map[string][]json.RawMessage{},
+		composites:               map[string][]json.RawMessage{},
+		userGroups:               map[string][]json.RawMessage{},
+		orgIdentityProviders:     map[string][]json.RawMessage{},
+		orgIdentityProviderCalls: map[string]int{},
 	}
 }
 
@@ -83,13 +121,108 @@ func (f *fakeKeycloak) handler() http.Handler {
 		}
 	})
 
-	mux.HandleFunc("/admin/realms/test/clients", func(w http.ResponseWriter, _ *http.Request) {
-		// Returning an empty client list is enough: exportGroupRoleMappings
-		// only iterates clients to fetch client-role mappings.
+	mux.HandleFunc("/admin/realms/test/users", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/admin/realms/test/users" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, paginate(f.users, r.URL.Query()))
+	})
+
+	mux.HandleFunc("/admin/realms/test/users/", func(w http.ResponseWriter, r *http.Request) {
+		// /admin/realms/test/users/{id}/groups
+		rest := r.URL.Path[len("/admin/realms/test/users/"):]
+		if len(rest) > len("/groups") && rest[len(rest)-len("/groups"):] == "/groups" {
+			id := rest[:len(rest)-len("/groups")]
+			writeJSON(w, paginate(f.userGroups[id], r.URL.Query()))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	mux.HandleFunc("/admin/realms/test/components", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, f.components)
+	})
+
+	mux.HandleFunc("/admin/realms/test/identity-provider/instances", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, f.identityProviders)
+	})
+
+	mux.HandleFunc("/admin/realms/test/identity-provider/instances/", func(w http.ResponseWriter, r *http.Request) {
+		// Only /identity-provider/instances/{alias}/mappers is exercised.
+		if !strings.HasSuffix(r.URL.Path, "/mappers") {
+			http.NotFound(w, r)
+			return
+		}
 		writeJSON(w, []json.RawMessage{})
 	})
 
+	mux.HandleFunc("/admin/realms/test/organizations", func(w http.ResponseWriter, r *http.Request) {
+		if f.organizations == nil {
+			http.Error(w, `{"error":"HTTP 404 Not Found"}`, http.StatusNotFound)
+			return
+		}
+		writeJSON(w, f.organizations)
+	})
+
+	mux.HandleFunc("/admin/realms/test/organizations/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/admin/realms/test/organizations/")
+		id, ok := strings.CutSuffix(rest, "/identity-providers")
+		idps, known := f.orgIdentityProviders[id]
+		if !ok || !known {
+			http.NotFound(w, r)
+			return
+		}
+		f.orgIdentityProviderCalls[id]++
+		writeJSON(w, idps)
+	})
+
+	mux.HandleFunc("/admin/realms/test/clients", func(w http.ResponseWriter, _ *http.Request) {
+		// Group role-mapping export only iterates clients; composite role
+		// export resolves client UUIDs through this list.
+		writeJSON(w, paginateNonNil(f.clients))
+	})
+
+	mux.HandleFunc("/admin/realms/test/clients/", func(w http.ResponseWriter, r *http.Request) {
+		// /admin/realms/test/clients/{uuid}/roles
+		// /admin/realms/test/clients/{uuid}/roles/{name}/composites
+		rest := r.URL.Path[len("/admin/realms/test/clients/"):]
+		parts := strings.Split(rest, "/")
+		switch {
+		case len(parts) == 2 && parts[1] == "roles":
+			writeJSON(w, paginateNonNil(f.clientRoles[parts[0]]))
+		case len(parts) == 4 && parts[1] == "roles" && parts[3] == "composites":
+			writeJSON(w, paginateNonNil(f.composites[parts[0]+"/"+parts[2]]))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	mux.HandleFunc("/admin/realms/test/roles", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, paginate(f.realmRoleList, r.URL.Query()))
+	})
+
+	mux.HandleFunc("/admin/realms/test/roles/", func(w http.ResponseWriter, r *http.Request) {
+		// /admin/realms/test/roles/{name}/composites
+		rest := r.URL.Path[len("/admin/realms/test/roles/"):]
+		parts := strings.Split(rest, "/")
+		if len(parts) == 2 && parts[1] == "composites" {
+			writeJSON(w, paginateNonNil(f.composites[parts[0]]))
+			return
+		}
+		http.NotFound(w, r)
+	})
+
 	return mux
+}
+
+// paginateNonNil returns an empty list instead of nil so the fake never
+// serialises "null" for a missing entry.
+func paginateNonNil(items []json.RawMessage) []json.RawMessage {
+	if items == nil {
+		return []json.RawMessage{}
+	}
+	return items
 }
 
 func paginate(items []json.RawMessage, q map[string][]string) []json.RawMessage {
@@ -131,6 +264,14 @@ func writeJSON(w http.ResponseWriter, v interface{}) {
 
 func newTestExporter(t *testing.T, fake *fakeKeycloak) (*Exporter, *httptest.Server) {
 	t.Helper()
+	return newTestExporterWithOptions(t, fake, ExporterOptions{
+		Realm:           "test",
+		TargetNamespace: "default",
+	})
+}
+
+func newTestExporterWithOptions(t *testing.T, fake *fakeKeycloak, opts ExporterOptions) (*Exporter, *httptest.Server) {
+	t.Helper()
 	srv := httptest.NewServer(fake.handler())
 	t.Cleanup(srv.Close)
 
@@ -141,10 +282,7 @@ func newTestExporter(t *testing.T, fake *fakeKeycloak) (*Exporter, *httptest.Ser
 		ClientSecret: "secret",
 	}, testr.New(t))
 
-	exp := NewExporter(client, testr.New(t), ExporterOptions{
-		Realm:           "test",
-		TargetNamespace: "default",
-	})
+	exp := NewExporter(client, testr.New(t), opts)
 	return exp, srv
 }
 
@@ -387,4 +525,305 @@ func resourceKinds(rs []ExportedResource) []string {
 		out = append(out, r.Kind+"/"+r.Name)
 	}
 	return out
+}
+
+// Group memberships are not in the user representation (#186). When groups
+// are part of the export, each user's memberships land in spec.groups as
+// sorted absolute paths; users without memberships leave spec.groups unset.
+func TestExportUsers_GroupsAsPaths(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.users = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "u-1", "username": "alice", "enabled": true}),
+		mustJSON(t, map[string]interface{}{"id": "u-2", "username": "bob", "enabled": true}),
+	}
+	fake.userGroups["u-1"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "g-2", "name": "team-alpha", "path": "/engineering/team-alpha"}),
+		mustJSON(t, map[string]interface{}{"id": "g-1", "name": "developers", "path": "/developers"}),
+		mustJSON(t, map[string]interface{}{"id": "g-3", "name": "legacy"}), // no path: falls back to /name
+	}
+
+	exp, _ := newTestExporterWithOptions(t, fake, ExporterOptions{
+		Realm: "test", TargetNamespace: "default", Include: []string{"users", "groups"},
+	})
+	resources, err := exp.exportUsers(context.Background())
+	if err != nil {
+		t.Fatalf("exportUsers: %v", err)
+	}
+
+	users := map[string]*keycloakv1beta1.KeycloakUser{}
+	for _, r := range resources {
+		if u, ok := r.Object.(*keycloakv1beta1.KeycloakUser); ok {
+			users[*u.Spec.Username] = u
+		}
+	}
+	if len(users) != 2 {
+		t.Fatalf("expected 2 users, got %d (%v)", len(users), resourceKinds(resources))
+	}
+	if users["alice"].Spec.Groups == nil {
+		t.Fatal("alice: spec.groups should be set")
+	}
+	want := []string{"/developers", "/engineering/team-alpha", "/legacy"}
+	if got := *users["alice"].Spec.Groups; !equalStrings(got, want) {
+		t.Errorf("alice: spec.groups = %v, want %v", got, want)
+	}
+	if users["bob"].Spec.Groups != nil {
+		t.Errorf("bob has no memberships, spec.groups should be unset, got %v", *users["bob"].Spec.Groups)
+	}
+}
+
+// With the groups type excluded no membership lookup happens and spec.groups
+// stays unset.
+func TestExportUsers_GroupsExcluded(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.users = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "u-1", "username": "alice", "enabled": true}),
+	}
+	fake.userGroups["u-1"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "g-1", "name": "developers", "path": "/developers"}),
+	}
+
+	exp, _ := newTestExporterWithOptions(t, fake, ExporterOptions{
+		Realm: "test", TargetNamespace: "default", Include: []string{"users"},
+	})
+	resources, err := exp.exportUsers(context.Background())
+	if err != nil {
+		t.Fatalf("exportUsers: %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("expected 1 resource, got %d", len(resources))
+	}
+	user := resources[0].Object.(*keycloakv1beta1.KeycloakUser)
+	if user.Spec.Groups != nil {
+		t.Errorf("spec.groups should be unset when groups are excluded, got %v", *user.Spec.Groups)
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// Components are listed without a parent filter, so LDAP mappers come back
+// next to their provider. Mappers get parentComponentRef with the provider's
+// CR name as prefix; a mapper whose parent is filtered out is skipped (#167).
+func TestExportComponents_SubComponentsReferenceParent(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	// Child listed before its parent on purpose: order must not matter.
+	fake.components = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{
+			"id": "mapper-1", "parentId": "ldap-1", "name": "username",
+			"providerId": "user-attribute-ldap-mapper", "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+		}),
+		mustJSON(t, map[string]interface{}{
+			"id": "ldap-1", "parentId": "realm-id", "name": "corporate-ldap",
+			"providerId": "ldap", "providerType": "org.keycloak.storage.UserStorageProvider",
+		}),
+		mustJSON(t, map[string]interface{}{
+			"id": "key-1", "parentId": "realm-id", "name": "rsa-generated",
+			"providerId": "rsa-generated", "providerType": "org.keycloak.keys.KeyProvider",
+		}),
+		mustJSON(t, map[string]interface{}{
+			"id": "orphan-1", "parentId": "key-1", "name": "under-filtered-parent",
+			"providerId": "whatever", "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+		}),
+	}
+	exp, _ := newTestExporter(t, fake)
+	exp.filter = NewFilter(nil, nil, true) // --skip-defaults drops the key provider
+
+	resources, err := exp.exportComponents(context.Background())
+	if err != nil {
+		t.Fatalf("exportComponents: %v", err)
+	}
+
+	byName := map[string]*keycloakv1beta1.KeycloakComponent{}
+	for _, r := range resources {
+		c, ok := r.Object.(*keycloakv1beta1.KeycloakComponent)
+		if !ok {
+			t.Fatalf("expected *KeycloakComponent, got %T", r.Object)
+		}
+		byName[r.Name] = c
+	}
+	if len(byName) != 2 {
+		t.Fatalf("expected the provider and its mapper only, got %d: %v", len(byName), byName)
+	}
+
+	provider := byName["userstorageprovider-corporate-ldap"]
+	if provider == nil || provider.Spec.RealmRef == nil || provider.Spec.ParentComponentRef != nil {
+		t.Fatalf("top-level provider must keep realmRef and have no parentComponentRef: %+v", provider)
+	}
+
+	mapper := byName["userstorageprovider-corporate-ldap-ldapstoragemapper-username"]
+	if mapper == nil {
+		t.Fatalf("mapper not exported under the parent-prefixed name; got %v", byName)
+	}
+	if mapper.Spec.RealmRef != nil {
+		t.Errorf("sub-component must not carry realmRef")
+	}
+	if mapper.Spec.ParentComponentRef == nil || mapper.Spec.ParentComponentRef.Name != "userstorageprovider-corporate-ldap" {
+		t.Errorf("parentComponentRef = %+v, want the provider's CR name", mapper.Spec.ParentComponentRef)
+	}
+}
+
+// TestExportIdentityProviders_OrganizationRefFromOrganizationEndpoints verifies
+// that spec.organizationRef is derived from GET /organizations/{id}/identity-providers
+// rather than from organizationId on the identity provider, which Keycloak
+// 26.8 no longer populates (#198). The fixture mixes the 26.8 shape (no
+// organizationId at all) with a stale 26.0-style organizationId that must be
+// ignored and stripped.
+func TestExportIdentityProviders_OrganizationRefFromOrganizationEndpoints(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.identityProviders = []json.RawMessage{
+		// 26.8 shape: linked through the organization, nothing on the IdP.
+		mustJSON(t, map[string]any{"alias": "acme-sso", "providerId": "oidc", "internalId": "i-1"}),
+		// Stale 26.0-style field pointing at an organization that does not
+		// list this IdP: must neither produce a ref nor survive in definition.
+		mustJSON(t, map[string]any{"alias": "stale-sso", "providerId": "oidc", "organizationId": "org-2"}),
+		mustJSON(t, map[string]any{"alias": "plain-sso", "providerId": "saml"}),
+	}
+	fake.organizations = []json.RawMessage{
+		mustJSON(t, map[string]any{"id": "org-1", "name": "Acme Corp"}),
+		mustJSON(t, map[string]any{"id": "org-2", "name": "Globex"}),
+	}
+	fake.orgIdentityProviders["org-1"] = []json.RawMessage{
+		mustJSON(t, map[string]any{"alias": "acme-sso", "providerId": "oidc"}),
+	}
+	fake.orgIdentityProviders["org-2"] = []json.RawMessage{}
+
+	exp, _ := newTestExporter(t, fake)
+	resources, err := exp.exportIdentityProviders(context.Background())
+	if err != nil {
+		t.Fatalf("exportIdentityProviders: %v", err)
+	}
+
+	idps := map[string]*keycloakv1beta1.KeycloakIdentityProvider{}
+	for _, r := range resources {
+		if r.Kind != "KeycloakIdentityProvider" {
+			continue
+		}
+		idp, ok := r.Object.(*keycloakv1beta1.KeycloakIdentityProvider)
+		if !ok {
+			t.Fatalf("expected *KeycloakIdentityProvider, got %T", r.Object)
+		}
+		idps[r.Name] = idp
+	}
+	if len(idps) != 3 {
+		t.Fatalf("exported %d identity providers, want 3", len(idps))
+	}
+
+	if ref := idps["acme-sso"].Spec.OrganizationRef; ref == nil || ref.Name != "acme-corp" {
+		t.Errorf("acme-sso organizationRef = %v, want acme-corp", ref)
+	}
+	if ref := idps["stale-sso"].Spec.OrganizationRef; ref != nil {
+		t.Errorf("stale-sso organizationRef = %v, want none (organizationId on the IdP is not authoritative)", ref)
+	}
+	if ref := idps["plain-sso"].Spec.OrganizationRef; ref != nil {
+		t.Errorf("plain-sso organizationRef = %v, want none", ref)
+	}
+	for name, idp := range idps {
+		var def map[string]any
+		if err := json.Unmarshal(idp.Spec.Definition.Raw, &def); err != nil {
+			t.Fatalf("%s: unmarshal definition: %v", name, err)
+		}
+		if _, has := def["organizationId"]; has {
+			t.Errorf("%s: organizationId must be stripped from definition", name)
+		}
+	}
+	for _, id := range []string{"org-1", "org-2"} {
+		if n := fake.orgIdentityProviderCalls[id]; n != 1 {
+			t.Errorf("GET /organizations/%s/identity-providers called %d times, want 1", id, n)
+		}
+	}
+}
+
+// TestExportIdentityProviders_NoOrganizations covers a Keycloak without the
+// organizations feature: the 404 is tolerated and identity providers export
+// without organizationRef.
+func TestExportIdentityProviders_NoOrganizations(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.identityProviders = []json.RawMessage{
+		mustJSON(t, map[string]any{"alias": "plain-sso", "providerId": "saml"}),
+	}
+
+	exp, _ := newTestExporter(t, fake)
+	resources, err := exp.exportIdentityProviders(context.Background())
+	if err != nil {
+		t.Fatalf("exportIdentityProviders: %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("exported %d resources, want 1", len(resources))
+	}
+	idp := resources[0].Object.(*keycloakv1beta1.KeycloakIdentityProvider)
+	if idp.Spec.OrganizationRef != nil {
+		t.Errorf("organizationRef = %v, want none", idp.Spec.OrganizationRef)
+	}
+}
+
+// A composite role's members live behind the composites endpoint, not in the
+// role listing. The export must carry them in the shape the KeycloakRole
+// controller consumes, or the applied role ends up empty.
+func TestExportRoles_CompositeMembers(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.clients = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "client-uuid-1", "clientId": "app"}),
+	}
+	fake.realmRoleList = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "r1", "name": "editor", "composite": true}),
+		mustJSON(t, map[string]interface{}{"id": "r2", "name": "viewer", "composite": false}),
+	}
+	fake.composites["editor"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "r2", "name": "viewer", "clientRole": false, "containerId": "realm-id"}),
+		mustJSON(t, map[string]interface{}{"id": "cr1", "name": "app-admin", "clientRole": true, "containerId": "client-uuid-1"}),
+		mustJSON(t, map[string]interface{}{"id": "cr0", "name": "app-user", "clientRole": true, "containerId": "client-uuid-1"}),
+	}
+	fake.clientRoles["client-uuid-1"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "cr9", "name": "app-super", "composite": true}),
+	}
+	fake.composites["client-uuid-1/app-super"] = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{"id": "cr1", "name": "app-admin", "clientRole": true, "containerId": "client-uuid-1"}),
+	}
+
+	exp, _ := newTestExporter(t, fake)
+
+	type composites struct {
+		Realm  []string            `json:"realm"`
+		Client map[string][]string `json:"client"`
+	}
+	definitionOf := func(res ExportedResource) map[string]json.RawMessage {
+		role := res.Object.(*keycloakv1beta1.KeycloakRole)
+		var def map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(role.Spec.Definition.Raw, &def))
+		return def
+	}
+
+	realmRoles, err := exp.exportRealmRoles(context.Background())
+	require.NoError(t, err)
+	require.Len(t, realmRoles, 2)
+	byName := map[string]ExportedResource{}
+	for _, r := range realmRoles {
+		byName[r.Name] = r
+	}
+
+	editor := definitionOf(byName["editor"])
+	require.Contains(t, editor, "composites", "composite role must export its members")
+	var got composites
+	require.NoError(t, json.Unmarshal(editor["composites"], &got))
+	require.Equal(t, composites{Realm: []string{"viewer"}, Client: map[string][]string{"app": {"app-admin", "app-user"}}}, got)
+
+	viewer := definitionOf(byName["viewer"])
+	require.NotContains(t, viewer, "composites", "a plain role gets no composites block")
+
+	clientRoles, err := exp.exportClientRolesForClient(context.Background(), "client-uuid-1", "app")
+	require.NoError(t, err)
+	require.Len(t, clientRoles, 1)
+	super := definitionOf(clientRoles[0])
+	var gotClient composites
+	require.NoError(t, json.Unmarshal(super["composites"], &gotClient))
+	require.Equal(t, composites{Client: map[string][]string{"app": {"app-admin"}}}, gotClient)
 }

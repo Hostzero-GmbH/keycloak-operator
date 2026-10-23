@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 func TestKeycloakIdentityProviderE2E(t *testing.T) {
@@ -559,4 +560,44 @@ func TestKeycloakIdentityProviderOrganizationRefE2E(t *testing.T) {
 		return updatedIDP.Status.Ready && updatedIDP.Status.OrganizationID != "", nil
 	}), "org-linked identity provider did not become ready")
 	require.Equal(t, updatedOrg.Status.OrganizationID, updatedIDP.Status.OrganizationID)
+
+	// The CR status alone is not proof of the link: on Keycloak 26.8 the
+	// organizationId field on the identity provider is accepted and ignored
+	// (#198). The organization side is authoritative on every version.
+	kc := getInternalKeycloakClient(t)
+	orgID := updatedOrg.Status.OrganizationID
+	require.True(t, organizationLinksIdentityProvider(t, kc, realmName, orgID, idpName),
+		"identity provider %s is not listed under organization %s in Keycloak", idpName, orgID)
+
+	// Dropping organizationRef must unlink the identity provider from the
+	// organization without deleting the identity provider itself.
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}, &updatedIDP))
+	updatedIDP.Spec.OrganizationRef = nil
+	require.NoError(t, k8sClient.Update(ctx, &updatedIDP))
+
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		current := &keycloakv1beta1.KeycloakIdentityProvider{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}, current); err != nil {
+			return false, nil
+		}
+		return current.Status.Ready && current.Status.OrganizationID == "", nil
+	}), "status.organizationID was not cleared after removing organizationRef")
+	require.False(t, organizationLinksIdentityProvider(t, kc, realmName, orgID, idpName),
+		"identity provider %s is still linked to organization %s after removing organizationRef", idpName, orgID)
+	_, err := kc.GetIdentityProvider(ctx, realmName, idpName)
+	require.NoError(t, err, "identity provider must survive being unlinked from the organization")
+}
+
+// organizationLinksIdentityProvider reports whether Keycloak lists alias under
+// GET /organizations/{org}/identity-providers.
+func organizationLinksIdentityProvider(t *testing.T, kc *keycloak.Client, realmName, orgID, alias string) bool {
+	t.Helper()
+	idps, err := kc.GetOrganizationIdentityProviders(ctx, realmName, orgID)
+	require.NoError(t, err)
+	for _, idp := range idps {
+		if idp.Alias != nil && *idp.Alias == alias {
+			return true
+		}
+	}
+	return false
 }

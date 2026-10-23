@@ -21,9 +21,10 @@ type TransformerOptions struct {
 // Transformer transforms Keycloak JSON to CRD structs
 type Transformer struct {
 	opts TransformerOptions
-	// organizationNames maps Keycloak organization IDs to the Kubernetes
-	// object name that TransformOrganization would emit (sanitizeName(org.name)).
-	organizationNames map[string]string
+	// identityProviderOrganizations maps an identity provider alias to the
+	// Kubernetes object name of the organization it is linked to (the name
+	// TransformOrganization would emit, sanitizeName(org.name)).
+	identityProviderOrganizations map[string]string
 }
 
 // NewTransformer creates a new transformer
@@ -31,10 +32,13 @@ func NewTransformer(opts TransformerOptions) *Transformer {
 	return &Transformer{opts: opts}
 }
 
-// SetOrganizationNames supplies a Keycloak organization ID → CR name map used
-// to emit spec.organizationRef on identity providers.
-func (t *Transformer) SetOrganizationNames(names map[string]string) {
-	t.organizationNames = names
+// SetIdentityProviderOrganizations supplies an identity provider alias →
+// organization CR name map used to emit spec.organizationRef. The map is
+// built from GET /organizations/{org}/identity-providers, the only view of the
+// link that every Keycloak version reports (26.8 no longer returns
+// organizationId on the identity provider itself).
+func (t *Transformer) SetIdentityProviderOrganizations(byAlias map[string]string) {
+	t.identityProviderOrganizations = byAlias
 }
 
 // TransformRealm transforms a realm JSON to KeycloakRealm
@@ -156,8 +160,11 @@ func (t *Transformer) TransformClientScope(raw json.RawMessage) (ExportedResourc
 	}, nil
 }
 
-// TransformUser transforms a user JSON to KeycloakUser
-func (t *Transformer) TransformUser(raw json.RawMessage) (ExportedResource, error) {
+// TransformUser transforms a user JSON to KeycloakUser. groupPaths are the
+// user's group memberships as absolute paths; when non-empty they become
+// spec.groups, otherwise spec.groups is left unset so the operator does not
+// manage memberships for that user.
+func (t *Transformer) TransformUser(raw json.RawMessage, groupPaths []string) (ExportedResource, error) {
 	var parsed struct {
 		Username string `json:"username"`
 	}
@@ -185,6 +192,10 @@ func (t *Transformer) TransformUser(raw json.RawMessage) (ExportedResource, erro
 			Definition: &runtime.RawExtension{Raw: definition},
 		},
 	}
+	if len(groupPaths) > 0 {
+		groups := append([]string(nil), groupPaths...)
+		user.Spec.Groups = &groups
+	}
 
 	return ExportedResource{
 		Kind:       "KeycloakUser",
@@ -203,8 +214,10 @@ func (t *Transformer) TransformGroup(raw json.RawMessage, parentGroupName string
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields and subgroups (exported separately)
-	definition := removeServerFields(raw, "id", "subGroups", "path")
+	// Remove server-managed fields and subgroups (exported separately).
+	// parentId is the parent's Keycloak UUID (Keycloak 23+ returns it on
+	// subgroups); the placement is carried by parentGroupRef instead.
+	definition := removeServerFields(raw, "id", "subGroups", "path", "parentId")
 
 	name := parsed.Name
 	if parentGroupName != "" {
@@ -221,18 +234,20 @@ func (t *Transformer) TransformGroup(raw json.RawMessage, parentGroupName string
 			Namespace: t.opts.TargetNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakGroupSpec{
-			RealmRef: &keycloakv1beta1.ResourceRef{
-				Name: t.opts.RealmRef,
-			},
 			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
 
-	// Add parent reference if this is a subgroup
+	// A group names exactly one parent: the realm for top-level groups, the
+	// parent group for subgroups (the realm is derived from it).
 	if parentGroupName != "" {
 		group.Spec.ParentGroupRef = &keycloakv1beta1.ResourceRef{
 			Name: sanitizeName(parentGroupName),
+		}
+	} else {
+		group.Spec.RealmRef = &keycloakv1beta1.ResourceRef{
+			Name: t.opts.RealmRef,
 		}
 	}
 
@@ -271,18 +286,21 @@ func (t *Transformer) TransformRole(raw json.RawMessage, clientID, clientUUID st
 			Namespace: t.opts.TargetNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakRoleSpec{
-			RealmRef: &keycloakv1beta1.ResourceRef{
-				Name: t.opts.RealmRef,
-			},
 			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
 	}
 
 	// Add client reference if this is a client role
+	// A role names exactly one parent: the realm for realm roles, the client
+	// for client roles (the realm is derived from it).
 	if clientID != "" {
 		role.Spec.ClientRef = &keycloakv1beta1.ResourceRef{
 			Name: sanitizeName(clientID),
+		}
+	} else {
+		role.Spec.RealmRef = &keycloakv1beta1.ResourceRef{
+			Name: t.opts.RealmRef,
 		}
 	}
 
@@ -297,15 +315,15 @@ func (t *Transformer) TransformRole(raw json.RawMessage, clientID, clientUUID st
 // TransformIdentityProvider transforms an identity provider JSON to KeycloakIdentityProvider
 func (t *Transformer) TransformIdentityProvider(raw json.RawMessage) (ExportedResource, error) {
 	var parsed struct {
-		Alias          string `json:"alias"`
-		OrganizationID string `json:"organizationId"`
+		Alias string `json:"alias"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return ExportedResource{}, err
 	}
 
-	// Remove sensitive/server-managed fields. organizationId is a Keycloak UUID
-	// and is expressed as spec.organizationRef instead.
+	// Remove sensitive/server-managed fields. organizationId (still reported
+	// by Keycloak < 26.8) is a Keycloak UUID and is expressed as
+	// spec.organizationRef instead; the controller rejects it in definition.
 	definition := removeServerFields(raw, "internalId", "config.clientSecret", "organizationId")
 
 	idp := &keycloakv1beta1.KeycloakIdentityProvider{
@@ -326,10 +344,8 @@ func (t *Transformer) TransformIdentityProvider(raw json.RawMessage) (ExportedRe
 		},
 	}
 
-	if parsed.OrganizationID != "" {
-		if name, ok := t.organizationNames[parsed.OrganizationID]; ok {
-			idp.Spec.OrganizationRef = &keycloakv1beta1.ResourceRef{Name: name}
-		}
+	if name, ok := t.identityProviderOrganizations[parsed.Alias]; ok && name != "" {
+		idp.Spec.OrganizationRef = &keycloakv1beta1.ResourceRef{Name: name}
 	}
 
 	return ExportedResource{
@@ -379,7 +395,26 @@ func (t *Transformer) TransformIdentityProviderMapper(raw json.RawMessage, alias
 }
 
 // TransformComponent transforms a component JSON to KeycloakComponent
-func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource, error) {
+// componentResourceName returns the CR name for a component: the short
+// provider type and the component name, prefixed with the parent component's
+// CR name for sub-components. Mapper names repeat across providers (every
+// LDAP provider has a "username" mapper), so the prefix is what keeps
+// sibling sub-components apart, the same way nested groups are named.
+func componentResourceName(parentResourceName, providerType, name string) string {
+	if providerType != "" {
+		parts := strings.Split(providerType, ".")
+		name = parts[len(parts)-1] + "-" + name
+	}
+	if parentResourceName != "" {
+		name = parentResourceName + "-" + name
+	}
+	return sanitizeName(name)
+}
+
+// TransformComponent transforms a component JSON to KeycloakComponent.
+// parentResourceName is the CR name of the parent component for a
+// sub-component (e.g. an LDAP mapper), or empty for a realm-level component.
+func (t *Transformer) TransformComponent(raw json.RawMessage, parentResourceName string) (ExportedResource, error) {
 	var parsed struct {
 		Name         string `json:"name"`
 		ProviderType string `json:"providerType"`
@@ -388,17 +423,9 @@ func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource,
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields and sensitive config
+	// Remove server-managed fields and sensitive config. parentId is dropped
+	// for sub-components too: the controller injects it from parentComponentRef.
 	definition := removeServerFields(raw, "id", "parentId", "config.bindCredential")
-
-	// Create unique name combining name and provider type
-	name := parsed.Name
-	if parsed.ProviderType != "" {
-		// Extract short provider type name
-		parts := strings.Split(parsed.ProviderType, ".")
-		shortType := parts[len(parts)-1]
-		name = shortType + "-" + parsed.Name
-	}
 
 	component := &keycloakv1beta1.KeycloakComponent{
 		TypeMeta: metav1.TypeMeta{
@@ -406,16 +433,21 @@ func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource,
 			Kind:       "KeycloakComponent",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      sanitizeName(name),
+			Name:      componentResourceName(parentResourceName, parsed.ProviderType, parsed.Name),
 			Namespace: t.opts.TargetNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakComponentSpec{
-			RealmRef: &keycloakv1beta1.ResourceRef{
-				Name: t.opts.RealmRef,
-			},
 			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
+	}
+
+	// A sub-component names its parent; the realm is derived from the parent
+	// chain, so realmRef must not be set alongside parentComponentRef.
+	if parentResourceName != "" {
+		component.Spec.ParentComponentRef = &keycloakv1beta1.ResourceRef{Name: parentResourceName}
+	} else {
+		component.Spec.RealmRef = &keycloakv1beta1.ResourceRef{Name: t.opts.RealmRef}
 	}
 
 	return ExportedResource{
