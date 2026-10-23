@@ -205,7 +205,7 @@ func TestDriftDetection(t *testing.T) {
 Tests run in GitHub Actions:
 
 - Unit tests, lint and builds run on every PR and on `main` (`ci.yaml`).
-- The e2e suite (`e2e.yaml`) runs against a single-node Kind cluster with the operator and Keycloak deployed, on demand: a repo admin or maintainer comments `/e2e` on the pull request, or starts the workflow by hand via "Run workflow" with the PR number. It runs once per Keycloak version in the workflow's matrix (currently 26.0 and 25.0), in parallel, and each lane is reported as its own commit status (`E2E (kind, Keycloak 26.0)`, …) on the PR's head commit. The comment gets a 🚀 reaction when the run starts. Locally, `KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:25.0 make kind-all` deploys a different version.
+- The e2e suite (`e2e.yaml`) runs against a single-node Kind cluster with the operator and Keycloak deployed, on demand: a repo admin or maintainer comments `/e2e` on the pull request, or starts the workflow by hand via "Run workflow" with the PR number. It runs once per Keycloak version in the workflow's matrix (currently the latest patch of 25.0 and 26.8), in parallel, and each lane is reported as its own commit status (`E2E (kind, Keycloak 26.8)`, …) on the PR's head commit. The comment gets a 🚀 reaction when the run starts. Locally, `KEYCLOAK_IMAGE=quay.io/keycloak/keycloak:26.8 KEYCLOAK_FEATURES=admin-fine-grained-authz:v1,token-exchange:v1 make kind-all` deploys a different version; Keycloak 26.2+ needs the `:v1` suffixes because the operator's identity provider token exchange relies on the V1 features.
 
 ## Test Utilities
 

@@ -41,9 +41,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Oldest and newest minor the operator is exercised against. The
-        # local manifest pins 26.0; the script swaps the image per lane.
-        keycloak: ["26.0", "25.0"]
+        # Latest patch of each line the suite runs against (floating minor
+        # tags; bump the 26 minor when Keycloak releases one). The local
+        # manifest pins 26.0; the script swaps image and features per lane.
+        # Keycloak 26.2 split token-exchange and admin-fine-grained-authz into
+        # V1/V2 with V2 as default; the operator's IdP token exchange uses V1,
+        # so newer lanes need the :v1 suffixes and older ones the bare names.
+        include:
+          - keycloak: "25.0"
+            features: admin-fine-grained-authz,token-exchange
+          - keycloak: "26.8"
+            features: admin-fine-grained-authz:v1,token-exchange:v1
     concurrency:
       group: e2e-${{ github.event.issue.number || github.event.inputs.pr }}-${{ matrix.keycloak }}
       cancel-in-progress: true
@@ -103,6 +111,7 @@ jobs:
         env:
           KIND_CONFIG: ${{ github.workspace }}/hack/kind-config-ci.yaml
           KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:${{ matrix.keycloak }}
+          KEYCLOAK_FEATURES: ${{ matrix.features }}
         run: ./hack/setup-kind.sh all
 
       - name: Wait for the operator to connect to Keycloak

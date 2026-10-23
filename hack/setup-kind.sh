@@ -23,6 +23,10 @@ KIND_CONFIG="${KIND_CONFIG:-${SCRIPT_DIR}/kind-config.yaml}"
 KEYCLOAK_MANIFEST="${SCRIPT_DIR}/keycloak-kind.yaml"
 # Override the Keycloak image in the manifest, e.g. quay.io/keycloak/keycloak:25.0 (CI matrix).
 KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-}"
+# Override the --features list in the manifest. Keycloak 26.2+ needs the :v1
+# suffixes (admin-fine-grained-authz:v1,token-exchange:v1); older versions only
+# accept the bare names the manifest ships with.
+KEYCLOAK_FEATURES="${KEYCLOAK_FEATURES:-}"
 OPERATOR_IMAGE="${IMG:-keycloak-operator:dev}"
 KEYCLOAK_NAMESPACE="keycloak"
 OPERATOR_NAMESPACE="keycloak-operator"
@@ -260,12 +264,17 @@ deploy_keycloak() {
     log_info "Deploying Keycloak to cluster for testing..."
     
     # Use manifest-based deployment (no Helm dependency)
+    local manifest
+    manifest=$(cat "${KEYCLOAK_MANIFEST}")
     if [ -n "${KEYCLOAK_IMAGE}" ]; then
         log_info "Using Keycloak image ${KEYCLOAK_IMAGE}"
-        sed "s|image: quay.io/keycloak/keycloak:[^[:space:]]*|image: ${KEYCLOAK_IMAGE}|" "${KEYCLOAK_MANIFEST}" | kubectl apply -f -
-    else
-        kubectl apply -f "${KEYCLOAK_MANIFEST}"
+        manifest=$(printf '%s\n' "${manifest}" | sed "s|image: quay.io/keycloak/keycloak:[^[:space:]]*|image: ${KEYCLOAK_IMAGE}|")
     fi
+    if [ -n "${KEYCLOAK_FEATURES}" ]; then
+        log_info "Using Keycloak features ${KEYCLOAK_FEATURES}"
+        manifest=$(printf '%s\n' "${manifest}" | sed "s|- --features=[^[:space:]]*|- --features=${KEYCLOAK_FEATURES}|")
+    fi
+    printf '%s\n' "${manifest}" | kubectl apply -f -
     
     log_info "Waiting for Keycloak deployment to be available..."
     kubectl wait --for=condition=Available deployment/keycloak \
@@ -433,6 +442,7 @@ print_usage() {
     echo "  IMG                Operator image (default: keycloak-operator:dev)"
     echo "  KIND_CONFIG        Kind cluster config (default: hack/kind-config.yaml)"
     echo "  KEYCLOAK_IMAGE     Keycloak image to deploy (default: the one in hack/keycloak-kind.yaml)"
+    echo "  KEYCLOAK_FEATURES  Keycloak --features list (default: the one in hack/keycloak-kind.yaml)"
     echo ""
 }
 
