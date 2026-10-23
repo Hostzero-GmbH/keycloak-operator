@@ -153,9 +153,11 @@ spec:
 
 ## Organization Link
 
-To map an identity provider exclusively to an organization, set `organizationRef` to a `KeycloakOrganization` in the same namespace and realm. The operator waits until the organization is ready, then injects its `status.organizationID` as `organizationId` on the identity provider.
+To map an identity provider to an organization, set `organizationRef` to a `KeycloakOrganization` in the same namespace and realm. The operator waits until the organization is ready, creates or updates the identity provider, and then links it through the organization's identity-provider endpoint (`POST /admin/realms/{realm}/organizations/{id}/identity-providers`). On every reconcile it checks the organization's linked providers and re-links the identity provider if the link is missing. The linked organization's ID is recorded in `status.organizationID`.
 
-This requires **Keycloak 26.0.0 or later**. Do not set `organizationId` inside `definition` — that field is rejected with `Ready=False` and reason `InvalidDefinition`. Organizations created outside the operator can be adopted with a `KeycloakOrganization` CR, then referenced here.
+Changing `organizationRef` to another organization unlinks the identity provider from the previous one before linking it to the new one. Removing `organizationRef` unlinks it and clears `status.organizationID`; the identity provider itself is kept.
+
+This requires **Keycloak 26.0.0 or later**. Do not set `organizationId` inside `definition` — that field is rejected with `Ready=False` and reason `InvalidDefinition`. Keycloak 26.8 moved identity-provider-to-organization links to a many-to-many model and ignores `organizationId` on the identity provider representation entirely, which is why the operator uses the organization endpoints instead; they behave the same on 26.0 and 26.8. From the operator's side an identity provider is linked to at most one organization: `organizationRef` is a single reference, and links to other organizations made outside the operator are left untouched. Organizations created outside the operator can be adopted with a `KeycloakOrganization` CR, then referenced here.
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -176,7 +178,7 @@ spec:
       tokenUrl: https://sso.acme.example.com/token
 ```
 
-The organization and identity provider must reference the same realm CR (`realmRef` or `clusterRealmRef`). A mismatch sets `Ready=False` with reason `OrganizationRealmMismatch`. If the organization is missing or not yet ready, the identity provider soft-waits with reason `OrganizationNotReady`.
+The organization and identity provider must reference the same realm CR (`realmRef` or `clusterRealmRef`). A mismatch sets `Ready=False` with reason `OrganizationRealmMismatch`. If the organization is missing or not yet ready, the identity provider soft-waits with reason `OrganizationNotReady`. If Keycloak rejects the link or unlink call, the status reports reason `OrganizationLinkFailed` and the operator retries.
 
 ## Config from Secret
 

@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
@@ -590,13 +589,12 @@ func (e *Exporter) exportIdentityProviders(ctx context.Context) ([]ExportedResou
 		return nil, fmt.Errorf("failed to get identity providers: %w", err)
 	}
 
-	e.transformer.SetOrganizationNames(e.loadOrganizationNames(ctx))
+	e.transformer.SetIdentityProviderOrganizations(e.loadIdentityProviderOrganizations(ctx, e.loadOrganizationNames(ctx)))
 
 	var resources []ExportedResource
 	for _, raw := range rawIDPs {
 		var idp struct {
-			Alias          string `json:"alias"`
-			OrganizationID string `json:"organizationId"`
+			Alias string `json:"alias"`
 		}
 		if err := json.Unmarshal(raw, &idp); err != nil {
 			continue
@@ -606,11 +604,6 @@ func (e *Exporter) exportIdentityProviders(ctx context.Context) ([]ExportedResou
 		if err != nil {
 			e.log.Error(err, "Failed to transform identity provider", "alias", idp.Alias)
 			continue
-		}
-		if idp.OrganizationID != "" {
-			if exported, ok := resource.Object.(*keycloakv1beta1.KeycloakIdentityProvider); !ok || exported.Spec.OrganizationRef == nil {
-				e.log.Info("dropping unresolved organizationId on identity provider", "alias", idp.Alias, "organizationId", idp.OrganizationID)
-			}
 		}
 		resources = append(resources, resource)
 
@@ -766,6 +759,49 @@ func (e *Exporter) loadOrganizationNames(ctx context.Context) map[string]string 
 		names[org.ID] = sanitizeName(org.Name)
 	}
 	return names
+}
+
+// loadIdentityProviderOrganizations asks every organization which identity
+// providers it links (GET /organizations/{org}/identity-providers) and returns
+// an alias → organization CR name map. The organization endpoints are the only
+// place the link is visible on Keycloak 26.8, where organizationId on the
+// identity provider representation is no longer populated (#198). An alias
+// linked to several organizations (possible on 26.8) keeps the first one in
+// organization-name order so the export is deterministic.
+func (e *Exporter) loadIdentityProviderOrganizations(ctx context.Context, orgNames map[string]string) map[string]string {
+	if len(orgNames) == 0 {
+		return nil
+	}
+	orgIDs := make([]string, 0, len(orgNames))
+	for id := range orgNames {
+		orgIDs = append(orgIDs, id)
+	}
+	sort.Slice(orgIDs, func(i, j int) bool {
+		if orgNames[orgIDs[i]] != orgNames[orgIDs[j]] {
+			return orgNames[orgIDs[i]] < orgNames[orgIDs[j]]
+		}
+		return orgIDs[i] < orgIDs[j]
+	})
+
+	byAlias := make(map[string]string)
+	for _, orgID := range orgIDs {
+		idps, err := e.client.GetOrganizationIdentityProviders(ctx, e.opts.Realm, orgID)
+		if err != nil {
+			e.log.Error(err, "Failed to list identity providers of organization", "organizationId", orgID, "organization", orgNames[orgID])
+			continue
+		}
+		for _, idp := range idps {
+			if idp.Alias == nil || *idp.Alias == "" {
+				continue
+			}
+			if existing, dup := byAlias[*idp.Alias]; dup {
+				e.log.Info("identity provider is linked to several organizations; exporting the first", "alias", *idp.Alias, "organizationRef", existing, "ignored", orgNames[orgID])
+				continue
+			}
+			byAlias[*idp.Alias] = orgNames[orgID]
+		}
+	}
+	return byAlias
 }
 
 func (e *Exporter) exportOrganizations(ctx context.Context) ([]ExportedResource, error) {

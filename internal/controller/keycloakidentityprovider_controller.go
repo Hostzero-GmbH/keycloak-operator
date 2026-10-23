@@ -133,6 +133,14 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		return r.updateStatus(ctx, idp, false, "ConfigSecretError", err.Error(), alias)
 	}
 
+	// The organization link is not part of the identity provider
+	// representation: Keycloak 26.8 moved it to a many-to-many table and
+	// ignores organizationId on POST/PUT, so it is reconciled through the
+	// organization endpoints after the identity provider exists (#198).
+	// status.organizationID records the organization the IdP is currently
+	// linked to, which is what a later reconcile unlinks from when the
+	// reference changes or goes away.
+	previousOrgID := idp.Status.OrganizationID
 	orgID, err := r.resolveOrganization(ctx, idp)
 	if err != nil {
 		if isOrganizationRealmMismatch(err) {
@@ -141,10 +149,6 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		}
 		RecordError(controllerName, "organization_not_ready")
 		return r.updateStatus(ctx, idp, false, "OrganizationNotReady", err.Error(), alias)
-	}
-	idp.Status.OrganizationID = orgID
-	if orgID != "" {
-		definition = setFieldInDefinition(definition, "organizationId", orgID)
 	}
 
 	desiredHash := definitionHash(definition)
@@ -191,6 +195,16 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 			log.V(1).Info("identity provider already in sync, skipping update", "alias", alias)
 		}
 	}
+
+	// Reconcile the organization link now that the IdP exists. On Keycloak
+	// 26.0 a PUT without organizationId drops the link, so this has to run
+	// after the create/update above; on 26.8 the representation never
+	// carries the link in the first place.
+	if err := r.reconcileOrganizationLink(ctx, kc, realmName, alias, previousOrgID, orgID); err != nil {
+		RecordError(controllerName, "keycloak_api_error")
+		return r.updateStatus(ctx, idp, false, "OrganizationLinkFailed", fmt.Sprintf("Failed to reconcile organization link: %v", err), alias)
+	}
+	idp.Status.OrganizationID = orgID
 
 	// Reconcile the token-exchange permission, if managed. Failure here is
 	// surfaced on status.tokenExchange.message but does not flip the parent
@@ -266,6 +280,68 @@ func (r *KeycloakIdentityProviderReconciler) resolveOrganization(ctx context.Con
 		return "", organizationRealmMismatchError{org: orgKey, idp: types.NamespacedName{Name: idp.Name, Namespace: idp.Namespace}}
 	}
 	return org.Status.OrganizationID, nil
+}
+
+// reconcileOrganizationLink makes the organization side of Keycloak match
+// desiredOrgID for the identity provider alias: the IdP is unlinked from
+// previousOrgID when that differs from the desired organization, and linked to
+// desiredOrgID unless it already is. Both steps consult
+// GET /organizations/{org}/identity-providers first, so a steady-state
+// reconcile issues no writes. Links to organizations the operator does not
+// know about are left alone.
+func (r *KeycloakIdentityProviderReconciler) reconcileOrganizationLink(ctx context.Context, kc *keycloak.Client, realmName, alias, previousOrgID, desiredOrgID string) error {
+	log := log.FromContext(ctx)
+
+	if previousOrgID != "" && previousOrgID != desiredOrgID {
+		linked, err := organizationHasIdentityProvider(ctx, kc, realmName, previousOrgID, alias)
+		if err != nil {
+			return fmt.Errorf("failed to list identity providers of organization %s: %w", previousOrgID, err)
+		}
+		if linked {
+			log.Info("unlinking identity provider from organization", "alias", alias, "organizationID", previousOrgID)
+			if err := kc.UnlinkIdentityProviderFromOrganization(ctx, realmName, previousOrgID, alias); err != nil {
+				return fmt.Errorf("failed to unlink identity provider from organization %s: %w", previousOrgID, err)
+			}
+		}
+	}
+
+	if desiredOrgID == "" {
+		return nil
+	}
+
+	linked, err := organizationHasIdentityProvider(ctx, kc, realmName, desiredOrgID, alias)
+	if err != nil {
+		return fmt.Errorf("failed to list identity providers of organization %s: %w", desiredOrgID, err)
+	}
+	if linked {
+		log.V(1).Info("identity provider already linked to organization", "alias", alias, "organizationID", desiredOrgID)
+		return nil
+	}
+	log.Info("linking identity provider to organization", "alias", alias, "organizationID", desiredOrgID)
+	if err := kc.LinkIdentityProviderToOrganization(ctx, realmName, desiredOrgID, alias); err != nil {
+		return fmt.Errorf("failed to link identity provider to organization %s: %w", desiredOrgID, err)
+	}
+	return nil
+}
+
+// organizationHasIdentityProvider reports whether the organization lists the
+// identity provider alias among its linked providers. An organization that no
+// longer exists (404) has no links, which lets a stale status.organizationID
+// be cleared without an error.
+func organizationHasIdentityProvider(ctx context.Context, kc *keycloak.Client, realmName, orgID, alias string) (bool, error) {
+	idps, err := kc.GetOrganizationIdentityProviders(ctx, realmName, orgID)
+	if err != nil {
+		if keycloak.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, idp := range idps {
+		if idp.Alias != nil && *idp.Alias == alias {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // sameRealmPlacement reports whether the IdP and organization reference the same realm CR.

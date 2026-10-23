@@ -199,6 +199,12 @@ func (c *Client) request(ctx context.Context) (*resty.Request, error) {
 // Generic CRUD Operations
 // ============================================================================
 
+// IsNotFound reports whether err is an HTTP 404 returned by one of the generic
+// CRUD helpers, whose errors start with the response status ("404 Not Found: …").
+func IsNotFound(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "404")
+}
+
 // Create creates a resource and returns its ID (from Location header)
 func (c *Client) Create(ctx context.Context, path string, body interface{}) (string, error) {
 	req, err := c.request(ctx)
@@ -1606,6 +1612,40 @@ func (c *Client) UpdateOrganization(ctx context.Context, realmName string, org O
 // DeleteOrganization deletes an organization
 func (c *Client) DeleteOrganization(ctx context.Context, realmName, orgID string) error {
 	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations/"+url.PathEscape(orgID))
+}
+
+// GetOrganizationIdentityProviders lists the identity providers linked to an
+// organization (GET /organizations/{org}/identity-providers). This is the
+// authoritative view of the link on every Keycloak version: 26.8 moved the
+// link to a many-to-many table and no longer reports organizationId on the
+// identity provider representation.
+func (c *Client) GetOrganizationIdentityProviders(ctx context.Context, realmName, orgID string) ([]IdentityProviderRepresentation, error) {
+	var idps []IdentityProviderRepresentation
+	if err := c.Get(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations/"+url.PathEscape(orgID)+"/identity-providers", &idps); err != nil {
+		return nil, err
+	}
+	return idps, nil
+}
+
+// LinkIdentityProviderToOrganization links an existing identity provider to an
+// organization (POST /organizations/{org}/identity-providers). Keycloak expects
+// the alias as a JSON string body and answers 204 without a Location header.
+func (c *Client) LinkIdentityProviderToOrganization(ctx context.Context, realmName, orgID, alias string) error {
+	// A plain Go string would be sent verbatim; the endpoint wants a JSON
+	// string literal, so encode it first.
+	body, err := json.Marshal(alias)
+	if err != nil {
+		return fmt.Errorf("failed to encode identity provider alias: %w", err)
+	}
+	_, err = c.Create(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations/"+url.PathEscape(orgID)+"/identity-providers", json.RawMessage(body))
+	return err
+}
+
+// UnlinkIdentityProviderFromOrganization removes the link between an identity
+// provider and an organization (DELETE /organizations/{org}/identity-providers/{alias}).
+// The identity provider itself is left in place.
+func (c *Client) UnlinkIdentityProviderFromOrganization(ctx context.Context, realmName, orgID, alias string) error {
+	return c.Delete(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations/"+url.PathEscape(orgID)+"/identity-providers/"+url.PathEscape(alias))
 }
 
 // ============================================================================
