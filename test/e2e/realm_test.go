@@ -657,6 +657,55 @@ func TestKeycloakRealmE2E(t *testing.T) {
 		bumpReconcile(t, updated)
 		assertOperatorLogged(t, since, "realm already in sync, skipping update", "realm", realmName)
 	})
+
+	// Regression for #172. Keycloak imports nested collections only at realm
+	// creation and ignores them on PUT, and GET leaves them out, so a realm
+	// declaring them re-PUT on every reconcile. The operator now refuses them
+	// and points at the owning CRD.
+	t.Run("NestedCollectionsRejected", func(t *testing.T) {
+		realmName := fmt.Sprintf("test-realm-nested-%d", time.Now().UnixNano())
+		realm := &keycloakv1beta1.KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{Name: realmName, Namespace: testNamespace},
+			Spec: keycloakv1beta1.KeycloakRealmSpec{
+				InstanceRef: &keycloakv1beta1.ResourceRef{Name: instanceName},
+				RealmName:   strPtr(realmName),
+				Definition: rawJSON(`{
+					"enabled": true,
+					"authenticationFlows": [{
+						"alias": "example-browser-flow",
+						"providerId": "basic-flow",
+						"topLevel": true,
+						"builtIn": false
+					}]
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, realm))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, realm)
+		})
+
+		updated := &keycloakv1beta1.KeycloakRealm{}
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: realm.Name, Namespace: realm.Namespace}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Status == "UnsupportedDefinitionField", nil
+		}), "realm with inline authenticationFlows should be rejected")
+		require.False(t, updated.Status.Ready, "realm must not be ready")
+		require.Contains(t, updated.Status.Message, "KeycloakAuthenticationFlow",
+			"message should point at the replacement CRD")
+
+		// Dropping the key makes the same realm reconcile normally.
+		updated.Spec.Definition = rawJSON(`{"enabled": true}`)
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: realm.Name, Namespace: realm.Namespace}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		}), "realm did not become ready after removing authenticationFlows")
+	})
 }
 
 // getRealmMap fetches the full realm representation as a generic map.

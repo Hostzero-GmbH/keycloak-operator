@@ -221,6 +221,26 @@ Common properties:
 | `ssoSessionIdleTimeout` | integer | SSO session idle timeout (seconds) |
 | `accessTokenLifespan` | integer | Access token lifespan (seconds) |
 
+### Nested Resources
+
+`definition` holds the realm's own attributes only. The collections Keycloak nests inside a `RealmRepresentation` each have a CRD of their own, and the realm rejects them with `Ready=False` and reason `UnsupportedDefinitionField`:
+
+| `definition` key | Use instead |
+|------------------|-------------|
+| `clients` | [KeycloakClient](keycloakclient.md) |
+| `clientScopes` | [KeycloakClientScope](keycloakclientscope.md) |
+| `users` | [KeycloakUser](keycloakuser.md) |
+| `groups` | [KeycloakGroup](keycloakgroup.md) |
+| `roles` | [KeycloakRole](keycloakrole.md) |
+| `components` | [KeycloakComponent](keycloakcomponent.md) |
+| `authenticationFlows` | [KeycloakAuthenticationFlow](keycloakauthenticationflow.md) |
+| `identityProviders` | [KeycloakIdentityProvider](keycloakidentityprovider.md) |
+| `identityProviderMappers` | [KeycloakIdentityProviderMapper](keycloakidentityprovidermapper.md) |
+| `requiredActions` | [KeycloakRequiredAction](keycloakrequiredaction.md) |
+| `organizations` | [KeycloakOrganization](keycloakorganization.md) |
+
+Keycloak only imports these when a realm is created; `GET /admin/realms/{realm}` leaves them out and `PUT` ignores them. A realm declaring them would therefore never settle in drift detection and would re-send the realm on every reconcile while the nested entries never changed in Keycloak. See [Spec Layout](../crds.md#spec-layout) for the rule behind this. Flow *bindings* such as `browserFlow` are realm attributes and stay in `definition`; see [Binding Custom Authentication Flows](#binding-custom-authentication-flows).
+
 ### Partial Updates
 
 `definition` is sent to Keycloak as-is. For an existing realm, Keycloak applies only the fields present in the representation and leaves everything else unchanged, so a minimal `definition` can adopt a pre-existing realm without rewriting it.
