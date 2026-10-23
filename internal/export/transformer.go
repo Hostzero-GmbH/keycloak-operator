@@ -321,10 +321,12 @@ func (t *Transformer) TransformIdentityProvider(raw json.RawMessage) (ExportedRe
 		return ExportedResource{}, err
 	}
 
-	// Remove sensitive/server-managed fields. organizationId (still reported
-	// by Keycloak < 26.8) is a Keycloak UUID and is expressed as
-	// spec.organizationRef instead; the controller rejects it in definition.
-	definition := removeServerFields(raw, "internalId", "config.clientSecret", "organizationId")
+	// Remove sensitive/server-managed fields. organizationId (Keycloak < 26.8)
+	// and organizationLinks (26.8+, one entry per linked organization with
+	// its UUID and membership settings) carry realm-specific organization
+	// UUIDs; the link is expressed as spec.organizationRef instead and the
+	// controller rejects both fields in definition.
+	definition := removeServerFields(raw, "internalId", "config.clientSecret", "organizationId", "organizationLinks")
 
 	idp := &keycloakv1beta1.KeycloakIdentityProvider{
 		TypeMeta: metav1.TypeMeta{

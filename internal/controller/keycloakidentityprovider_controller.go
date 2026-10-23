@@ -102,10 +102,13 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 		return r.updateStatus(ctx, idp, false, "RealmNotReady", err.Error(), "")
 	}
 
-	// Parse identity provider definition to extract alias and reject inline organizationId
+	// Parse identity provider definition to extract alias and reject inline
+	// organization links: organizationId (Keycloak < 26.8) and
+	// organizationLinks (26.8+) both carry realm-specific organization UUIDs.
 	var idpDef struct {
-		Alias          string `json:"alias"`
-		OrganizationID string `json:"organizationId"`
+		Alias             string          `json:"alias"`
+		OrganizationID    string          `json:"organizationId"`
+		OrganizationLinks json.RawMessage `json:"organizationLinks"`
 	}
 	if err := json.Unmarshal(idp.Spec.Definition.Raw, &idpDef); err != nil {
 		RecordError(controllerName, "invalid_definition")
@@ -114,6 +117,10 @@ func (r *KeycloakIdentityProviderReconciler) Reconcile(ctx context.Context, req 
 	if idpDef.OrganizationID != "" {
 		RecordError(controllerName, "invalid_definition")
 		return r.updateStatus(ctx, idp, false, "InvalidDefinition", "definition.organizationId is not supported; use spec.organizationRef", "")
+	}
+	if len(idpDef.OrganizationLinks) > 0 && string(idpDef.OrganizationLinks) != "null" {
+		RecordError(controllerName, "invalid_definition")
+		return r.updateStatus(ctx, idp, false, "InvalidDefinition", "definition.organizationLinks is not supported; use spec.organizationRef", "")
 	}
 
 	// Resolve the alias from spec.alias.

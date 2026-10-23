@@ -20,12 +20,13 @@ func TestTransformIdentityProviderSetsAliasAndStripsOrganizationID(t *testing.T)
 		"acme-sso": "acme-corp",
 	})
 
-	// organizationId is what Keycloak < 26.8 reports; it must be stripped
-	// whether or not it is present.
+	// organizationId is what Keycloak < 26.8 reports and organizationLinks
+	// what 26.8+ reports; both must be stripped whether or not present.
 	raw := json.RawMessage(`{
 		"alias": "acme-sso",
 		"internalId": "idp-internal",
 		"organizationId": "org-uuid-1",
+		"organizationLinks": [{"organizationId": "org-uuid-1", "membershipType": "UNMANAGED", "autoMembership": false}],
 		"providerId": "oidc",
 		"config": {"clientSecret": "super-secret"}
 	}`)
@@ -45,6 +46,8 @@ func TestTransformIdentityProviderSetsAliasAndStripsOrganizationID(t *testing.T)
 	require.NoError(t, json.Unmarshal(idp.Spec.Definition.Raw, &def))
 	_, hasOrgID := def["organizationId"]
 	require.False(t, hasOrgID, "organizationId must be stripped from definition")
+	_, hasOrgLinks := def["organizationLinks"]
+	require.False(t, hasOrgLinks, "organizationLinks must be stripped from definition")
 	_, hasInternal := def["internalId"]
 	require.False(t, hasInternal)
 	cfg, _ := def["config"].(map[string]interface{})

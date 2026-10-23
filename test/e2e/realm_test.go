@@ -182,6 +182,8 @@ func TestKeycloakRealmE2E(t *testing.T) {
 		// Verify SMTP credentials were injected by reading realm from Keycloak.
 		// Ready can land while a follow-up PUT of the same definition is still
 		// in flight, so poll until the user is visible instead of reading once.
+		// The fixtures set auth=true: Keycloak 26.8 drops smtpServer.user and
+		// password on update when auth is not enabled.
 		if canConnectToKeycloak() {
 			kc := getInternalKeycloakClient(t)
 			smtp := waitForRealmSmtpUser(t, kc, realmName, "smtp-user@example.com")
@@ -229,7 +231,9 @@ func TestKeycloakRealmE2E(t *testing.T) {
 					"smtpServer": {
 						"from": "noreply@example.com",
 						"host": "smtp.example.com",
-						"port": "465"
+						"port": "465",
+						"ssl": "true",
+						"auth": "true"
 					}
 				}`),
 			},
@@ -804,8 +808,7 @@ func requireRefNamespacePruned(t *testing.T, kind, name, refField string) {
 // waitForRealmSmtpUser polls the realm in Keycloak until smtpServer.user equals
 // want and returns the smtpServer map. The realm reconciler may issue a second
 // PUT right after reporting Ready (its status write can conflict and requeue),
-// and a GET racing that PUT has been observed to return smtpServer without
-// user on Keycloak 26.8, so a single read right after Ready is not reliable.
+// so a single read right after Ready can observe a half-applied update.
 func waitForRealmSmtpUser(t *testing.T, kc *keycloak.Client, realmName, want string) map[string]interface{} {
 	t.Helper()
 	var smtp map[string]interface{}
