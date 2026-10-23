@@ -37,6 +37,9 @@ type fakeKeycloak struct {
 	// childrenCalls counts requests per group ID for assertions about
 	// pagination and the post-23 fallback.
 	childrenCalls map[string]int
+
+	// components is the response body for GET /components for the test realm.
+	components []json.RawMessage
 }
 
 func newFakeKeycloak(t *testing.T) *fakeKeycloak {
@@ -81,6 +84,10 @@ func (f *fakeKeycloak) handler() http.Handler {
 		default:
 			http.NotFound(w, r)
 		}
+	})
+
+	mux.HandleFunc("/admin/realms/test/components", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, f.components)
 	})
 
 	mux.HandleFunc("/admin/realms/test/clients", func(w http.ResponseWriter, _ *http.Request) {
@@ -387,4 +394,65 @@ func resourceKinds(rs []ExportedResource) []string {
 		out = append(out, r.Kind+"/"+r.Name)
 	}
 	return out
+}
+
+// Components are listed without a parent filter, so LDAP mappers come back
+// next to their provider. Mappers get parentComponentRef with the provider's
+// CR name as prefix; a mapper whose parent is filtered out is skipped (#167).
+func TestExportComponents_SubComponentsReferenceParent(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	// Child listed before its parent on purpose: order must not matter.
+	fake.components = []json.RawMessage{
+		mustJSON(t, map[string]interface{}{
+			"id": "mapper-1", "parentId": "ldap-1", "name": "username",
+			"providerId": "user-attribute-ldap-mapper", "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+		}),
+		mustJSON(t, map[string]interface{}{
+			"id": "ldap-1", "parentId": "realm-id", "name": "corporate-ldap",
+			"providerId": "ldap", "providerType": "org.keycloak.storage.UserStorageProvider",
+		}),
+		mustJSON(t, map[string]interface{}{
+			"id": "key-1", "parentId": "realm-id", "name": "rsa-generated",
+			"providerId": "rsa-generated", "providerType": "org.keycloak.keys.KeyProvider",
+		}),
+		mustJSON(t, map[string]interface{}{
+			"id": "orphan-1", "parentId": "key-1", "name": "under-filtered-parent",
+			"providerId": "whatever", "providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+		}),
+	}
+	exp, _ := newTestExporter(t, fake)
+	exp.filter = NewFilter(nil, nil, true) // --skip-defaults drops the key provider
+
+	resources, err := exp.exportComponents(context.Background())
+	if err != nil {
+		t.Fatalf("exportComponents: %v", err)
+	}
+
+	byName := map[string]*keycloakv1beta1.KeycloakComponent{}
+	for _, r := range resources {
+		c, ok := r.Object.(*keycloakv1beta1.KeycloakComponent)
+		if !ok {
+			t.Fatalf("expected *KeycloakComponent, got %T", r.Object)
+		}
+		byName[r.Name] = c
+	}
+	if len(byName) != 2 {
+		t.Fatalf("expected the provider and its mapper only, got %d: %v", len(byName), byName)
+	}
+
+	provider := byName["userstorageprovider-corporate-ldap"]
+	if provider == nil || provider.Spec.RealmRef == nil || provider.Spec.ParentComponentRef != nil {
+		t.Fatalf("top-level provider must keep realmRef and have no parentComponentRef: %+v", provider)
+	}
+
+	mapper := byName["userstorageprovider-corporate-ldap-ldapstoragemapper-username"]
+	if mapper == nil {
+		t.Fatalf("mapper not exported under the parent-prefixed name; got %v", byName)
+	}
+	if mapper.Spec.RealmRef != nil {
+		t.Errorf("sub-component must not carry realmRef")
+	}
+	if mapper.Spec.ParentComponentRef == nil || mapper.Spec.ParentComponentRef.Name != "userstorageprovider-corporate-ldap" {
+		t.Errorf("parentComponentRef = %+v, want the provider's CR name", mapper.Spec.ParentComponentRef)
+	}
 }
