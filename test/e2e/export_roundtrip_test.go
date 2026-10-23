@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -232,6 +233,10 @@ func TestExportRoundTrip(t *testing.T) {
 		"KeycloakComponent":              "clientregistrationpolicy-" + componentName,
 	}
 
+	// Snapshot the first export now: the objects below are handed to the API
+	// server and later re-read, which fills in metadata and status.
+	firstExport := exportedAsJSON(t, resources, expected)
+
 	var applied []client.Object
 	found := map[string]bool{}
 	for _, res := range resources {
@@ -277,6 +282,67 @@ func TestExportRoundTrip(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(raw, &parsed))
 	require.Equal(t, targetOrg.Status.OrganizationID, parsed.OrganizationID)
+
+	// Third leg: export the target realm with the same options and compare it
+	// against the first export. Applying cleanly and reporting Ready does not
+	// prove the export was faithful (a mapper that lost its parent or a user
+	// that lost its groups still applies), re-exporting does. The comparison
+	// covers the resources that were applied; the KeycloakRealm itself is
+	// left out because the target realm was created by hand with a minimal
+	// definition.
+	secondExporter := export.NewExporter(kc, ctrl.Log.WithName("export-roundtrip-2"), export.ExporterOptions{
+		Realm:           targetRealm,
+		TargetNamespace: testNamespace,
+		InstanceRef:     instanceName,
+		RealmRef:        targetRealmCR,
+		SkipDefaults:    true,
+	})
+	second, err := secondExporter.Export(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, firstExport, exportedAsJSON(t, second, expected),
+		"re-export of the applied realm differs from the original export")
+}
+
+// exportedAsJSON returns the exported resources named in expected, keyed by
+// kind, as generic JSON so that require.Equal prints a readable diff. Lists
+// of strings are sorted: Keycloak returns fields such as optionalClientScopes
+// in arbitrary order, and the controllers compare them as sets too.
+func exportedAsJSON(t *testing.T, resources []export.ExportedResource, expected map[string]string) map[string]map[string]interface{} {
+	t.Helper()
+	out := map[string]map[string]interface{}{}
+	for _, res := range resources {
+		if want, ok := expected[res.Kind]; !ok || res.Name != want {
+			continue
+		}
+		raw, err := json.Marshal(res.Object)
+		require.NoError(t, err, "marshal exported %s/%s", res.Kind, res.Name)
+		var m map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &m))
+		sortStringLists(m)
+		out[res.Kind] = m
+	}
+	return out
+}
+
+// sortStringLists sorts every list made up entirely of strings, recursively.
+func sortStringLists(v interface{}) {
+	switch x := v.(type) {
+	case map[string]interface{}:
+		for _, child := range x {
+			sortStringLists(child)
+		}
+	case []interface{}:
+		allStrings := len(x) > 0
+		for _, item := range x {
+			if _, ok := item.(string); !ok {
+				allStrings = false
+			}
+			sortStringLists(item)
+		}
+		if allStrings {
+			sort.Slice(x, func(i, j int) bool { return x[i].(string) < x[j].(string) })
+		}
+	}
 }
 
 func createNamedRealmWithOrganizations(t *testing.T, instanceName, realmName string) string {
