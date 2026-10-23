@@ -49,6 +49,10 @@ type Exporter struct {
 	opts        ExporterOptions
 	filter      *Filter
 	transformer *Transformer
+
+	// clientIDsByUUID caches client UUID -> clientId for resolving the
+	// client members of composite roles. Loaded on first use.
+	clientIDsByUUID map[string]string
 }
 
 // NewExporter creates a new exporter
@@ -443,6 +447,9 @@ func (e *Exporter) exportRealmRoles(ctx context.Context) ([]ExportedResource, er
 			continue
 		}
 
+		raw = e.withComposites(ctx, raw, role.Name, func() ([]keycloak.RoleRepresentation, error) {
+			return e.client.GetRealmRoleComposites(ctx, e.opts.Realm, role.Name)
+		})
 		resource, err := e.transformer.TransformRole(raw, "", "")
 		if err != nil {
 			e.log.Error(err, "Failed to transform realm role", "name", role.Name)
@@ -478,6 +485,9 @@ func (e *Exporter) exportClientRolesForClient(ctx context.Context, clientUUID, c
 			continue
 		}
 
+		raw = e.withComposites(ctx, raw, clientID+"/"+role.Name, func() ([]keycloak.RoleRepresentation, error) {
+			return e.client.GetClientRoleComposites(ctx, e.opts.Realm, clientUUID, role.Name)
+		})
 		resource, err := e.transformer.TransformRole(raw, clientID, clientUUID)
 		if err != nil {
 			e.log.Error(err, "Failed to transform client role", "name", role.Name, "client", clientID)
@@ -487,6 +497,90 @@ func (e *Exporter) exportClientRolesForClient(ctx context.Context, clientUUID, c
 	}
 
 	return resources, nil
+}
+
+// withComposites adds a "composites" block to a composite role's raw
+// representation. The role listing only carries composite=true; the members
+// live behind the composites endpoint, so without this an exported composite
+// role would be applied as an empty one. The block uses the shape the
+// KeycloakRole controller consumes: realm member names under "realm", client
+// member names under "client" keyed by clientId.
+func (e *Exporter) withComposites(ctx context.Context, raw json.RawMessage, label string, fetch func() ([]keycloak.RoleRepresentation, error)) json.RawMessage {
+	var role struct {
+		Composite bool `json:"composite"`
+	}
+	if err := json.Unmarshal(raw, &role); err != nil || !role.Composite {
+		return raw
+	}
+
+	members, err := fetch()
+	if err != nil {
+		e.log.Error(err, "Failed to get composite role members; exporting the role without them", "role", label)
+		return raw
+	}
+
+	var realm []string
+	client := map[string][]string{}
+	for _, m := range members {
+		if m.Name == nil {
+			continue
+		}
+		if m.ClientRole == nil || !*m.ClientRole {
+			realm = append(realm, *m.Name)
+			continue
+		}
+		if m.ContainerID == nil {
+			continue
+		}
+		clientID, ok := e.clientIDByUUID(ctx, *m.ContainerID)
+		if !ok {
+			e.log.Error(nil, "Composite member belongs to an unknown client; skipping it", "role", label, "member", *m.Name, "clientUUID", *m.ContainerID)
+			continue
+		}
+		client[clientID] = append(client[clientID], *m.Name)
+	}
+
+	composites := map[string]interface{}{}
+	if len(realm) > 0 {
+		sort.Strings(realm)
+		composites["realm"] = realm
+	}
+	if len(client) > 0 {
+		for _, names := range client {
+			sort.Strings(names)
+		}
+		composites["client"] = client
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return raw
+	}
+	data["composites"] = composites
+	out, err := json.Marshal(data)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
+// clientIDByUUID resolves a client's UUID to its clientId, listing the realm's
+// clients once on first use.
+func (e *Exporter) clientIDByUUID(ctx context.Context, uuid string) (string, bool) {
+	if e.clientIDsByUUID == nil {
+		e.clientIDsByUUID = map[string]string{}
+		clients, err := e.client.GetClients(ctx, e.opts.Realm, nil)
+		if err != nil {
+			e.log.Error(err, "Failed to list clients for composite role resolution")
+		}
+		for _, c := range clients {
+			if c.ID != nil && c.ClientID != nil {
+				e.clientIDsByUUID[*c.ID] = *c.ClientID
+			}
+		}
+	}
+	clientID, ok := e.clientIDsByUUID[uuid]
+	return clientID, ok
 }
 
 func (e *Exporter) exportIdentityProviders(ctx context.Context) ([]ExportedResource, error) {

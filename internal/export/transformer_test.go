@@ -231,3 +231,40 @@ func TestTransformComponentSubComponentParentRef(t *testing.T) {
 	require.False(t, hasParent, "parentId is injected by the controller")
 	require.Equal(t, "org.keycloak.storage.ldap.mappers.LDAPStorageMapper", def["providerType"])
 }
+
+// A KeycloakRole or KeycloakGroup names exactly one parent; the CRDs reject a
+// realmRef next to clientRef or parentGroupRef at admission, so an export
+// that set both could never be applied.
+func TestTransformRole_ClientRoleHasOnlyClientRef(t *testing.T) {
+	tr := NewTransformer(TransformerOptions{InstanceRef: "kc", TargetNamespace: "ns", RealmRef: "realm"})
+	res, err := tr.TransformRole(json.RawMessage(`{"id": "r1", "name": "editor", "containerId": "c1"}`), "app", "c1")
+	require.NoError(t, err)
+	role := res.Object.(*keycloakv1beta1.KeycloakRole)
+	require.NotNil(t, role.Spec.ClientRef)
+	require.Equal(t, "app", role.Spec.ClientRef.Name)
+	require.Nil(t, role.Spec.RealmRef, "client role must not also carry realmRef")
+
+	res, err = tr.TransformRole(json.RawMessage(`{"id": "r2", "name": "admin"}`), "", "")
+	require.NoError(t, err)
+	role = res.Object.(*keycloakv1beta1.KeycloakRole)
+	require.Nil(t, role.Spec.ClientRef)
+	require.NotNil(t, role.Spec.RealmRef)
+	require.Equal(t, "realm", role.Spec.RealmRef.Name)
+}
+
+func TestTransformGroup_SubgroupHasOnlyParentGroupRef(t *testing.T) {
+	tr := NewTransformer(TransformerOptions{InstanceRef: "kc", TargetNamespace: "ns", RealmRef: "realm"})
+	res, err := tr.TransformGroup(json.RawMessage(`{"id": "g2", "name": "child", "path": "/parent/child", "parentId": "g1"}`), "parent")
+	require.NoError(t, err)
+	group := res.Object.(*keycloakv1beta1.KeycloakGroup)
+	require.NotNil(t, group.Spec.ParentGroupRef)
+	require.Equal(t, "parent", group.Spec.ParentGroupRef.Name)
+	require.Nil(t, group.Spec.RealmRef, "subgroup must not also carry realmRef")
+	require.NotContains(t, string(group.Spec.Definition.Raw), "parentId", "parent UUID must not leak into the definition")
+
+	res, err = tr.TransformGroup(json.RawMessage(`{"id": "g1", "name": "parent", "path": "/parent"}`), "")
+	require.NoError(t, err)
+	group = res.Object.(*keycloakv1beta1.KeycloakGroup)
+	require.Nil(t, group.Spec.ParentGroupRef)
+	require.NotNil(t, group.Spec.RealmRef)
+}
