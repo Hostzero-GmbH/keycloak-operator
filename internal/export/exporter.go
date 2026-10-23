@@ -559,29 +559,86 @@ func (e *Exporter) exportIdentityProviderMappers(ctx context.Context, alias stri
 	return resources, nil
 }
 
+// componentHeader captures the fields needed to place a component in the
+// parent chain before it is transformed.
+type componentHeader struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	ProviderType string `json:"providerType"`
+	ParentID     string `json:"parentId"`
+
+	raw json.RawMessage
+}
+
+// exportComponents exports every component of the realm. The listing has no
+// parent filter, so sub-components such as LDAP mappers are included; those
+// are emitted with parentComponentRef pointing at the parent's CR (#167). A
+// sub-component whose parent is not exported (filtered out) is skipped rather
+// than emitted with a dangling reference.
 func (e *Exporter) exportComponents(ctx context.Context) ([]ExportedResource, error) {
 	rawComponents, err := e.client.GetComponentsRaw(ctx, e.opts.Realm, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get components: %w", err)
 	}
 
-	var resources []ExportedResource
+	// Index every component by ID so parentId can be classified: a parentId
+	// that is not a component is the realm's own ID, i.e. top-level.
+	headers := make([]componentHeader, 0, len(rawComponents))
+	byID := make(map[string]componentHeader, len(rawComponents))
 	for _, raw := range rawComponents {
-		var component struct {
-			Name         string `json:"name"`
-			ProviderType string `json:"providerType"`
-		}
-		if err := json.Unmarshal(raw, &component); err != nil {
+		var h componentHeader
+		if err := json.Unmarshal(raw, &h); err != nil {
 			continue
 		}
+		h.raw = raw
+		headers = append(headers, h)
+		if h.ID != "" {
+			byID[h.ID] = h
+		}
+	}
 
-		if e.filter.ShouldSkipComponent(component.Name, component.ProviderType) {
+	// resourceName resolves a component's CR name through its parent chain;
+	// ok is false when the component or an ancestor is filtered out. Memoised
+	// because Keycloak returns components in arbitrary order.
+	names := make(map[string]string, len(headers))
+	var resourceName func(h componentHeader, depth int) (string, bool)
+	resourceName = func(h componentHeader, depth int) (string, bool) {
+		if name, done := names[h.ID]; done {
+			return name, name != ""
+		}
+		if e.filter.ShouldSkipComponent(h.Name, h.ProviderType) || depth > len(headers) {
+			names[h.ID] = ""
+			return "", false
+		}
+		parentName := ""
+		if parent, isSub := byID[h.ParentID]; isSub {
+			name, ok := resourceName(parent, depth+1)
+			if !ok {
+				names[h.ID] = ""
+				return "", false
+			}
+			parentName = name
+		}
+		name := componentResourceName(parentName, h.ProviderType, h.Name)
+		names[h.ID] = name
+		return name, true
+	}
+
+	var resources []ExportedResource
+	for _, h := range headers {
+		if _, ok := resourceName(h, 0); !ok {
+			if !e.filter.ShouldSkipComponent(h.Name, h.ProviderType) {
+				e.log.Info("Skipping sub-component whose parent is not exported", "name", h.Name, "providerType", h.ProviderType)
+			}
 			continue
 		}
-
-		resource, err := e.transformer.TransformComponent(raw)
+		parentName := ""
+		if parent, isSub := byID[h.ParentID]; isSub {
+			parentName = names[parent.ID]
+		}
+		resource, err := e.transformer.TransformComponent(h.raw, parentName)
 		if err != nil {
-			e.log.Error(err, "Failed to transform component", "name", component.Name)
+			e.log.Error(err, "Failed to transform component", "name", h.Name)
 			continue
 		}
 		resources = append(resources, resource)

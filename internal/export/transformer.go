@@ -386,7 +386,26 @@ func (t *Transformer) TransformIdentityProviderMapper(raw json.RawMessage, alias
 }
 
 // TransformComponent transforms a component JSON to KeycloakComponent
-func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource, error) {
+// componentResourceName returns the CR name for a component: the short
+// provider type and the component name, prefixed with the parent component's
+// CR name for sub-components. Mapper names repeat across providers (every
+// LDAP provider has a "username" mapper), so the prefix is what keeps
+// sibling sub-components apart, the same way nested groups are named.
+func componentResourceName(parentResourceName, providerType, name string) string {
+	if providerType != "" {
+		parts := strings.Split(providerType, ".")
+		name = parts[len(parts)-1] + "-" + name
+	}
+	if parentResourceName != "" {
+		name = parentResourceName + "-" + name
+	}
+	return sanitizeName(name)
+}
+
+// TransformComponent transforms a component JSON to KeycloakComponent.
+// parentResourceName is the CR name of the parent component for a
+// sub-component (e.g. an LDAP mapper), or empty for a realm-level component.
+func (t *Transformer) TransformComponent(raw json.RawMessage, parentResourceName string) (ExportedResource, error) {
 	var parsed struct {
 		Name         string `json:"name"`
 		ProviderType string `json:"providerType"`
@@ -395,17 +414,9 @@ func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource,
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields and sensitive config
+	// Remove server-managed fields and sensitive config. parentId is dropped
+	// for sub-components too: the controller injects it from parentComponentRef.
 	definition := removeServerFields(raw, "id", "parentId", "config.bindCredential")
-
-	// Create unique name combining name and provider type
-	name := parsed.Name
-	if parsed.ProviderType != "" {
-		// Extract short provider type name
-		parts := strings.Split(parsed.ProviderType, ".")
-		shortType := parts[len(parts)-1]
-		name = shortType + "-" + parsed.Name
-	}
 
 	component := &keycloakv1beta1.KeycloakComponent{
 		TypeMeta: metav1.TypeMeta{
@@ -413,16 +424,21 @@ func (t *Transformer) TransformComponent(raw json.RawMessage) (ExportedResource,
 			Kind:       "KeycloakComponent",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      sanitizeName(name),
+			Name:      componentResourceName(parentResourceName, parsed.ProviderType, parsed.Name),
 			Namespace: t.opts.TargetNamespace,
 		},
 		Spec: keycloakv1beta1.KeycloakComponentSpec{
-			RealmRef: &keycloakv1beta1.ResourceRef{
-				Name: t.opts.RealmRef,
-			},
 			Name:       strPtr(parsed.Name),
 			Definition: runtime.RawExtension{Raw: definition},
 		},
+	}
+
+	// A sub-component names its parent; the realm is derived from the parent
+	// chain, so realmRef must not be set alongside parentComponentRef.
+	if parentResourceName != "" {
+		component.Spec.ParentComponentRef = &keycloakv1beta1.ResourceRef{Name: parentResourceName}
+	} else {
+		component.Spec.RealmRef = &keycloakv1beta1.ResourceRef{Name: t.opts.RealmRef}
 	}
 
 	return ExportedResource{
