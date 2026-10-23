@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr/testr"
@@ -40,14 +41,30 @@ type fakeKeycloak struct {
 
 	// components is the response body for GET /components for the test realm.
 	components []json.RawMessage
+
+	// identityProviders is the response body for GET /identity-provider/instances.
+	identityProviders []json.RawMessage
+
+	// organizations is the response body for GET /organizations; nil answers
+	// 404 like a Keycloak without the feature.
+	organizations []json.RawMessage
+
+	// orgIdentityProviders maps an organization ID to the body of
+	// GET /organizations/{id}/identity-providers.
+	orgIdentityProviders map[string][]json.RawMessage
+
+	// orgIdentityProviderCalls counts those requests per organization ID.
+	orgIdentityProviderCalls map[string]int
 }
 
 func newFakeKeycloak(t *testing.T) *fakeKeycloak {
 	return &fakeKeycloak{
-		t:             t,
-		children:      map[string][]json.RawMessage{},
-		realmRoles:    map[string][]json.RawMessage{},
-		childrenCalls: map[string]int{},
+		t:                        t,
+		children:                 map[string][]json.RawMessage{},
+		realmRoles:               map[string][]json.RawMessage{},
+		childrenCalls:            map[string]int{},
+		orgIdentityProviders:     map[string][]json.RawMessage{},
+		orgIdentityProviderCalls: map[string]int{},
 	}
 }
 
@@ -88,6 +105,39 @@ func (f *fakeKeycloak) handler() http.Handler {
 
 	mux.HandleFunc("/admin/realms/test/components", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, f.components)
+	})
+
+	mux.HandleFunc("/admin/realms/test/identity-provider/instances", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, f.identityProviders)
+	})
+
+	mux.HandleFunc("/admin/realms/test/identity-provider/instances/", func(w http.ResponseWriter, r *http.Request) {
+		// Only /identity-provider/instances/{alias}/mappers is exercised.
+		if !strings.HasSuffix(r.URL.Path, "/mappers") {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, []json.RawMessage{})
+	})
+
+	mux.HandleFunc("/admin/realms/test/organizations", func(w http.ResponseWriter, r *http.Request) {
+		if f.organizations == nil {
+			http.Error(w, `{"error":"HTTP 404 Not Found"}`, http.StatusNotFound)
+			return
+		}
+		writeJSON(w, f.organizations)
+	})
+
+	mux.HandleFunc("/admin/realms/test/organizations/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/admin/realms/test/organizations/")
+		id, ok := strings.CutSuffix(rest, "/identity-providers")
+		idps, known := f.orgIdentityProviders[id]
+		if !ok || !known {
+			http.NotFound(w, r)
+			return
+		}
+		f.orgIdentityProviderCalls[id]++
+		writeJSON(w, idps)
 	})
 
 	mux.HandleFunc("/admin/realms/test/clients", func(w http.ResponseWriter, _ *http.Request) {
@@ -454,5 +504,99 @@ func TestExportComponents_SubComponentsReferenceParent(t *testing.T) {
 	}
 	if mapper.Spec.ParentComponentRef == nil || mapper.Spec.ParentComponentRef.Name != "userstorageprovider-corporate-ldap" {
 		t.Errorf("parentComponentRef = %+v, want the provider's CR name", mapper.Spec.ParentComponentRef)
+	}
+}
+
+// TestExportIdentityProviders_OrganizationRefFromOrganizationEndpoints verifies
+// that spec.organizationRef is derived from GET /organizations/{id}/identity-providers
+// rather than from organizationId on the identity provider, which Keycloak
+// 26.8 no longer populates (#198). The fixture mixes the 26.8 shape (no
+// organizationId at all) with a stale 26.0-style organizationId that must be
+// ignored and stripped.
+func TestExportIdentityProviders_OrganizationRefFromOrganizationEndpoints(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.identityProviders = []json.RawMessage{
+		// 26.8 shape: linked through the organization, nothing on the IdP.
+		mustJSON(t, map[string]any{"alias": "acme-sso", "providerId": "oidc", "internalId": "i-1"}),
+		// Stale 26.0-style field pointing at an organization that does not
+		// list this IdP: must neither produce a ref nor survive in definition.
+		mustJSON(t, map[string]any{"alias": "stale-sso", "providerId": "oidc", "organizationId": "org-2"}),
+		mustJSON(t, map[string]any{"alias": "plain-sso", "providerId": "saml"}),
+	}
+	fake.organizations = []json.RawMessage{
+		mustJSON(t, map[string]any{"id": "org-1", "name": "Acme Corp"}),
+		mustJSON(t, map[string]any{"id": "org-2", "name": "Globex"}),
+	}
+	fake.orgIdentityProviders["org-1"] = []json.RawMessage{
+		mustJSON(t, map[string]any{"alias": "acme-sso", "providerId": "oidc"}),
+	}
+	fake.orgIdentityProviders["org-2"] = []json.RawMessage{}
+
+	exp, _ := newTestExporter(t, fake)
+	resources, err := exp.exportIdentityProviders(context.Background())
+	if err != nil {
+		t.Fatalf("exportIdentityProviders: %v", err)
+	}
+
+	idps := map[string]*keycloakv1beta1.KeycloakIdentityProvider{}
+	for _, r := range resources {
+		if r.Kind != "KeycloakIdentityProvider" {
+			continue
+		}
+		idp, ok := r.Object.(*keycloakv1beta1.KeycloakIdentityProvider)
+		if !ok {
+			t.Fatalf("expected *KeycloakIdentityProvider, got %T", r.Object)
+		}
+		idps[r.Name] = idp
+	}
+	if len(idps) != 3 {
+		t.Fatalf("exported %d identity providers, want 3", len(idps))
+	}
+
+	if ref := idps["acme-sso"].Spec.OrganizationRef; ref == nil || ref.Name != "acme-corp" {
+		t.Errorf("acme-sso organizationRef = %v, want acme-corp", ref)
+	}
+	if ref := idps["stale-sso"].Spec.OrganizationRef; ref != nil {
+		t.Errorf("stale-sso organizationRef = %v, want none (organizationId on the IdP is not authoritative)", ref)
+	}
+	if ref := idps["plain-sso"].Spec.OrganizationRef; ref != nil {
+		t.Errorf("plain-sso organizationRef = %v, want none", ref)
+	}
+	for name, idp := range idps {
+		var def map[string]any
+		if err := json.Unmarshal(idp.Spec.Definition.Raw, &def); err != nil {
+			t.Fatalf("%s: unmarshal definition: %v", name, err)
+		}
+		if _, has := def["organizationId"]; has {
+			t.Errorf("%s: organizationId must be stripped from definition", name)
+		}
+	}
+	for _, id := range []string{"org-1", "org-2"} {
+		if n := fake.orgIdentityProviderCalls[id]; n != 1 {
+			t.Errorf("GET /organizations/%s/identity-providers called %d times, want 1", id, n)
+		}
+	}
+}
+
+// TestExportIdentityProviders_NoOrganizations covers a Keycloak without the
+// organizations feature: the 404 is tolerated and identity providers export
+// without organizationRef.
+func TestExportIdentityProviders_NoOrganizations(t *testing.T) {
+	fake := newFakeKeycloak(t)
+	fake.identityProviders = []json.RawMessage{
+		mustJSON(t, map[string]any{"alias": "plain-sso", "providerId": "saml"}),
+	}
+
+	exp, _ := newTestExporter(t, fake)
+	resources, err := exp.exportIdentityProviders(context.Background())
+	if err != nil {
+		t.Fatalf("exportIdentityProviders: %v", err)
+	}
+	if len(resources) != 1 {
+		t.Fatalf("exported %d resources, want 1", len(resources))
+	}
+	idp := resources[0].Object.(*keycloakv1beta1.KeycloakIdentityProvider)
+	if idp.Spec.OrganizationRef != nil {
+		t.Errorf("organizationRef = %v, want none", idp.Spec.OrganizationRef)
 	}
 }

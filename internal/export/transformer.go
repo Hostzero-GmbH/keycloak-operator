@@ -21,9 +21,10 @@ type TransformerOptions struct {
 // Transformer transforms Keycloak JSON to CRD structs
 type Transformer struct {
 	opts TransformerOptions
-	// organizationNames maps Keycloak organization IDs to the Kubernetes
-	// object name that TransformOrganization would emit (sanitizeName(org.name)).
-	organizationNames map[string]string
+	// identityProviderOrganizations maps an identity provider alias to the
+	// Kubernetes object name of the organization it is linked to (the name
+	// TransformOrganization would emit, sanitizeName(org.name)).
+	identityProviderOrganizations map[string]string
 }
 
 // NewTransformer creates a new transformer
@@ -31,10 +32,13 @@ func NewTransformer(opts TransformerOptions) *Transformer {
 	return &Transformer{opts: opts}
 }
 
-// SetOrganizationNames supplies a Keycloak organization ID → CR name map used
-// to emit spec.organizationRef on identity providers.
-func (t *Transformer) SetOrganizationNames(names map[string]string) {
-	t.organizationNames = names
+// SetIdentityProviderOrganizations supplies an identity provider alias →
+// organization CR name map used to emit spec.organizationRef. The map is
+// built from GET /organizations/{org}/identity-providers, the only view of the
+// link that every Keycloak version reports (26.8 no longer returns
+// organizationId on the identity provider itself).
+func (t *Transformer) SetIdentityProviderOrganizations(byAlias map[string]string) {
+	t.identityProviderOrganizations = byAlias
 }
 
 // TransformRealm transforms a realm JSON to KeycloakRealm
@@ -297,15 +301,15 @@ func (t *Transformer) TransformRole(raw json.RawMessage, clientID, clientUUID st
 // TransformIdentityProvider transforms an identity provider JSON to KeycloakIdentityProvider
 func (t *Transformer) TransformIdentityProvider(raw json.RawMessage) (ExportedResource, error) {
 	var parsed struct {
-		Alias          string `json:"alias"`
-		OrganizationID string `json:"organizationId"`
+		Alias string `json:"alias"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return ExportedResource{}, err
 	}
 
-	// Remove sensitive/server-managed fields. organizationId is a Keycloak UUID
-	// and is expressed as spec.organizationRef instead.
+	// Remove sensitive/server-managed fields. organizationId (still reported
+	// by Keycloak < 26.8) is a Keycloak UUID and is expressed as
+	// spec.organizationRef instead; the controller rejects it in definition.
 	definition := removeServerFields(raw, "internalId", "config.clientSecret", "organizationId")
 
 	idp := &keycloakv1beta1.KeycloakIdentityProvider{
@@ -326,10 +330,8 @@ func (t *Transformer) TransformIdentityProvider(raw json.RawMessage) (ExportedRe
 		},
 	}
 
-	if parsed.OrganizationID != "" {
-		if name, ok := t.organizationNames[parsed.OrganizationID]; ok {
-			idp.Spec.OrganizationRef = &keycloakv1beta1.ResourceRef{Name: name}
-		}
+	if name, ok := t.identityProviderOrganizations[parsed.Alias]; ok && name != "" {
+		idp.Spec.OrganizationRef = &keycloakv1beta1.ResourceRef{Name: name}
 	}
 
 	return ExportedResource{

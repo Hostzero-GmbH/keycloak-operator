@@ -16,10 +16,12 @@ func TestTransformIdentityProviderSetsAliasAndStripsOrganizationID(t *testing.T)
 		TargetNamespace: "ns",
 		RealmRef:        "my-realm",
 	})
-	transformer.SetOrganizationNames(map[string]string{
-		"org-uuid-1": "acme-corp",
+	transformer.SetIdentityProviderOrganizations(map[string]string{
+		"acme-sso": "acme-corp",
 	})
 
+	// organizationId is what Keycloak < 26.8 reports; it must be stripped
+	// whether or not it is present.
 	raw := json.RawMessage(`{
 		"alias": "acme-sso",
 		"internalId": "idp-internal",
@@ -50,12 +52,18 @@ func TestTransformIdentityProviderSetsAliasAndStripsOrganizationID(t *testing.T)
 	require.False(t, hasSecret)
 }
 
-func TestTransformIdentityProviderDropsUnresolvedOrganizationID(t *testing.T) {
+// TestTransformIdentityProviderIgnoresOrganizationIDOnRepresentation pins
+// that organizationId on the identity provider itself is never the source of
+// spec.organizationRef: only the alias map from the organization endpoints is.
+func TestTransformIdentityProviderIgnoresOrganizationIDOnRepresentation(t *testing.T) {
 	t.Parallel()
 
 	transformer := NewTransformer(TransformerOptions{
 		TargetNamespace: "ns",
 		RealmRef:        "my-realm",
+	})
+	transformer.SetIdentityProviderOrganizations(map[string]string{
+		"some-other-idp": "acme-corp",
 	})
 
 	raw := json.RawMessage(`{

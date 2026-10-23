@@ -193,7 +193,7 @@ Sub-components, such as the mappers of an LDAP provider, are exported with `pare
 
 The exported `KeycloakRealm` carries the realm's own attributes only. Nested collections such as `clients`, `identityProviders` or `authenticationFlows` become resources of their own kinds and are stripped from the realm definition, which would reject them (see [Nested Resources](./crds/keycloakrealm.md#nested-resources)).
 
-Identity providers linked to an organization are exported with `spec.organizationRef` pointing at the generated `KeycloakOrganization` (named from the organization name). The Keycloak `organizationId` UUID is stripped from `definition` so the exported manifest applies without being rejected. If the organization cannot be resolved (for example it was deleted), the field is dropped and a warning is logged.
+Identity providers linked to an organization are exported with `spec.organizationRef` pointing at the generated `KeycloakOrganization` (named from the organization name). The links are read from each organization's identity-provider list (`GET /admin/realms/{realm}/organizations/{id}/identity-providers`), which is the only place Keycloak 26.8 reports them; the `organizationId` field some older versions return on the identity provider itself is ignored and stripped from `definition` so the exported manifest applies without being rejected. An identity provider that Keycloak 26.8 links to several organizations is exported with the first one in organization-name order, since `organizationRef` holds a single reference.
 
 ### Skip Built-in Resources
 
