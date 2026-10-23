@@ -157,7 +157,7 @@ To map an identity provider to an organization, set `organizationRef` to a `Keyc
 
 Changing `organizationRef` to another organization unlinks the identity provider from the previous one before linking it to the new one. Removing `organizationRef` unlinks it and clears `status.organizationID`; the identity provider itself is kept.
 
-This requires **Keycloak 26.0.0 or later**. Do not set `organizationId` inside `definition` — that field is rejected with `Ready=False` and reason `InvalidDefinition`. Keycloak 26.8 moved identity-provider-to-organization links to a many-to-many model and ignores `organizationId` on the identity provider representation entirely, which is why the operator uses the organization endpoints instead; they behave the same on 26.0 and 26.8. From the operator's side an identity provider is linked to at most one organization: `organizationRef` is a single reference, and links to other organizations made outside the operator are left untouched. Organizations created outside the operator can be adopted with a `KeycloakOrganization` CR, then referenced here.
+This requires **Keycloak 26.0.0 or later**. Do not set `organizationId` or `organizationLinks` inside `definition` — both are rejected with `Ready=False` and reason `InvalidDefinition`. Keycloak 26.8 moved identity-provider-to-organization links to a many-to-many model and ignores `organizationId` on the identity provider representation entirely, which is why the operator uses the organization endpoints instead; they behave the same on 26.0 and 26.8. From the operator's side an identity provider is linked to at most one organization: `organizationRef` is a single reference, and links to other organizations made outside the operator are left untouched. Organizations created outside the operator can be adopted with a `KeycloakOrganization` CR, then referenced here.
 
 ```yaml
 apiVersion: keycloak.hostzero.com/v1beta1
@@ -353,6 +353,6 @@ kubectl get kcidp
 ## Notes
 
 - Use `configSecretRef` to store sensitive values like `clientId` and `clientSecret` in a Kubernetes Secret (see [Config from Secret](#config-from-secret) and [Secret references](./secrets.md))
-- Use `organizationRef` to bind the identity provider to a [KeycloakOrganization](./keycloakorganization.md) (Keycloak 26+). Do not set `organizationId` in `definition`.
+- Use `organizationRef` to bind the identity provider to a [KeycloakOrganization](./keycloakorganization.md) (Keycloak 26+). Do not set `organizationId` or `organizationLinks` in `definition`.
 - Consider using `syncMode: IMPORT` to import users on first login
 - Mappers must be managed via [KeycloakIdentityProviderMapper](./keycloakidentityprovidermapper.md). Embedding `mappers` inside this CR's `definition` is silently ignored by Keycloak on update — the field is only consumed during realm import.

@@ -3,7 +3,8 @@ name: E2E
 # Full end-to-end suite against a Kind cluster with the operator and Keycloak
 # deployed. It does not run on its own: a repo admin or maintainer starts it by
 # commenting "/e2e" on a pull request, or via "Run workflow" with a PR number.
-# The result lands as a commit status on the PR's head commit.
+# The suite runs once per Keycloak version in the matrix, in parallel, and
+# each lane lands as its own commit status on the PR's head commit.
 #
 # Comment-triggered workflows always run this file as it is on main, so a PR
 # cannot change the job itself; only the PR's code under test runs here. The
@@ -28,21 +29,35 @@ permissions:
 env:
   GO_VERSION: '1.26'
   KIND_VERSION: v0.33.0
-  STATUS_CONTEXT: E2E (kind)
 
 jobs:
   e2e:
-    name: E2E (kind)
+    name: E2E (kind, Keycloak ${{ matrix.keycloak }})
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request && startsWith(github.event.comment.body, '/e2e'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # Latest patch of each line the suite runs against (floating minor
+        # tags; bump the 26 minor when Keycloak releases one). The local
+        # manifest pins 26.0; the script swaps image and features per lane.
+        # Keycloak 26.2 split token-exchange and admin-fine-grained-authz into
+        # V1/V2 with V2 as default; the operator's IdP token exchange uses V1,
+        # so newer lanes need the :v1 suffixes and older ones the bare names.
+        include:
+          - keycloak: "25.0"
+            features: admin-fine-grained-authz,token-exchange
+          - keycloak: "26.8"
+            features: admin-fine-grained-authz:v1,token-exchange:v1
     concurrency:
-      group: e2e-${{ github.event.issue.number || github.event.inputs.pr }}
+      group: e2e-${{ github.event.issue.number || github.event.inputs.pr }}-${{ matrix.keycloak }}
       cancel-in-progress: true
     env:
       GH_TOKEN: ${{ github.token }}
+      STATUS_CONTEXT: E2E (kind, Keycloak ${{ matrix.keycloak }})
       PR_NUMBER: ${{ github.event.issue.number || github.event.inputs.pr }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
@@ -95,6 +110,8 @@ jobs:
       - name: Create cluster, deploy operator and Keycloak
         env:
           KIND_CONFIG: ${{ github.workspace }}/hack/kind-config-ci.yaml
+          KEYCLOAK_IMAGE: quay.io/keycloak/keycloak:${{ matrix.keycloak }}
+          KEYCLOAK_FEATURES: ${{ matrix.features }}
         run: ./hack/setup-kind.sh all
 
       - name: Wait for the operator to connect to Keycloak

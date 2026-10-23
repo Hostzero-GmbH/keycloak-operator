@@ -551,13 +551,11 @@ func TestExportRoundTrip(t *testing.T) {
 	require.Equal(t, orgName, targetIDP.Spec.OrganizationRef.Name)
 	require.Equal(t, targetOrg.Status.OrganizationID, targetIDP.Status.OrganizationID)
 
-	raw, err := kc.GetIdentityProviderRaw(ctx, targetRealm, idpAlias)
-	require.NoError(t, err)
-	var parsed struct {
-		OrganizationID string `json:"organizationId"`
-	}
-	require.NoError(t, json.Unmarshal(raw, &parsed))
-	require.Equal(t, targetOrg.Status.OrganizationID, parsed.OrganizationID)
+	// The organization side is the authoritative view of the link: Keycloak
+	// 26.8 keeps it in a join table and does not reliably report
+	// organizationId on the identity provider representation (#198).
+	require.True(t, organizationLinksIdentityProvider(t, kc, targetRealm, targetOrg.Status.OrganizationID, idpAlias),
+		"identity provider %s is not linked to organization %s in the target realm", idpAlias, targetOrg.Status.OrganizationID)
 
 	// Third leg: export the target realm with the same options and compare it
 	// against the first export. Applying cleanly and reporting Ready does not
