@@ -189,6 +189,8 @@ Available resource types for filtering:
 | `protocol-mappers` | Token claim mappers |
 | `organizations` | Organizations (Keycloak 26+) |
 
+A user's group memberships are not part of the Keycloak user representation. When both `users` and `groups` are exported, each `KeycloakUser` gets `spec.groups` with the memberships as absolute paths (`/developers`, `/engineering/team-alpha`), which is how [KeycloakUser](./crds/keycloakuser.md#roles-and-groups) reconciles them; a user without memberships leaves `spec.groups` unset. Apply the exported groups before the users, otherwise the operator skips the unknown groups until its next sync.
+
 The exported `KeycloakRealm` carries the realm's own attributes only. Nested collections such as `clients`, `identityProviders` or `authenticationFlows` become resources of their own kinds and are stripped from the realm definition, which would reject them (see [Nested Resources](./crds/keycloakrealm.md#nested-resources)).
 
 Identity providers linked to an organization are exported with `spec.organizationRef` pointing at the generated `KeycloakOrganization` (named from the organization name). The Keycloak `organizationId` UUID is stripped from `definition` so the exported manifest applies without being rejected. If the organization cannot be resolved (for example it was deleted), the field is dropped and a warning is logged.
