@@ -21,7 +21,7 @@ All of them are public, no credentials needed on the connected side.
 On a host with internet access and access to the internal registry:
 
 ```bash
-export VERSION=0.13.1
+export VERSION=0.14.0
 export MIRROR=registry.example.internal/hostzero-gmbh
 
 # Image, all architectures
