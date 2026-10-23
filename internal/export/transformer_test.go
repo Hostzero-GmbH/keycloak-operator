@@ -98,7 +98,7 @@ func TestTransformComponentStripsBindCredential(t *testing.T) {
 		}
 	}`)
 
-	resource, err := transformer.TransformComponent(raw)
+	resource, err := transformer.TransformComponent(raw, "")
 	require.NoError(t, err)
 
 	component := resource.Object.(*keycloakv1beta1.KeycloakComponent)
@@ -177,4 +177,49 @@ func TestTransformRealm_StripsNestedCollections(t *testing.T) {
 	if def["enabled"] != true || def["browserFlow"] != "custom-browser" {
 		t.Errorf("top-level attributes were not preserved: %v", def)
 	}
+}
+
+// A sub-component (an LDAP mapper under its provider) is exported with
+// parentComponentRef instead of realmRef, keeps its parent's CR name as a
+// prefix so sibling mappers under other providers do not collide, and still
+// has parentId stripped: the controller injects it from the reference (#167).
+func TestTransformComponentSubComponentParentRef(t *testing.T) {
+	t.Parallel()
+
+	transformer := NewTransformer(TransformerOptions{TargetNamespace: "ns", RealmRef: "my-realm"})
+
+	provider, err := transformer.TransformComponent(json.RawMessage(`{
+		"id": "ldap-id",
+		"parentId": "realm-id",
+		"name": "corporate-ldap",
+		"providerId": "ldap",
+		"providerType": "org.keycloak.storage.UserStorageProvider",
+		"config": {"enabled": ["true"]}
+	}`), "")
+	require.NoError(t, err)
+	require.Equal(t, "userstorageprovider-corporate-ldap", provider.Name)
+
+	mapper, err := transformer.TransformComponent(json.RawMessage(`{
+		"id": "mapper-id",
+		"parentId": "ldap-id",
+		"name": "username",
+		"providerId": "user-attribute-ldap-mapper",
+		"providerType": "org.keycloak.storage.ldap.mappers.LDAPStorageMapper",
+		"config": {"ldap.attribute": ["uid"]}
+	}`), provider.Name)
+	require.NoError(t, err)
+
+	component := mapper.Object.(*keycloakv1beta1.KeycloakComponent)
+	require.Equal(t, "userstorageprovider-corporate-ldap-ldapstoragemapper-username", mapper.Name)
+	require.Nil(t, component.Spec.RealmRef, "sub-component must not carry realmRef")
+	require.Nil(t, component.Spec.ClusterRealmRef)
+	require.NotNil(t, component.Spec.ParentComponentRef)
+	require.Equal(t, provider.Name, component.Spec.ParentComponentRef.Name)
+	require.Equal(t, "username", *component.Spec.Name)
+
+	var def map[string]interface{}
+	require.NoError(t, json.Unmarshal(component.Spec.Definition.Raw, &def))
+	_, hasParent := def["parentId"]
+	require.False(t, hasParent, "parentId is injected by the controller")
+	require.Equal(t, "org.keycloak.storage.ldap.mappers.LDAPStorageMapper", def["providerType"])
 }

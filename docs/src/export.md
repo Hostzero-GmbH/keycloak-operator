@@ -189,6 +189,8 @@ Available resource types for filtering:
 | `protocol-mappers` | Token claim mappers |
 | `organizations` | Organizations (Keycloak 26+) |
 
+Sub-components, such as the mappers of an LDAP provider, are exported with `parentComponentRef` pointing at their parent's resource, and their resource name is prefixed with the parent's. A sub-component whose parent is not exported (for example a key provider skipped by `--skip-defaults`) is left out rather than exported with a dangling reference.
+
 The exported `KeycloakRealm` carries the realm's own attributes only. Nested collections such as `clients`, `identityProviders` or `authenticationFlows` become resources of their own kinds and are stripped from the realm definition, which would reject them (see [Nested Resources](./crds/keycloakrealm.md#nested-resources)).
 
 Identity providers linked to an organization are exported with `spec.organizationRef` pointing at the generated `KeycloakOrganization` (named from the organization name). The Keycloak `organizationId` UUID is stripped from `definition` so the exported manifest applies without being rejected. If the organization cannot be resolved (for example it was deleted), the field is dropped and a warning is logged.
