@@ -151,6 +151,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Definition: rawJSON(`{
 					"enabled": true,
 					"smtpServer": {
+						"from": "noreply@example.com",
 						"host": "smtp.example.com",
 						"port": "587",
 						"starttls": "true",
@@ -232,6 +233,7 @@ func TestKeycloakRealmE2E(t *testing.T) {
 				Definition: rawJSON(`{
 					"enabled": true,
 					"smtpServer": {
+						"from": "noreply@example.com",
 						"host": "smtp.example.com",
 						"port": "465"
 					}

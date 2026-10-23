@@ -177,7 +177,7 @@ spec:
       auth: "true"
 ```
 
-The operator reads the `user` and `password` values from the referenced secret and injects them into `smtpServer` before sending the realm configuration to Keycloak. The secret must exist in the same namespace as the `KeycloakRealm`.
+The operator reads the `user` and `password` values from the referenced secret and injects them into `smtpServer` before sending the realm configuration to Keycloak. Always set `from`: Keycloak 26.8 and later reject a realm whose `smtpServer` has no sender address (`Invalid sender address 'null'`), which surfaces as `CreateFailed` or `UpdateFailed` on the realm. The secret must exist in the same namespace as the `KeycloakRealm`.
 
 For `ClusterKeycloakRealm`, the secret namespace must be specified explicitly:
 
