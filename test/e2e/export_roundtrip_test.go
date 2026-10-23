@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -500,23 +501,42 @@ func TestExportRoundTrip(t *testing.T) {
 	// server and later re-read, which fills in metadata and status.
 	firstExport := exportedAsJSON(t, resources, expected)
 
-	var applied []client.Object
-	for key, res := range byKey {
-		obj, ok := res.Object.(client.Object)
-		require.True(t, ok, "exported %s is not a client.Object", key)
-		// The export strips the masked bind credential; wire the Secret back
-		// in, as the export docs tell users to.
-		if comp, isComponent := obj.(*keycloakv1beta1.KeycloakComponent); isComponent && comp.Name == ldapProviderCR {
-			comp.Spec.ConfigSecretRef = &keycloakv1beta1.ConfigSecretRef{Name: ldapSecretName}
-		}
-		require.NoError(t, k8sClient.Create(ctx, obj), "create exported %s", key)
-		t.Cleanup(func() { _ = k8sClient.Delete(ctx, obj) })
-		applied = append(applied, obj)
+	// Apply in dependency tiers and wait between them, as the export docs
+	// tell users to. A KeycloakUser whose group does not exist yet becomes
+	// Ready with that membership skipped until the operator's next sync
+	// period, so users go after groups and role mappings after users.
+	tiers := [][]string{
+		{"KeycloakClientScope", "KeycloakClient", "KeycloakGroup", "KeycloakRole", "KeycloakComponent",
+			"KeycloakOrganization", "KeycloakIdentityProvider", "KeycloakIdentityProviderMapper", "KeycloakProtocolMapper"},
+		{"KeycloakUser"},
+		{"KeycloakRoleMapping"},
 	}
-
 	roundTripTimeout := 3 * time.Minute
-	for _, obj := range applied {
-		waitObjectReady(t, obj, roundTripTimeout)
+	covered := map[string]bool{}
+	for _, tier := range tiers {
+		var applied []client.Object
+		for key, res := range byKey {
+			if !slices.Contains(tier, res.Kind) {
+				continue
+			}
+			covered[key] = true
+			obj, ok := res.Object.(client.Object)
+			require.True(t, ok, "exported %s is not a client.Object", key)
+			// The export strips the masked bind credential; wire the Secret
+			// back in, as the export docs tell users to.
+			if comp, isComponent := obj.(*keycloakv1beta1.KeycloakComponent); isComponent && comp.Name == ldapProviderCR {
+				comp.Spec.ConfigSecretRef = &keycloakv1beta1.ConfigSecretRef{Name: ldapSecretName}
+			}
+			require.NoError(t, k8sClient.Create(ctx, obj), "create exported %s", key)
+			t.Cleanup(func() { _ = k8sClient.Delete(ctx, obj) })
+			applied = append(applied, obj)
+		}
+		for _, obj := range applied {
+			waitObjectReady(t, obj, roundTripTimeout)
+		}
+	}
+	for key := range byKey {
+		require.True(t, covered[key], "no apply tier covers %s", key)
 	}
 
 	targetOrg := &keycloakv1beta1.KeycloakOrganization{}
