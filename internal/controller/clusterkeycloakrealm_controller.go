@@ -64,6 +64,8 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 			// Delete realm from Keycloak unless preserve annotation is set
 			if ShouldPreserveResource(realm) {
 				log.Info("preserving realm in Keycloak due to annotation", "annotation", PreserveResourceAnnotation)
+			} else if realm.Spec.ManagementPolicy.IsObserve() {
+				log.Info("preserving realm in Keycloak due to managementPolicy Observe")
 			} else if err := r.deleteRealm(ctx, realm); err != nil {
 				log.Error(err, "failed to delete realm from Keycloak")
 				// Continue with finalizer removal even on error
@@ -122,6 +124,17 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	if err := persistResolvedIdentifier(ctx, r.Client, realm, &realm.Status.RealmName, realmName); err != nil {
 		return ctrl.Result{}, err
+	}
+
+	// managementPolicy Observe: read the realm, report readiness and drift,
+	// never write to Keycloak.
+	if realm.Spec.ManagementPolicy.IsObserve() {
+		obs := observeRealm(ctx, kc, realm.Spec.Definition.Raw, realmName)
+		if !obs.Ready {
+			RecordError(controllerName, obs.errorLabel())
+		}
+		recordObservation(obs, &realm.Status.Conditions, &realm.Status.ResourcePath, fmt.Sprintf("/admin/realms/%s", realmName))
+		return r.updateStatus(ctx, realm, obs.Ready, obs.Reason, obs.Message, instanceRef)
 	}
 
 	// Build the effective definition, injecting the resolved realm name and SMTP
@@ -271,6 +284,9 @@ func (r *ClusterKeycloakRealmReconciler) updateStatus(ctx context.Context, realm
 	realm.Status.Instance = instanceRef
 
 	realm.Status.Conditions = setReadyCondition(realm.Status.Conditions, ready, status, message)
+	if !realm.Spec.ManagementPolicy.IsObserve() {
+		removeDriftedCondition(&realm.Status.Conditions)
+	}
 
 	return writeStatusIfChanged(ctx, r.Client, realm, ready)
 }
