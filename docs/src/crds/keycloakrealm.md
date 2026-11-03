@@ -26,6 +26,10 @@ spec:
   
   # Required: Realm name in Keycloak (do NOT set realm in definition)
   realmName: my-realm
+
+  # Optional: Manage (default) or Observe. Observe only reads the realm:
+  # no create, no update, no delete. See "Management Policy" in the CRD overview.
+  # managementPolicy: Observe
   
   # Required: Realm definition (Keycloak RealmRepresentation)
   definition:
@@ -322,6 +326,26 @@ spec:
 ```
 
 See [Common Patterns](../crds.md#preserving-resources-on-deletion) for more details.
+
+## Observing a Realm Owned Elsewhere
+
+To use a realm that another operator owns (for example on another cluster sharing the same Keycloak instance) without writing to it, set `managementPolicy: Observe`:
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRealm
+metadata:
+  name: shared-realm
+spec:
+  instanceRef:
+    name: my-keycloak
+  realmName: shared-realm
+  managementPolicy: Observe
+  definition:
+    enabled: true   # compared with the live realm, never applied
+```
+
+The CR becomes `Ready` with reason `Observed` when the realm exists, so clients, groups and other CRs can reference it. A difference between `definition` and the live realm sets the `Drifted` condition to `True`. Deleting the CR never deletes the realm. See [Management Policy](../crds.md#management-policy) for the full behavior.
 
 ## Short Names
 
