@@ -32,6 +32,11 @@ spec:
       jsonPath: .status.status
       name: Status
       type: string
+    - description: Management policy
+      jsonPath: .spec.managementPolicy
+      name: Policy
+      priority: 1
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -88,6 +93,18 @@ spec:
                 required:
                 - name
                 type: object
+              managementPolicy:
+                default: Manage
+                description: |-
+                  ManagementPolicy controls whether the operator writes to the realm in
+                  Keycloak. Manage (default) creates, updates and deletes it. Observe only
+                  reads it: the CR becomes Ready when the realm exists, definition is
+                  compared to report drift, smtpSecretRef is ignored, and deleting the CR
+                  never deletes the realm. Switch to Manage to take ownership.
+                enum:
+                - Manage
+                - Observe
+                type: string
               realmName:
                 description: |-
                   RealmName is the name of the realm in Keycloak. It is immutable once set:

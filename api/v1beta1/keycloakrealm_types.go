@@ -49,6 +49,15 @@ type KeycloakRealmSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	RealmName *string `json:"realmName,omitempty"`
 
+	// ManagementPolicy controls whether the operator writes to the realm in
+	// Keycloak. Manage (default) creates, updates and deletes it. Observe only
+	// reads it: the CR becomes Ready when the realm exists, definition is
+	// compared to report drift, smtpSecretRef is ignored, and deleting the CR
+	// never deletes the realm. Switch to Manage to take ownership.
+	// +kubebuilder:default=Manage
+	// +optional
+	ManagementPolicy ManagementPolicy `json:"managementPolicy,omitempty"`
+
 	// SmtpSecretRef is a reference to a Kubernetes Secret containing SMTP credentials.
 	// When set, the secret values are injected into definition.smtpServer.user and
 	// definition.smtpServer.password before syncing to Keycloak, so credentials
@@ -166,6 +175,7 @@ type RealmRef struct {
 // +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`,description="Whether the realm is ready"
 // +kubebuilder:printcolumn:name="Realm",type=string,JSONPath=`.status.realmName`,description="Realm name in Keycloak"
 // +kubebuilder:printcolumn:name="Status",type=string,JSONPath=`.status.status`,description="Status message"
+// +kubebuilder:printcolumn:name="Policy",type=string,JSONPath=`.spec.managementPolicy`,description="Management policy",priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 // +kubebuilder:resource:shortName=kcrm,categories={keycloak,all}
 

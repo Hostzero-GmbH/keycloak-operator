@@ -319,6 +319,81 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 		}
 	})
 
+	t.Run("KeycloakRealm managementPolicy defaults to Manage", func(t *testing.T) {
+		realmName := "policy-default"
+		realm := &KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{Name: "realm-policy-default", Namespace: namespace},
+			Spec: KeycloakRealmSpec{
+				InstanceRef: &ResourceRef{Name: "instance"},
+				RealmName:   &realmName,
+				Definition:  runtime.RawExtension{Raw: []byte(`{}`)},
+			},
+		}
+		if err := k8sClient.Create(ctx, realm); err != nil {
+			t.Fatalf("create realm: %v", err)
+		}
+		if realm.Spec.ManagementPolicy != ManagementPolicyManage {
+			t.Fatalf("managementPolicy = %q, want %q", realm.Spec.ManagementPolicy, ManagementPolicyManage)
+		}
+
+		// The policy is mutable in both directions.
+		realm.Spec.ManagementPolicy = ManagementPolicyObserve
+		if err := k8sClient.Update(ctx, realm); err != nil {
+			t.Fatalf("switch to Observe: %v", err)
+		}
+		realm.Spec.ManagementPolicy = ManagementPolicyManage
+		if err := k8sClient.Update(ctx, realm); err != nil {
+			t.Fatalf("switch back to Manage: %v", err)
+		}
+	})
+
+	t.Run("KeycloakRealm rejects an unknown managementPolicy", func(t *testing.T) {
+		realmName := "policy-invalid"
+		err := k8sClient.Create(ctx, &KeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{Name: "realm-policy-invalid", Namespace: namespace},
+			Spec: KeycloakRealmSpec{
+				InstanceRef:      &ResourceRef{Name: "instance"},
+				RealmName:        &realmName,
+				ManagementPolicy: "ReadOnly",
+				Definition:       runtime.RawExtension{Raw: []byte(`{}`)},
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "Unsupported value") {
+			t.Fatalf("expected enum error, got %v", err)
+		}
+	})
+
+	t.Run("ClusterKeycloakRealm accepts Observe with a definition", func(t *testing.T) {
+		realmName := "policy-observe"
+		realm := &ClusterKeycloakRealm{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-realm-policy-observe"},
+			Spec: ClusterKeycloakRealmSpec{
+				ClusterInstanceRef: &ClusterResourceRef{Name: "instance"},
+				RealmName:          &realmName,
+				ManagementPolicy:   ManagementPolicyObserve,
+				Definition:         runtime.RawExtension{Raw: []byte(`{}`)},
+			},
+		}
+		if err := k8sClient.Create(ctx, realm); err != nil {
+			t.Fatalf("create cluster realm: %v", err)
+		}
+	})
+
+	t.Run("ClusterKeycloakRealm requires a definition in Observe mode", func(t *testing.T) {
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(GroupVersion.WithKind("ClusterKeycloakRealm"))
+		obj.SetName("cluster-realm-policy-no-definition")
+		obj.Object["spec"] = map[string]interface{}{
+			"clusterInstanceRef": map[string]interface{}{"name": "instance"},
+			"realmName":          "policy-no-definition",
+			"managementPolicy":   "Observe",
+		}
+		err := k8sClient.Create(ctx, obj)
+		if err == nil || !strings.Contains(err.Error(), "spec.definition: Required value") {
+			t.Fatalf("expected required definition error, got %v", err)
+		}
+	})
+
 	t.Run("KeycloakComponent rejects a parentComponentRef change", func(t *testing.T) {
 		component := &KeycloakComponent{}
 		if err := k8sClient.Get(ctx, client.ObjectKey{Name: "component-parent", Namespace: namespace}, component); err != nil {
