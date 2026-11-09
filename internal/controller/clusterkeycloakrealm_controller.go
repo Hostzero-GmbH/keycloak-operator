@@ -160,13 +160,15 @@ func (r *ClusterKeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl
 		definition = mergeIDIntoDefinition(definition, idFromRaw(currentRaw))
 		definition = preserveRealmFieldsResetOnUpdate(definition, currentRaw)
 
-		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash
+		hashChanged := desiredHash != realm.Status.LastAppliedDefinitionHash
+		needsUpdate := hashChanged
 		if !needsUpdate {
 			needsUpdate = !realmDefinitionsMatch(definition, currentRaw)
 		}
 
 		if needsUpdate {
-			log.Info("updating realm", "realm", realmName)
+			driftKeys, _ := realmDriftKeys(definition, currentRaw)
+			log.Info("updating realm", withDriftKeys(driftKeys, "realm", realmName, "definitionHashChanged", hashChanged)...)
 			if err := kc.UpdateRealm(ctx, realmName, definition); err != nil {
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, realm, false, "UpdateFailed", fmt.Sprintf("Failed to update realm: %v", err), instanceRef)

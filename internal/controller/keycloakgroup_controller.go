@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"sort"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -170,21 +172,79 @@ func (r *KeycloakGroupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		log.Info("group created successfully", "name", groupDef.Name, "id", groupID)
 	} else {
-		// Group exists, update it
+		// Group exists — check if update is needed
 		groupID = *existingGroup.ID
 		definition = mergeIDIntoDefinition(definition, existingGroup.ID)
 
-		log.Info("updating group", "name", groupDef.Name, "realm", realmName)
-		if err := kc.UpdateGroup(ctx, realmName, groupID, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, group, false, "UpdateFailed", fmt.Sprintf("Failed to update group: %v", err), groupID)
+		// The group listing omits attributes and roles, so fetch the full
+		// representation for drift detection.
+		currentRaw, fetchErr := kc.GetGroupRaw(ctx, realmName, groupID)
+
+		needsUpdate := true
+		if fetchErr != nil {
+			log.Error(fetchErr, "failed to fetch current group state, falling through to update")
+		} else if currentRaw != nil {
+			needsUpdate = !groupDefinitionsMatch(definition, currentRaw)
 		}
-		log.Info("group updated successfully", "name", groupDef.Name)
+
+		if needsUpdate {
+			driftKeys, _ := groupDriftKeys(definition, currentRaw)
+			log.Info("updating group", withDriftKeys(driftKeys, "name", groupDef.Name, "realm", realmName)...)
+			if err := kc.UpdateGroup(ctx, realmName, groupID, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, group, false, "UpdateFailed", fmt.Sprintf("Failed to update group: %v", err), groupID)
+			}
+			log.Info("group updated successfully", "name", groupDef.Name)
+		} else {
+			log.V(1).Info("group already in sync, skipping update", "name", groupDef.Name)
+		}
 	}
 
 	// Update status
 	group.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s/groups/%s", realmName, groupID)
 	return r.updateStatus(ctx, group, true, "Ready", "Group synchronized", groupID)
+}
+
+// groupDefinitionsMatch is definitionsMatch for groups. A group PUT replaces
+// attributes and Keycloak adds none of its own, so an attribute dropped from the
+// CR counts as drift although definitionsMatch accepts the extra entries.
+func groupDefinitionsMatch(desired, current json.RawMessage) bool {
+	keys, err := groupDriftKeys(desired, current)
+	return err == nil && len(keys) == 0
+}
+
+// groupDriftKeys names the top-level keys in which the desired group differs
+// from the current one, with attributes reported when entries were dropped.
+func groupDriftKeys(desired, current json.RawMessage) ([]string, error) {
+	keys, err := definitionDriftKeys(desired, current)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(keys, "attributes") && attributesDropped(desired, current) {
+		keys = append(keys, "attributes")
+		sort.Strings(keys)
+	}
+	return keys, nil
+}
+
+// attributesDropped reports whether current holds an attribute that the desired
+// definition, when it carries an attributes object, no longer lists.
+func attributesDropped(desired, current json.RawMessage) bool {
+	var desiredGroup, currentGroup struct {
+		Attributes map[string]json.RawMessage `json:"attributes"`
+	}
+	if json.Unmarshal(desired, &desiredGroup) != nil || json.Unmarshal(current, &currentGroup) != nil {
+		return false
+	}
+	if desiredGroup.Attributes == nil {
+		return false
+	}
+	for name := range currentGroup.Attributes {
+		if _, listed := desiredGroup.Attributes[name]; !listed {
+			return true
+		}
+	}
+	return false
 }
 
 // findTopLevelGroupByName returns the first group in the list whose name

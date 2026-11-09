@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"testing"
 )
 
@@ -980,6 +981,93 @@ func TestOrganizationDefinitionsMatch_RedirectUrlDrift(t *testing.T) {
 
 	if organizationDefinitionsMatch(desired, current) {
 		t.Error("expected no match: desired redirectUrl missing from current")
+	}
+}
+
+func TestRealmDriftKeys_MaskedSmtpPasswordIsNotDrift(t *testing.T) {
+	// Only displayName is named: the masked smtpServer.password must not show
+	// up as a key that differs.
+	desired := json.RawMessage(`{"realm":"r","displayName":"new","smtpServer":{"host":"smtp.example.com","password":"plaintext"}}`)
+	current := json.RawMessage(`{"realm":"r","displayName":"old","smtpServer":{"host":"smtp.example.com","password":"**********"}}`)
+
+	keys, err := realmDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("realmDriftKeys: %v", err)
+	}
+	if want := []string{"displayName"}; !slices.Equal(keys, want) {
+		t.Errorf("realmDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestRealmDriftKeys_InvalidJSON(t *testing.T) {
+	if _, err := realmDriftKeys(json.RawMessage(`not json`), json.RawMessage(`{}`)); err == nil {
+		t.Error("expected an error for an invalid desired definition")
+	}
+}
+
+func TestOrganizationDriftKeys_DomainsVerifiedIsNotDrift(t *testing.T) {
+	// Only description is named: the server-set domains[].verified must not show
+	// up as a key that differs.
+	desired := json.RawMessage(`{"name":"acme","description":"new","domains":[{"name":"acme.com"}]}`)
+	current := json.RawMessage(`{"id":"x","name":"acme","description":"old","domains":[{"name":"acme.com","verified":true}]}`)
+
+	keys, err := organizationDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("organizationDriftKeys: %v", err)
+	}
+	if want := []string{"description"}; !slices.Equal(keys, want) {
+		t.Errorf("organizationDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestWithDriftKeys(t *testing.T) {
+	got := withDriftKeys([]string{"attributes", "name"}, "name", "my-group", "realm", "demo")
+	want := []interface{}{"name", "my-group", "realm", "demo", "driftKeys", []string{"attributes", "name"}}
+	if len(got) != len(want) {
+		t.Fatalf("withDriftKeys returned %d values, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want[:len(want)-1] {
+		if got[i] != want[i] {
+			t.Errorf("value %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+	if keys, ok := got[len(got)-1].([]string); !ok || !slices.Equal(keys, []string{"attributes", "name"}) {
+		t.Errorf("driftKeys value = %v, want [attributes name]", got[len(got)-1])
+	}
+}
+
+func TestWithDriftKeys_NothingToNameLeavesValuesAlone(t *testing.T) {
+	// A nil or empty list must not add a "driftKeys": null entry to the log line,
+	// for instance when the current state could not be fetched.
+	for _, keys := range [][]string{nil, {}} {
+		got := withDriftKeys(keys, "name", "my-group")
+		if len(got) != 2 || got[0] != "name" || got[1] != "my-group" {
+			t.Errorf("withDriftKeys(%v) = %v, want the values unchanged", keys, got)
+		}
+	}
+}
+
+func TestFindRawByName(t *testing.T) {
+	items := []json.RawMessage{
+		json.RawMessage(`{"id":"1","name":"first"}`),
+		json.RawMessage(`not json`),
+		json.RawMessage(`{"name":"no-id"}`),
+		json.RawMessage(`{"id":"2","name":"second","config":{"a":"b"}}`),
+	}
+
+	id, raw := findRawByName(items, "second")
+	if id != "2" || string(raw) != `{"id":"2","name":"second","config":{"a":"b"}}` {
+		t.Errorf("findRawByName(second) = %q, %s", id, raw)
+	}
+
+	for _, name := range []string{"no-id", "missing"} {
+		if id, raw := findRawByName(items, name); id != "" || raw != nil {
+			t.Errorf("findRawByName(%s) = %q, %s; want nothing (unknown name, or no id to address it by)", name, id, raw)
+		}
+	}
+
+	if id, raw := findRawByName(nil, "first"); id != "" || raw != nil {
+		t.Errorf("findRawByName on an empty listing = %q, %s; want nothing", id, raw)
 	}
 }
 
