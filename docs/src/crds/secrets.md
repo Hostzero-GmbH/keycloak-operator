@@ -83,6 +83,7 @@ Do not use `configSecretRef` for these. They have their own typed fields:
 | [KeycloakClient](./keycloakclient.md) | `clientSecretRef` | OAuth client id / secret |
 | [KeycloakRealm](./keycloakrealm.md) / [ClusterKeycloakRealm](./clusterkeycloakrealm.md) | `smtpSecretRef` | SMTP username and password |
 | [KeycloakUserCredential](./keycloakusercredential.md) | `userSecret` | User password |
+| [KeycloakUser](./keycloakuser.md) | `initialPassword.valueFromSecret` | User initial password |
 | [KeycloakInstance](./keycloakinstance.md) / [ClusterKeycloakInstance](./clusterkeycloakinstance.md) | `auth.*.secretRef`, `tls.caCert.*` | Operator credentials to Keycloak, CA bundle |
 
 Namespaced resources always read Secrets from their own namespace. Only the

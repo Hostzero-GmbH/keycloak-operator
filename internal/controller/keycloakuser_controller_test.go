@@ -5,10 +5,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr/testr"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
@@ -522,5 +529,103 @@ func TestReconcileUserRealmRoles_Noop(t *testing.T) {
 	}
 	if fake.addRealmCall != 0 {
 		t.Errorf("expected no API calls on empty input")
+	}
+}
+
+func userWithSecretRefInitialPassword(name, namespace, secretName, secretKey string) *keycloakv1beta1.KeycloakUser {
+	return &keycloakv1beta1.KeycloakUser{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		Spec: keycloakv1beta1.KeycloakUserSpec{
+			InitialPassword: &keycloakv1beta1.InitialPassword{
+				ValueFromSecret: &keycloakv1beta1.InitialPasswordSecretRef{
+					SecretName: secretName,
+					SecretKey:  secretKey,
+				},
+			},
+		},
+	}
+}
+
+func TestResolveInitialPasswordFromSecret_Found(t *testing.T) {
+	secret := mkSecret("user-password", "default", map[string]string{"initial": "s3cret"})
+	s := configSecretScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(secret).Build()
+	r := &KeycloakUserReconciler{Client: cl, Scheme: s}
+
+	got, err := r.resolveInitialPasswordFromSecret(context.Background(),
+		userWithSecretRefInitialPassword("john", "default", "user-password", "initial"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "s3cret" {
+		t.Errorf("got %q, want %q", got, "s3cret")
+	}
+}
+
+func TestResolveInitialPasswordFromSecret_SecretMissing(t *testing.T) {
+	s := configSecretScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(s).Build()
+	r := &KeycloakUserReconciler{Client: cl, Scheme: s}
+
+	_, err := r.resolveInitialPasswordFromSecret(context.Background(),
+		userWithSecretRefInitialPassword("john", "default", "missing-secret", "initial"))
+	if err == nil || !strings.Contains(err.Error(), "missing-secret") {
+		t.Errorf("expected an error mentioning the secret name, got %v", err)
+	}
+}
+
+func TestResolveInitialPasswordFromSecret_KeyMissing(t *testing.T) {
+	secret := mkSecret("user-password", "default", map[string]string{"other": "x"})
+	s := configSecretScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(secret).Build()
+	r := &KeycloakUserReconciler{Client: cl, Scheme: s}
+
+	_, err := r.resolveInitialPasswordFromSecret(context.Background(),
+		userWithSecretRefInitialPassword("john", "default", "user-password", "initial"))
+	if err == nil || !strings.Contains(err.Error(), `"initial"`) {
+		t.Errorf("expected an error mentioning the key name, got %v", err)
+	}
+}
+
+func TestResolveInitialPasswordFromSecret_DefaultKey(t *testing.T) {
+	secret := mkSecret("user-password", "default", map[string]string{"password": "default-key-pw"})
+	s := configSecretScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(secret).Build()
+	r := &KeycloakUserReconciler{Client: cl, Scheme: s}
+
+	// Empty SecretKey must fall back to the "password" key.
+	got, err := r.resolveInitialPasswordFromSecret(context.Background(),
+		userWithSecretRefInitialPassword("john", "default", "user-password", ""))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "default-key-pw" {
+		t.Errorf("got %q, want %q", got, "default-key-pw")
+	}
+}
+
+func TestFindUsersForInitialPasswordSecret(t *testing.T) {
+	referencing := userWithSecretRefInitialPassword("user-a", "default", "pw-secret", "")
+	plain := &keycloakv1beta1.KeycloakUser{
+		ObjectMeta: metav1.ObjectMeta{Name: "user-b", Namespace: "default"},
+		Spec: keycloakv1beta1.KeycloakUserSpec{
+			InitialPassword: &keycloakv1beta1.InitialPassword{Value: "inline"},
+		},
+	}
+	// Same secret name but another namespace: the watch is per-namespace.
+	other := userWithSecretRefInitialPassword("user-c", "other-ns", "pw-secret", "")
+
+	s := configSecretScheme(t)
+	cl := fake.NewClientBuilder().WithScheme(s).WithObjects(referencing, plain, other).Build()
+	r := &KeycloakUserReconciler{Client: cl, Scheme: s}
+
+	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "pw-secret", Namespace: "default"}}
+	requests := r.findUsersForInitialPasswordSecret(context.Background(), secret)
+	if len(requests) != 1 {
+		t.Fatalf("got %d requests, want 1: %+v", len(requests), requests)
+	}
+	want := types.NamespacedName{Name: "user-a", Namespace: "default"}
+	if requests[0].NamespacedName != want {
+		t.Errorf("got %v, want %v", requests[0].NamespacedName, want)
 	}
 }

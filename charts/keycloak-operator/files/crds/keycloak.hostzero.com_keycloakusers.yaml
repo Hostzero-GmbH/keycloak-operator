@@ -124,9 +124,27 @@ spec:
                   value:
                     description: Value is the password value
                     type: string
-                required:
-                - value
+                  valueFromSecret:
+                    description: ValueFromSecret references a Kubernetes Secret holding
+                      the password value.
+                    properties:
+                      secretKey:
+                        default: password
+                        description: |-
+                          SecretKey is the key in the Secret holding the password value.
+                          Defaults to "password".
+                        type: string
+                      secretName:
+                        description: SecretName is the name of the Kubernetes Secret
+                        type: string
+                    required:
+                    - secretName
+                    type: object
                 type: object
+                x-kubernetes-validations:
+                - message: exactly one of value or valueFromSecret must be set
+                  rule: '(has(self.value) ? 1 : 0) + (has(self.valueFromSecret) ?
+                    1 : 0) == 1'
               realmRef:
                 description: |-
                   RealmRef is a reference to a KeycloakRealm

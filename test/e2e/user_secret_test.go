@@ -155,4 +155,166 @@ func TestKeycloakUserSecretE2E(t *testing.T) {
 		}, ctrl.Log.WithName("test-user-login"))
 		require.NoError(t, userClient.Ping(ctx), "login with the generated password should succeed")
 	})
+
+	// The initial password is read from a Kubernetes Secret at creation time
+	// (spec.initialPassword.valueFromSecret) and set in Keycloak.
+	t.Run("InitialPasswordFromSecret", func(t *testing.T) {
+		instanceName, _ := getOrCreateInstance(t)
+		realmName := createTestRealm(t, instanceName, "initialsecret")
+
+		suffix := time.Now().UnixNano()
+		userName := fmt.Sprintf("init-pw-user-%d", suffix)
+		secretName := userName + "-password"
+		password := fmt.Sprintf("init-pw-%d", suffix)
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: testNamespace},
+			Data:       map[string][]byte{"password": []byte(password)},
+		}
+		require.NoError(t, k8sClient.Create(ctx, secret))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, secret)
+		})
+
+		userDef := rawJSON(fmt.Sprintf(`{
+			"email": "%s@example.com",
+			"emailVerified": true,
+			"firstName": "Init",
+			"lastName": "Secret",
+			"enabled": true
+		}`, userName))
+		kcUser := &keycloakv1beta1.KeycloakUser{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      userName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakUserSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
+				Definition: &userDef,
+				// No SecretKey: exercises the "password" default.
+				InitialPassword: &keycloakv1beta1.InitialPassword{
+					ValueFromSecret: &keycloakv1beta1.InitialPasswordSecretRef{
+						SecretName: secretName,
+					},
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcUser))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcUser)
+		})
+
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakUser{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcUser.Name,
+				Namespace: kcUser.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "KeycloakUser did not become ready")
+
+		verifyLogin(t, realmName, userName, password)
+	})
+
+	// The Secret may appear after the user is created. The operator must not
+	// create the user in Keycloak before the Secret exists, and the Secret
+	// watch must trigger a re-reconcile once it appears.
+	t.Run("InitialPasswordSecretCreatedAfterUser", func(t *testing.T) {
+		instanceName, _ := getOrCreateInstance(t)
+		realmName := createTestRealm(t, instanceName, "initialsecret")
+
+		suffix := time.Now().UnixNano()
+		userName := fmt.Sprintf("init-pw-late-%d", suffix)
+		secretName := userName + "-password"
+		password := fmt.Sprintf("init-pw-late-%d", suffix)
+
+		userDef := rawJSON(fmt.Sprintf(`{
+			"email": "%s@example.com",
+			"emailVerified": true,
+			"firstName": "Late",
+			"lastName": "Secret",
+			"enabled": true
+		}`, userName))
+		kcUser := &keycloakv1beta1.KeycloakUser{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      userName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakUserSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Username:   strPtr(userName),
+				Definition: &userDef,
+				InitialPassword: &keycloakv1beta1.InitialPassword{
+					ValueFromSecret: &keycloakv1beta1.InitialPasswordSecretRef{
+						SecretName: secretName,
+					},
+				},
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, kcUser))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, kcUser)
+		})
+
+		// The user must not be created in Keycloak while the Secret is missing.
+		err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakUser{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcUser.Name,
+				Namespace: kcUser.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return !updated.Status.Ready && updated.Status.Status == "InitialPasswordSecretNotFound", nil
+		})
+		require.NoError(t, err, "KeycloakUser did not report InitialPasswordSecretNotFound")
+
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: testNamespace},
+			Data:       map[string][]byte{"password": []byte(password)},
+		}
+		require.NoError(t, k8sClient.Create(ctx, secret))
+		t.Cleanup(func() {
+			k8sClient.Delete(ctx, secret)
+		})
+
+		err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+			updated := &keycloakv1beta1.KeycloakUser{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      kcUser.Name,
+				Namespace: kcUser.Namespace,
+			}, updated); err != nil {
+				return false, nil
+			}
+			return updated.Status.Ready, nil
+		})
+		require.NoError(t, err, "KeycloakUser did not become ready after the Secret appeared")
+
+		verifyLogin(t, realmName, userName, password)
+	})
+}
+
+// verifyLogin checks that the given username/password can log in against
+// Keycloak. Skipped when Keycloak is not reachable from the test environment.
+func verifyLogin(t *testing.T, realmName, username, password string) {
+	t.Helper()
+	if !canConnectToKeycloak() {
+		t.Log("skipping direct login verification - Keycloak not reachable from test environment")
+		return
+	}
+	keycloakURL := os.Getenv("KEYCLOAK_URL")
+	if keycloakURL == "" {
+		keycloakURL = "http://keycloak.keycloak.svc.cluster.local"
+	}
+	userClient := keycloak.NewClient(keycloak.Config{
+		BaseURL:  keycloakURL,
+		Realm:    realmName,
+		Username: username,
+		Password: password,
+	}, ctrl.Log.WithName("test-user-login"))
+	require.NoError(t, userClient.Ping(ctx), "login with the initial password should succeed")
 }

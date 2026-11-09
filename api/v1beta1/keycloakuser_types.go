@@ -72,13 +72,33 @@ type KeycloakUserSpec struct {
 }
 
 // InitialPassword defines the initial password for a user
+// +kubebuilder:validation:XValidation:rule="(has(self.value) ? 1 : 0) + (has(self.valueFromSecret) ? 1 : 0) == 1",message="exactly one of value or valueFromSecret must be set"
 type InitialPassword struct {
 	// Value is the password value
-	Value string `json:"value"`
+	// +optional
+	Value string `json:"value,omitempty"`
+
+	// ValueFromSecret references a Kubernetes Secret holding the password value.
+	// +optional
+	ValueFromSecret *InitialPasswordSecretRef `json:"valueFromSecret,omitempty"`
 
 	// Temporary indicates if the user must change password on first login
 	// +optional
 	Temporary bool `json:"temporary,omitempty"`
+}
+
+// InitialPasswordSecretRef references a Kubernetes Secret holding the initial
+// password of a user. The Secret must be in the same namespace as the user.
+type InitialPasswordSecretRef struct {
+	// SecretName is the name of the Kubernetes Secret
+	// +kubebuilder:validation:Required
+	SecretName string `json:"secretName"`
+
+	// SecretKey is the key in the Secret holding the password value.
+	// Defaults to "password".
+	// +kubebuilder:default=password
+	// +optional
+	SecretKey string `json:"secretKey,omitempty"`
 }
 
 // KeycloakUserStatus defines the observed state of KeycloakUser
