@@ -172,13 +172,15 @@ func (r *KeycloakRealmReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		definition = mergeIDIntoDefinition(definition, idFromRaw(currentRaw))
 		definition = preserveRealmFieldsResetOnUpdate(definition, currentRaw)
 
-		needsUpdate := desiredHash != realm.Status.LastAppliedDefinitionHash
+		hashChanged := desiredHash != realm.Status.LastAppliedDefinitionHash
+		needsUpdate := hashChanged
 		if !needsUpdate {
 			needsUpdate = !realmDefinitionsMatch(definition, currentRaw)
 		}
 
 		if needsUpdate {
-			log.Info("updating realm", "realm", realmName)
+			driftKeys, _ := realmDriftKeys(definition, currentRaw)
+			log.Info("updating realm", withDriftKeys(driftKeys, "realm", realmName, "definitionHashChanged", hashChanged)...)
 			if err := kc.UpdateRealm(ctx, realmName, definition); err != nil {
 				// If the realm references authentication flows that don't exist yet
 				// (managed by separate KeycloakAuthenticationFlow CRs that haven't been
