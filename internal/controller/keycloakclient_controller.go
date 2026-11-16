@@ -200,7 +200,8 @@ func (r *KeycloakClientReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		if needsUpdate {
-			log.Info("updating client", "clientId", clientDef.ClientID, "realm", realmName)
+			driftKeys, _ := definitionDriftKeys(definition, currentRaw)
+			log.Info("updating client", withDriftKeys(driftKeys, "clientId", clientDef.ClientID, "realm", realmName)...)
 			if err := kc.UpdateClient(ctx, realmName, clientUUID, definition); err != nil {
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, kcClient, false, "UpdateFailed", fmt.Sprintf("Failed to update client: %v", err), clientUUID, instanceRef, realmRef)
@@ -547,14 +548,24 @@ func (r *KeycloakClientReconciler) updateStatus(ctx context.Context, kcClient *k
 // Array fields (e.g. defaultClientScopes, redirectUris) are compared as unordered sets
 // because Keycloak may return them in arbitrary order.
 func definitionsMatch(desired, current json.RawMessage) bool {
+	keys, err := definitionDriftKeys(desired, current)
+	return err == nil && len(keys) == 0
+}
+
+// definitionDriftKeys returns the sorted top-level keys of desired whose value
+// differs from current, compared as definitionsMatch compares them; a key
+// missing from current counts as drift. Only key names are returned, never
+// values, because definitions can carry secrets.
+func definitionDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	var desiredMap, currentMap map[string]interface{}
 	if err := json.Unmarshal(desired, &desiredMap); err != nil {
-		return false
+		return nil, err
 	}
 	if err := json.Unmarshal(current, &currentMap); err != nil {
-		return false
+		return nil, err
 	}
 
+	var keys []string
 	for key, desiredVal := range desiredMap {
 		// defaultClientScopes and optionalClientScopes are reconciled via dedicated
 		// scope-assignment endpoints (see syncClientScopes); the client representation
@@ -563,14 +574,12 @@ func definitionsMatch(desired, current json.RawMessage) bool {
 			continue
 		}
 		currentVal, exists := currentMap[key]
-		if !exists {
-			return false
-		}
-		if !valuesMatch(desiredVal, currentVal) {
-			return false
+		if !exists || !valuesMatch(desiredVal, currentVal) {
+			keys = append(keys, key)
 		}
 	}
-	return true
+	sort.Strings(keys)
+	return keys, nil
 }
 
 // valuesMatch compares two values, treating JSON arrays as unordered sets of strings

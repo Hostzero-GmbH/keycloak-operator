@@ -372,6 +372,36 @@ func mergeIDIntoDefinition(definition json.RawMessage, id *string) json.RawMessa
 	return result
 }
 
+// withDriftKeys appends the names of the keys in which the desired definition
+// differs from Keycloak to the values of an "updating ..." log line. Nothing is
+// appended when no key could be named, for instance because the current state
+// could not be fetched.
+func withDriftKeys(keys []string, keysAndValues ...interface{}) []interface{} {
+	if len(keys) > 0 {
+		keysAndValues = append(keysAndValues, "driftKeys", keys)
+	}
+	return keysAndValues
+}
+
+// findRawByName returns the id and the raw representation of the first item of a
+// raw Keycloak listing whose "name" equals name. An empty id and a nil raw mean
+// that no such item exists, or that it carries no id.
+func findRawByName(items []json.RawMessage, name string) (string, json.RawMessage) {
+	for _, item := range items {
+		var head struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		}
+		if err := json.Unmarshal(item, &head); err != nil {
+			continue
+		}
+		if head.Name == name && head.ID != "" {
+			return head.ID, item
+		}
+	}
+	return "", nil
+}
+
 // ptrString is a helper to create a pointer to a string
 func ptrString(s string) *string {
 	return &s
@@ -636,12 +666,20 @@ func idpDefinitionsMatch(desired, current json.RawMessage) bool {
 // on that field. If current is null/missing, the realm genuinely has no password
 // stored and the PUT must push it — leave the field intact so the diff fires.
 func realmDefinitionsMatch(desired, current json.RawMessage) bool {
+	keys, err := realmDriftKeys(desired, current)
+	return err == nil && len(keys) == 0
+}
+
+// realmDriftKeys names the top-level keys in which the desired realm differs
+// from the current one, after the masking rules documented on
+// realmDefinitionsMatch have been applied.
+func realmDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	var desiredMap, currentMap map[string]interface{}
 	if err := json.Unmarshal(desired, &desiredMap); err != nil {
-		return false
+		return nil, err
 	}
 	if err := json.Unmarshal(current, &currentMap); err != nil {
-		return false
+		return nil, err
 	}
 
 	if cSmtp, ok := currentMap["smtpServer"].(map[string]interface{}); ok {
@@ -655,13 +693,13 @@ func realmDefinitionsMatch(desired, current json.RawMessage) bool {
 
 	desiredJSON, err := json.Marshal(desiredMap)
 	if err != nil {
-		return false
+		return nil, err
 	}
 	currentJSON, err := json.Marshal(currentMap)
 	if err != nil {
-		return false
+		return nil, err
 	}
-	return definitionsMatch(desiredJSON, currentJSON)
+	return definitionDriftKeys(desiredJSON, currentJSON)
 }
 
 // definitionHash returns a sha256 over the canonicalized (sorted-key) JSON
@@ -741,12 +779,20 @@ func isMaskedConfigValue(val interface{}) bool {
 // organizationDefinitionsMatch reports whether desired matches current,
 // ignoring domains[].verified which Keycloak sets on read.
 func organizationDefinitionsMatch(desired, current json.RawMessage) bool {
+	keys, err := organizationDriftKeys(desired, current)
+	return err == nil && len(keys) == 0
+}
+
+// organizationDriftKeys names the top-level keys in which the desired
+// organization differs from the current one, ignoring domains[].verified as
+// organizationDefinitionsMatch does.
+func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	var desiredMap, currentMap map[string]interface{}
 	if err := json.Unmarshal(desired, &desiredMap); err != nil {
-		return false
+		return nil, err
 	}
 	if err := json.Unmarshal(current, &currentMap); err != nil {
-		return false
+		return nil, err
 	}
 
 	stripDomainVerified := func(m map[string]interface{}) {
@@ -765,13 +811,13 @@ func organizationDefinitionsMatch(desired, current json.RawMessage) bool {
 
 	desiredJSON, err := json.Marshal(desiredMap)
 	if err != nil {
-		return false
+		return nil, err
 	}
 	currentJSON, err := json.Marshal(currentMap)
 	if err != nil {
-		return false
+		return nil, err
 	}
-	return definitionsMatch(desiredJSON, currentJSON)
+	return definitionDriftKeys(desiredJSON, currentJSON)
 }
 
 // roleCompositesSpec mirrors the "composites" field of a Keycloak

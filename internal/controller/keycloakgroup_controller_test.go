@@ -2,6 +2,8 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -109,5 +111,81 @@ func TestResolveGroupRealmOwner_MissingParentIsReported(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "gone") {
 		t.Errorf("error should name the missing parent, got %q", err)
+	}
+}
+
+func TestGroupDefinitionsMatch_ExtraFieldsIgnored(t *testing.T) {
+	// The full representation carries path, roles and counters the CR never sets.
+	desired := json.RawMessage(`{"name":"ops","attributes":{"team":["a"]}}`)
+	current := json.RawMessage(`{
+		"id": "g1",
+		"name": "ops",
+		"path": "/ops",
+		"attributes": {"team": ["a"]},
+		"realmRoles": [],
+		"clientRoles": {},
+		"subGroupCount": 0
+	}`)
+
+	if !groupDefinitionsMatch(desired, current) {
+		t.Error("expected match: fields Keycloak adds on read must be ignored")
+	}
+}
+
+func TestGroupDefinitionsMatch_AttributeDroppedFromCR(t *testing.T) {
+	// A group PUT replaces attributes, so removing one from the CR has to be
+	// pushed even though the remaining ones match.
+	desired := json.RawMessage(`{"name":"ops","attributes":{"team":["a"]}}`)
+	current := json.RawMessage(`{"name":"ops","attributes":{"team":["a"],"tier":["1"]}}`)
+
+	if groupDefinitionsMatch(desired, current) {
+		t.Error("expected no match: attribute tier is no longer in the CR")
+	}
+}
+
+func TestGroupDefinitionsMatch_NoAttributesInDesired(t *testing.T) {
+	// Without an attributes object in the CR a PUT leaves attributes alone, so
+	// whatever Keycloak holds is not drift.
+	desired := json.RawMessage(`{"name":"ops"}`)
+	current := json.RawMessage(`{"name":"ops","attributes":{"tier":["1"]}}`)
+
+	if !groupDefinitionsMatch(desired, current) {
+		t.Error("expected match: the CR does not manage attributes")
+	}
+}
+
+func TestGroupDriftKeys_NamesAttributesOnDroppedEntry(t *testing.T) {
+	desired := json.RawMessage(`{"name":"renamed","attributes":{"team":["a"]}}`)
+	current := json.RawMessage(`{"name":"ops","attributes":{"team":["a"],"tier":["1"]}}`)
+
+	keys, err := groupDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("groupDriftKeys: %v", err)
+	}
+	if want := []string{"attributes", "name"}; !slices.Equal(keys, want) {
+		t.Errorf("groupDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestGroupDriftKeys_AttributesReportedOnce(t *testing.T) {
+	// A changed value and a dropped entry in the same object name the key once.
+	desired := json.RawMessage(`{"name":"ops","attributes":{"team":["b"]}}`)
+	current := json.RawMessage(`{"name":"ops","attributes":{"team":["a"],"tier":["1"]}}`)
+
+	keys, err := groupDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("groupDriftKeys: %v", err)
+	}
+	if want := []string{"attributes"}; !slices.Equal(keys, want) {
+		t.Errorf("groupDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestGroupDriftKeys_InvalidJSON(t *testing.T) {
+	if _, err := groupDriftKeys(json.RawMessage(`{"name":"ops"}`), nil); err == nil {
+		t.Error("expected an error for a missing current state")
+	}
+	if groupDefinitionsMatch(json.RawMessage(`{"name":"ops"}`), nil) {
+		t.Error("expected no match when the current state is missing")
 	}
 }

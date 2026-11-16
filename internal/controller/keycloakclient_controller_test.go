@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -197,6 +198,80 @@ func TestDefinitionsMatch_ObjectArrayExtraInDesired(t *testing.T) {
 
 	if definitionsMatch(desired, current) {
 		t.Error("expected no match: CR adds an object that current lacks")
+	}
+}
+
+func TestDefinitionDriftKeys_NamesDifferingKeys(t *testing.T) {
+	// Every differing top-level key is named, sorted; matching keys and keys
+	// that only Keycloak knows about are left out.
+	desired := json.RawMessage(`{
+		"clientId": "app",
+		"webOrigins": ["https://a.example.com"],
+		"attributes": {"post.logout.redirect.uris": "https://a.example.com/*"},
+		"description": "new"
+	}`)
+	current := json.RawMessage(`{
+		"clientId": "app",
+		"webOrigins": ["https://b.example.com"],
+		"attributes": {"post.logout.redirect.uris": "https://b.example.com/*"},
+		"description": "new",
+		"access": {"configure": true}
+	}`)
+
+	keys, err := definitionDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("definitionDriftKeys: %v", err)
+	}
+	if want := []string{"attributes", "webOrigins"}; !slices.Equal(keys, want) {
+		t.Errorf("definitionDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestDefinitionDriftKeys_MissingKeyIsDrift(t *testing.T) {
+	desired := json.RawMessage(`{"clientId": "app", "description": "set by the CR"}`)
+	current := json.RawMessage(`{"clientId": "app"}`)
+
+	keys, err := definitionDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("definitionDriftKeys: %v", err)
+	}
+	if want := []string{"description"}; !slices.Equal(keys, want) {
+		t.Errorf("definitionDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestDefinitionDriftKeys_InSyncNamesNothing(t *testing.T) {
+	desired := json.RawMessage(`{
+		"clientId": "app",
+		"redirectUris": ["https://a/*", "https://b/*"],
+		"defaultClientScopes": ["profile"]
+	}`)
+	current := json.RawMessage(`{
+		"clientId": "app",
+		"redirectUris": ["https://b/*", "https://a/*"],
+		"defaultClientScopes": ["email"]
+	}`)
+
+	keys, err := definitionDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("definitionDriftKeys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("expected no drift (unordered arrays, scope assignments skipped), got %v", keys)
+	}
+}
+
+func TestDefinitionDriftKeys_InvalidJSON(t *testing.T) {
+	valid := json.RawMessage(`{"clientId": "app"}`)
+
+	if _, err := definitionDriftKeys(json.RawMessage(`not json`), valid); err == nil {
+		t.Error("expected an error for an invalid desired definition")
+	}
+	if _, err := definitionDriftKeys(valid, nil); err == nil {
+		t.Error("expected an error for a missing current state")
+	}
+	if definitionsMatch(valid, nil) {
+		t.Error("expected no match when the current state is missing")
 	}
 }
 

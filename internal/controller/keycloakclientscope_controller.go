@@ -114,20 +114,16 @@ func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.
 	// Prepare definition JSON with name set
 	definition := setFieldInDefinition(clientScope.Spec.Definition.Raw, "name", scopeDef.Name)
 
-	// Check if client scope exists by name
-	existingScopes, err := kc.GetClientScopes(ctx, realmName)
-	var existingScope *keycloak.ClientScopeRepresentation
-	if err == nil {
-		for i := range existingScopes {
-			if existingScopes[i].Name != nil && *existingScopes[i].Name == scopeDef.Name {
-				existingScope = &existingScopes[i]
-				break
-			}
-		}
+	// Check if client scope exists by name. The raw listing already carries
+	// the full representation, so it is kept for drift detection instead of
+	// fetching the scope a second time.
+	var scopeID string
+	var currentRaw json.RawMessage
+	if existingScopes, err := kc.GetClientScopesRaw(ctx, realmName); err == nil {
+		scopeID, currentRaw = findRawByName(existingScopes, scopeDef.Name)
 	}
 
-	var scopeID string
-	if existingScope == nil {
+	if scopeID == "" {
 		// Client scope doesn't exist, create it
 		log.Info("creating client scope", "name", scopeDef.Name, "realm", realmName)
 		scopeID, err = kc.CreateClientScope(ctx, realmName, definition)
@@ -137,16 +133,20 @@ func (r *KeycloakClientScopeReconciler) Reconcile(ctx context.Context, req ctrl.
 		}
 		log.Info("client scope created successfully", "name", scopeDef.Name, "id", scopeID)
 	} else {
-		// Client scope exists, update it
-		scopeID = *existingScope.ID
-		definition = mergeIDIntoDefinition(definition, existingScope.ID)
+		// Client scope exists — check if update is needed
+		definition = mergeIDIntoDefinition(definition, &scopeID)
 
-		log.Info("updating client scope", "name", scopeDef.Name, "realm", realmName)
-		if err := kc.UpdateClientScope(ctx, realmName, scopeID, definition); err != nil {
-			RecordError(controllerName, "keycloak_api_error")
-			return r.updateStatus(ctx, clientScope, false, "UpdateFailed", fmt.Sprintf("Failed to update client scope: %v", err), scopeID)
+		driftKeys, driftErr := definitionDriftKeys(definition, currentRaw)
+		if driftErr != nil || len(driftKeys) > 0 {
+			log.Info("updating client scope", withDriftKeys(driftKeys, "name", scopeDef.Name, "realm", realmName)...)
+			if err := kc.UpdateClientScope(ctx, realmName, scopeID, definition); err != nil {
+				RecordError(controllerName, "keycloak_api_error")
+				return r.updateStatus(ctx, clientScope, false, "UpdateFailed", fmt.Sprintf("Failed to update client scope: %v", err), scopeID)
+			}
+			log.Info("client scope updated successfully", "name", scopeDef.Name)
+		} else {
+			log.V(1).Info("client scope already in sync, skipping update", "name", scopeDef.Name)
 		}
-		log.Info("client scope updated successfully", "name", scopeDef.Name)
 	}
 
 	// Update status

@@ -159,7 +159,8 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 
 		if needsUpdate {
-			log.Info("updating organization", "name", orgDef.Name, "realm", realmName)
+			driftKeys, _ := organizationDriftKeys(org.Spec.Definition.Raw, currentRaw)
+			log.Info("updating organization", withDriftKeys(driftKeys, "name", orgDef.Name, "realm", realmName)...)
 			if err := kc.UpdateOrganization(ctx, realmName, orgDef); err != nil {
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, org, false, "UpdateFailed", fmt.Sprintf("Failed to update organization: %v", err), orgID)
