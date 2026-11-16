@@ -185,6 +185,73 @@ This is useful for scenarios like:
 
 **Supported Resources**: This annotation works with all resource types except `KeycloakInstance` and `ClusterKeycloakInstance` (which don't manage Keycloak resources directly).
 
+### Management Policy
+
+`spec.managementPolicy` controls whether the operator writes to the Keycloak resource:
+
+| Policy | Create | Update | Delete on CR deletion | Drift |
+|--------|--------|--------|-----------------------|-------|
+| `Manage` (default) | Yes | Yes | Yes, unless `preserve-resource` is set | Corrected |
+| `Observe` | No | No | No | Reported in the `Drifted` condition |
+
+With `Observe`, the operator only reads the resource:
+
+- **Resource exists**: `Ready=True`, reason `Observed`. `status.resourcePath` and the identifier in status are set, so dependent CRs (for example a `KeycloakClient` in an observed realm) reconcile as usual.
+- **Resource does not exist**: `Ready=False`, reason `NotFound`. The operator retries periodically and never creates it.
+- **Other lookup error**: `Ready=False`, reason `LookupFailed`.
+- **Drift**: `spec.definition` is compared with the live resource with the same rules as in `Manage` mode (only the keys you set are compared). The `Drifted` condition is `True` (reason `DefinitionMismatch`, the message lists the differing top-level keys) or `False` (reason `InSync`). It does not affect `Ready`.
+- **Secret references** (`smtpSecretRef`) are ignored.
+
+The policy changes only the writes. `spec.definition` stays required and the resource is identified the same way in both policies, so switching from `Observe` to `Manage` always targets the same resource. Use `definition: {}` to observe a resource without checking its content. The field is mutable: switching to `Manage` takes ownership at the next reconciliation, and switching to `Observe` stops all writes. The `Drifted` condition is removed in `Manage` mode.
+
+**Supported Resources**: `KeycloakRealm`, `ClusterKeycloakRealm`.
+
+#### Sharing a Keycloak instance between clusters
+
+When several clusters, each with its own operator, use the same Keycloak instance, let one cluster own each shared resource and let the others observe it:
+
+```yaml
+# Cluster A: owns the shared realm
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: ClusterKeycloakRealm
+metadata:
+  name: shared-realm
+  annotations:
+    keycloak.hostzero.com/preserve-resource: "true"
+spec:
+  clusterInstanceRef:
+    name: keycloak
+  realmName: shared-realm
+  definition:
+    displayName: Shared Realm
+    enabled: true
+---
+# Cluster B: observes the realm and manages only its own clients
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: ClusterKeycloakRealm
+metadata:
+  name: shared-realm
+spec:
+  clusterInstanceRef:
+    name: keycloak
+  realmName: shared-realm
+  managementPolicy: Observe
+  definition:
+    enabled: true
+---
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakClient
+metadata:
+  name: cluster-b-app
+  namespace: app
+spec:
+  clusterRealmRef:
+    name: shared-realm
+  clientId: cluster-b-app
+```
+
+> **Note**: Set `preserve-resource` on the owner too. Without it, uninstalling the application on the owner cluster deletes the shared resource, and every observed CR on the other clusters becomes `NotFound`.
+
 ## API Version
 
 All CRDs use the `keycloak.hostzero.com/v1beta1` API version:

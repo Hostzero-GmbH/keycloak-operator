@@ -87,6 +87,7 @@ spec:
 | `instanceRef.name` | string | Reference to namespaced KeycloakInstance | One of these |
 | `instanceRef.namespace` | string | Namespace of the KeycloakInstance | Required if instanceRef |
 | `realmName` | string | Realm name in Keycloak (must not conflict with a `realm` key in definition) | Yes |
+| `managementPolicy` | string | `Manage` (default) or `Observe`. `Observe` only reads the realm and never creates, updates or deletes it. See [Management Policy](../crds.md#management-policy) | No |
 | `definition` | object | Keycloak RealmRepresentation | Yes |
 
 ### Definition Fields
