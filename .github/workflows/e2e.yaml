@@ -130,6 +130,15 @@ jobs:
         # tests that talk to Keycloak directly run instead of being skipped.
         run: curl --fail --silent --show-error --retry 10 --retry-delay 5 --retry-all-errors http://localhost:8080/realms/master > /dev/null
 
+      - name: Report the Keycloak version under test
+        # The matrix uses floating minor tags, so record which patch release
+        # and image digest this run actually pulled.
+        run: |
+          version=$(kubectl exec -n keycloak deploy/keycloak -- /opt/keycloak/bin/kc.sh --version | grep -m1 '^Keycloak')
+          image=$(kubectl get pod -n keycloak -l app=keycloak -o jsonpath='{.items[0].status.containerStatuses[0].imageID}')
+          echo "$version ($image)"
+          echo "Tested against **$version** (\`$image\`)" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run e2e tests
         env:
           USE_EXISTING_CLUSTER: "true"
