@@ -70,6 +70,13 @@ type KeycloakProtocolMapperStatus struct {
 	// +optional
 	ParentID string `json:"parentID,omitempty"`
 
+	// LastAppliedDefinitionHash is a hash of the last successfully applied
+	// definition (after secret merging). Keycloak adds config keys of its
+	// own, so config is compared as a subset of what Keycloak returns; the
+	// hash is what detects a key that was removed from the definition.
+	// +optional
+	LastAppliedDefinitionHash string `json:"lastAppliedDefinitionHash,omitempty"`
+
 	// Instance contains the resolved instance reference
 	// +optional
 	Instance *InstanceRef `json:"instance,omitempty"`

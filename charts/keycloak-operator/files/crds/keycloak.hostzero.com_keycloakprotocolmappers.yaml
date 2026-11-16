@@ -187,6 +187,13 @@ spec:
                     description: InstanceRef is the name of the namespaced instance
                     type: string
                 type: object
+              lastAppliedDefinitionHash:
+                description: |-
+                  LastAppliedDefinitionHash is a hash of the last successfully applied
+                  definition (after secret merging). Keycloak adds config keys of its
+                  own, so config is compared as a subset of what Keycloak returns; the
+                  hash is what detects a key that was removed from the definition.
+                type: string
               mapperID:
                 description: MapperID is the Keycloak internal mapper ID
                 type: string

@@ -122,6 +122,8 @@ func (r *KeycloakProtocolMapperReconciler) Reconcile(ctx context.Context, req ct
 		return r.updateStatus(ctx, mapper, false, "ConfigSecretError", err.Error(), "", "", "", "")
 	}
 
+	desiredHash := definitionHash(definition)
+
 	// Find existing mapper by name. The raw listing already carries the full
 	// representation, so it is kept for drift detection instead of fetching the
 	// mapper a second time.
@@ -152,6 +154,7 @@ func (r *KeycloakProtocolMapperReconciler) Reconcile(ctx context.Context, req ct
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, mapper, false, "CreateFailed", fmt.Sprintf("Failed to create protocol mapper: %v", err), "", "", parentType, parentID)
 		}
+		mapper.Status.LastAppliedDefinitionHash = desiredHash
 		log.Info("protocol mapper created successfully", "name", mapperName, "id", mapperID)
 	} else {
 		// Mapper exists — check if update is needed
@@ -159,12 +162,15 @@ func (r *KeycloakProtocolMapperReconciler) Reconcile(ctx context.Context, req ct
 
 		// Keycloak adds default config keys (for example userinfo.token.claim)
 		// on create and again on every PUT, so config is compared as a subset
-		// of what Keycloak returns.
-		if definitionsMatch(definition, currentRaw) {
+		// of what Keycloak returns. That comparison cannot see a key that was
+		// removed from the definition, so a hash mismatch against the last
+		// applied definition forces the PUT, which replaces the whole config.
+		hashChanged := desiredHash != mapper.Status.LastAppliedDefinitionHash
+		driftKeys, driftErr := definitionDriftKeys(definition, currentRaw)
+		if !hashChanged && driftErr == nil && len(driftKeys) == 0 {
 			log.V(1).Info("protocol mapper already in sync, skipping update", "name", mapperName)
 		} else {
-			driftKeys, _ := definitionDriftKeys(definition, currentRaw)
-			log.Info("updating protocol mapper", withDriftKeys(driftKeys, "name", mapperName, "realm", realmName, "parentType", parentType)...)
+			log.Info("updating protocol mapper", withDriftKeys(driftKeys, "name", mapperName, "realm", realmName, "parentType", parentType, "definitionHashChanged", hashChanged)...)
 			var err error
 			if parentType == "client" {
 				err = kc.UpdateClientProtocolMapper(ctx, realmName, parentID, mapperID, definition)
@@ -175,6 +181,7 @@ func (r *KeycloakProtocolMapperReconciler) Reconcile(ctx context.Context, req ct
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, mapper, false, "UpdateFailed", fmt.Sprintf("Failed to update protocol mapper: %v", err), mapperID, mapperName, parentType, parentID)
 			}
+			mapper.Status.LastAppliedDefinitionHash = desiredHash
 			log.Info("protocol mapper updated successfully", "name", mapperName)
 		}
 	}

@@ -13,7 +13,10 @@ import (
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
 )
 
-const fakeGroupID = "group-id"
+const (
+	fakeGroupID       = "group-id"
+	fakeParentGroupID = "parent-group-id"
+)
 
 // fakeGroupKeycloak is a minimal stateful stand-in for the group admin
 // endpoints. It follows what Keycloak 26.8 does: the listing is the brief
@@ -35,7 +38,7 @@ func (f *fakeGroupKeycloak) handler() http.Handler {
 	handleToken(mux)
 
 	const groups = "/admin/realms/test/groups"
-	mux.HandleFunc(groups, func(w http.ResponseWriter, r *http.Request) {
+	list := func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			if f.group == nil {
@@ -55,7 +58,11 @@ func (f *fakeGroupKeycloak) handler() http.Handler {
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}
+	// A top-level group is listed and created under /groups, a child group
+	// under its parent's /children.
+	mux.HandleFunc(groups, list)
+	mux.HandleFunc(groups+"/"+fakeParentGroupID+"/children", list)
 	mux.HandleFunc(groups+"/"+fakeGroupID, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -162,4 +169,30 @@ func TestKeycloakGroupReconcile_PutsWhenCurrentStateCannotBeFetched(t *testing.T
 	fakeKC.failGet = true
 	h.reconcile(t, r, group.Name)
 	require.Equal(t, 1, fakeKC.puts, "when the current state is unknown the group is still written")
+}
+
+func TestKeycloakGroupReconcile_ChildGroup(t *testing.T) {
+	fakeKC := &fakeGroupKeycloak{t: t}
+	parent := newGroupFixture(`{}`)
+	parent.Name = "parent-group"
+	parent.Spec.Name = strPtr("parent-group")
+	parent.Status = keycloakv1beta1.KeycloakGroupStatus{Ready: true, GroupID: fakeParentGroupID}
+	group := newGroupFixture(`{"attributes":{"team":["a"],"tier":["1"]}}`)
+	group.Spec.ParentGroupRef = &keycloakv1beta1.ResourceRef{Name: parent.Name}
+	h := newReconcileHarness(t, fakeKC.handler(), parent, group)
+	r := &KeycloakGroupReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+
+	h.reconcile(t, r, group.Name)
+	require.Equal(t, 1, fakeKC.posts, "the first reconcile creates the child group")
+
+	for range 3 {
+		h.reconcile(t, r, group.Name)
+	}
+	require.Equal(t, 0, fakeKC.puts, "a child group that already matches must not be written again")
+
+	updateObject(t, h, group, setGroupDefinition(`{"attributes":{"team":["a"]}}`))
+	h.reconcile(t, r, group.Name)
+	h.reconcile(t, r, group.Name)
+	require.Equal(t, 1, fakeKC.puts, "dropping an attribute from the CR is written once")
+	require.NotContains(t, fakeKC.group["attributes"], "tier")
 }

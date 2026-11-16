@@ -26,15 +26,22 @@ import (
 //
 //   - Unordered string-array equality on a real KeycloakClient with reordered
 //     redirectUris (set-equality path of valuesMatch).
+//
 //   - The IdP clientSecret mask wrapper (idpDefinitionsMatch). This is the
 //     scenario the original drift loop hit hardest: every reconcile pushes
 //     the secret, Keycloak masks it on GET, so naive byte-compare always
 //     fires drift.
+//
 //   - The realm smtpServer.password mask wrapper (realmDefinitionsMatch),
 //     same shape as the IdP case but on KeycloakRealm.
+//
 //   - The component config mask wrapper (componentDefinitionsMatch), which
 //     strips any masked config value instead of a hardcoded field name
 //     because secret fields vary by provider (#140).
+//
+//   - Group, client scope and protocol mapper, which used to PUT
+//     unconditionally (#209), including the two removals a subset comparison
+//     cannot see: a dropped group attribute and a dropped mapper config key.
 //
 // All assertions rely on the operator's V(1) "already in sync, skipping
 // update" log line as direct evidence the comparator returned true and the
@@ -508,6 +515,243 @@ func TestDriftSkip(t *testing.T) {
 		final := &keycloakv1beta1.KeycloakRole{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: role.Name, Namespace: role.Namespace}, final))
 		require.True(t, final.Status.Ready, "role should remain Ready after skipped reconcile")
+	})
+
+	t.Run("KeycloakGroup_SkipsUpdateAndPropagatesRemovedAttribute", func(t *testing.T) {
+		realmName := createTestRealm(t, instanceName, "drift-group")
+
+		groupName := fmt.Sprintf("drift-group-%d", time.Now().UnixNano())
+		group := &keycloakv1beta1.KeycloakGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      groupName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakGroupSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(groupName),
+				Definition: rawJSON(`{"attributes": {"team": ["a", "b"], "tier": ["1"]}}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, group))
+		t.Cleanup(func() { k8sClient.Delete(ctx, group) })
+
+		key := types.NamespacedName{Name: group.Name, Namespace: group.Namespace}
+		gvk := keycloakv1beta1.GroupVersion.WithKind("KeycloakGroup")
+		waitForUnstructuredReady(t, gvk, key)
+
+		// Before #209 the controller sent a PUT on every pass.
+		updated := &keycloakv1beta1.KeycloakGroup{}
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		require.NotEmpty(t, updated.Status.GroupID)
+
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+		assertOperatorLogged(t, since, "group already in sync, skipping update", "name", groupName)
+
+		// A group PUT replaces attributes, so an attribute dropped from the
+		// CR must still reach Keycloak although the remaining ones match.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(`{"attributes": {"team": ["a", "b"]}}`)
+		since = time.Now().UTC()
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		assertOperatorLogged(t, since, "group updated successfully", "name", groupName)
+
+		kc := getInternalKeycloakClient(t)
+		raw, err := kc.GetGroupRaw(ctx, realmName, updated.Status.GroupID)
+		require.NoError(t, err)
+		var groupMap map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &groupMap))
+		attributes, _ := groupMap["attributes"].(map[string]interface{})
+		require.Contains(t, attributes, "team")
+		require.NotContains(t, attributes, "tier", "attribute removed from the CR should be removed in Keycloak")
+
+		final := &keycloakv1beta1.KeycloakGroup{}
+		require.NoError(t, k8sClient.Get(ctx, key, final))
+		require.True(t, final.Status.Ready, "group should remain Ready after the update")
+
+		since = time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "group already in sync, skipping update", "name", groupName)
+	})
+
+	t.Run("KeycloakClientScope_SkipsUpdate", func(t *testing.T) {
+		realmName := createTestRealm(t, instanceName, "drift-scope")
+
+		scopeName := fmt.Sprintf("drift-scope-%d", time.Now().UnixNano())
+		scope := &keycloakv1beta1.KeycloakClientScope{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      scopeName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:     strPtr(scopeName),
+				Definition: rawJSON(`{
+					"description": "drift scope",
+					"protocol": "openid-connect",
+					"attributes": {"include.in.token.scope": "true"}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, scope))
+		t.Cleanup(func() { k8sClient.Delete(ctx, scope) })
+
+		key := types.NamespacedName{Name: scope.Name, Namespace: scope.Namespace}
+		gvk := keycloakv1beta1.GroupVersion.WithKind("KeycloakClientScope")
+		waitForUnstructuredReady(t, gvk, key)
+
+		updated := &keycloakv1beta1.KeycloakClientScope{}
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+		assertOperatorLogged(t, since, "client scope already in sync, skipping update", "name", scopeName)
+
+		// A real change is still written, once.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(`{
+			"description": "drift scope",
+			"protocol": "openid-connect",
+			"attributes": {"include.in.token.scope": "false"}
+		}`)
+		since = time.Now().UTC()
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		assertOperatorLogged(t, since, "client scope updated successfully", "name", scopeName)
+
+		final := &keycloakv1beta1.KeycloakClientScope{}
+		require.NoError(t, k8sClient.Get(ctx, key, final))
+		require.True(t, final.Status.Ready, "client scope should remain Ready after the update")
+
+		since = time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "client scope already in sync, skipping update", "name", scopeName)
+	})
+
+	t.Run("KeycloakProtocolMapper_SkipsUpdateAndPropagatesRemovedConfigKey", func(t *testing.T) {
+		realmName := createTestRealm(t, instanceName, "drift-mapper")
+
+		scopeName := fmt.Sprintf("drift-mapper-scope-%d", time.Now().UnixNano())
+		scope := &keycloakv1beta1.KeycloakClientScope{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      scopeName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakClientScopeSpec{
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Name:       strPtr(scopeName),
+				Definition: rawJSON(`{"protocol": "openid-connect"}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, scope))
+		t.Cleanup(func() { k8sClient.Delete(ctx, scope) })
+		waitForUnstructuredReady(t, keycloakv1beta1.GroupVersion.WithKind("KeycloakClientScope"),
+			types.NamespacedName{Name: scope.Name, Namespace: scope.Namespace})
+
+		// The definition lists fewer config keys than Keycloak stores: it
+		// adds defaults such as introspection.token.claim on create and on
+		// every PUT, so an exact comparison would never settle.
+		mapperName := fmt.Sprintf("drift-mapper-%d", time.Now().UnixNano())
+		mapper := &keycloakv1beta1.KeycloakProtocolMapper{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      mapperName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakProtocolMapperSpec{
+				ClientScopeRef: &keycloakv1beta1.ResourceRef{Name: scopeName},
+				Name:           strPtr(mapperName),
+				Definition: rawJSON(`{
+					"protocol": "openid-connect",
+					"protocolMapper": "oidc-usermodel-attribute-mapper",
+					"config": {
+						"user.attribute": "department",
+						"claim.name": "department",
+						"jsonType.label": "String",
+						"multivalued": "true",
+						"id.token.claim": "true",
+						"access.token.claim": "true"
+					}
+				}`),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, mapper))
+		t.Cleanup(func() { k8sClient.Delete(ctx, mapper) })
+
+		key := types.NamespacedName{Name: mapper.Name, Namespace: mapper.Namespace}
+		gvk := keycloakv1beta1.GroupVersion.WithKind("KeycloakProtocolMapper")
+		waitForUnstructuredReady(t, gvk, key)
+
+		updated := &keycloakv1beta1.KeycloakProtocolMapper{}
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		require.NotEmpty(t, updated.Status.ParentID)
+		require.NotEmpty(t, updated.Status.LastAppliedDefinitionHash)
+
+		kc := getInternalKeycloakClient(t)
+		mapperConfig := func() map[string]interface{} {
+			t.Helper()
+			mappers, err := kc.GetClientScopeProtocolMappersRaw(ctx, realmName, updated.Status.ParentID)
+			require.NoError(t, err)
+			for _, raw := range mappers {
+				var m map[string]interface{}
+				require.NoError(t, json.Unmarshal(raw, &m))
+				if m["name"] == mapperName {
+					cfg, _ := m["config"].(map[string]interface{})
+					return cfg
+				}
+			}
+			t.Fatalf("protocol mapper %s not found in Keycloak", mapperName)
+			return nil
+		}
+		require.Equal(t, "true", mapperConfig()["multivalued"])
+
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+		assertOperatorLogged(t, since, "protocol mapper already in sync, skipping update", "name", mapperName)
+
+		// Changing a config value is written.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(`{
+			"protocol": "openid-connect",
+			"protocolMapper": "oidc-usermodel-attribute-mapper",
+			"config": {
+				"user.attribute": "department",
+				"claim.name": "dept",
+				"jsonType.label": "String",
+				"multivalued": "true",
+				"id.token.claim": "true",
+				"access.token.claim": "true"
+			}
+		}`)
+		since = time.Now().UTC()
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		assertOperatorLogged(t, since, "protocol mapper updated successfully", "name", mapperName)
+		require.Equal(t, "dept", mapperConfig()["claim.name"])
+
+		// Removing a config key is invisible to the subset comparison of
+		// config; the last-applied definition hash must force the PUT.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(`{
+			"protocol": "openid-connect",
+			"protocolMapper": "oidc-usermodel-attribute-mapper",
+			"config": {
+				"user.attribute": "department",
+				"claim.name": "dept",
+				"jsonType.label": "String",
+				"id.token.claim": "true",
+				"access.token.claim": "true"
+			}
+		}`)
+		since = time.Now().UTC()
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		assertOperatorLogged(t, since, "protocol mapper updated successfully", "name", mapperName)
+		require.NotContains(t, mapperConfig(), "multivalued", "config key removed from the CR should be removed in Keycloak")
+
+		final := &keycloakv1beta1.KeycloakProtocolMapper{}
+		require.NoError(t, k8sClient.Get(ctx, key, final))
+		require.True(t, final.Status.Ready, "protocol mapper should remain Ready after the update")
+
+		since = time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "protocol mapper already in sync, skipping update", "name", mapperName)
 	})
 }
 

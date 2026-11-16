@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	fakeMapperScopeID = "scope-id"
-	fakeMapperID      = "mapper-id"
+	fakeMapperScopeID    = "scope-id"
+	fakeMapperClientUUID = "client-uuid"
+	fakeMapperID         = "mapper-id"
 )
 
 // fakeProtocolMapperKeycloak is a minimal stateful stand-in for the protocol
@@ -29,13 +30,20 @@ type fakeProtocolMapperKeycloak struct {
 	mapper map[string]interface{}
 	posts  int
 	puts   int
+	// parentPath is the admin path of the parent the mappers hang off; the
+	// client scope fakeMapperScopeID when empty.
+	parentPath string
 }
 
 func (f *fakeProtocolMapperKeycloak) handler() http.Handler {
 	mux := http.NewServeMux()
 	handleToken(mux)
 
-	const mappers = "/admin/realms/test/client-scopes/" + fakeMapperScopeID + "/protocol-mappers/models"
+	parentPath := f.parentPath
+	if parentPath == "" {
+		parentPath = "/admin/realms/test/client-scopes/" + fakeMapperScopeID
+	}
+	mappers := parentPath + "/protocol-mappers/models"
 	mux.HandleFunc(mappers, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -155,4 +163,89 @@ func TestKeycloakProtocolMapperReconcile_PutsOnChange(t *testing.T) {
 
 	h.reconcile(t, r, mapper.Name)
 	require.Equal(t, 1, fakeKC.puts, "and only once")
+}
+
+// A key removed from the definition's config is invisible to the subset
+// comparison, because Keycloak returns more config keys than the CR lists. The
+// last-applied definition hash must force the PUT.
+func TestKeycloakProtocolMapperReconcile_PropagatesRemovedConfigKey(t *testing.T) {
+	fakeKC := &fakeProtocolMapperKeycloak{t: t}
+	mapper := newProtocolMapperFixture("groups")
+	h := newReconcileHarness(t, fakeKC.handler(), readyParentScope(), mapper)
+	r := &KeycloakProtocolMapperReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+	h.reconcile(t, r, mapper.Name)
+	require.Contains(t, fakeKC.mapper["config"], "full.path")
+
+	updateObject(t, h, mapper, func(m *keycloakv1beta1.KeycloakProtocolMapper) {
+		m.Spec.Definition = runtime.RawExtension{Raw: []byte(`{
+			"protocol": "openid-connect",
+			"protocolMapper": "oidc-group-membership-mapper",
+			"config": {
+				"claim.name": "groups",
+				"id.token.claim": "true",
+				"access.token.claim": "true"
+			}
+		}`)}
+	})
+	h.reconcile(t, r, mapper.Name)
+	require.Equal(t, 1, fakeKC.puts, "removing a config key from the CR must be written")
+	require.NotContains(t, fakeKC.mapper["config"], "full.path")
+
+	for range 3 {
+		h.reconcile(t, r, mapper.Name)
+	}
+	require.Equal(t, 1, fakeKC.puts, "and only once")
+}
+
+// A mapper reconciled by a release that did not record the hash is written
+// once, then stays silent.
+func TestKeycloakProtocolMapperReconcile_WritesOnceWhenHashIsMissing(t *testing.T) {
+	fakeKC := &fakeProtocolMapperKeycloak{t: t}
+	mapper := newProtocolMapperFixture("groups")
+	h := newReconcileHarness(t, fakeKC.handler(), readyParentScope(), mapper)
+	r := &KeycloakProtocolMapperReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+	h.reconcile(t, r, mapper.Name)
+
+	got := &keycloakv1beta1.KeycloakProtocolMapper{}
+	require.NoError(t, h.client.Get(context.Background(), client.ObjectKeyFromObject(mapper), got))
+	require.NotEmpty(t, got.Status.LastAppliedDefinitionHash, "creating the mapper records the hash")
+	got.Status.LastAppliedDefinitionHash = ""
+	require.NoError(t, h.client.Status().Update(context.Background(), got))
+
+	for range 3 {
+		h.reconcile(t, r, mapper.Name)
+	}
+	require.Equal(t, 1, fakeKC.puts)
+}
+
+func TestKeycloakProtocolMapperReconcile_ClientParent(t *testing.T) {
+	fakeKC := &fakeProtocolMapperKeycloak{t: t, parentPath: "/admin/realms/test/clients/" + fakeMapperClientUUID}
+	parent := &keycloakv1beta1.KeycloakClient{
+		ObjectMeta: withFinalizer(metav1.ObjectMeta{Name: "my-client"}),
+		Spec: keycloakv1beta1.KeycloakClientSpec{
+			RealmRef: &keycloakv1beta1.ResourceRef{Name: "realm"},
+			ClientId: strPtr("my-client"),
+		},
+		Status: keycloakv1beta1.KeycloakClientStatus{Ready: true, ClientUUID: fakeMapperClientUUID},
+	}
+	mapper := newProtocolMapperFixture("groups")
+	mapper.Spec.ClientScopeRef = nil
+	mapper.Spec.ClientRef = &keycloakv1beta1.ResourceRef{Name: parent.Name}
+	h := newReconcileHarness(t, fakeKC.handler(), parent, mapper)
+	r := &KeycloakProtocolMapperReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+
+	h.reconcile(t, r, mapper.Name)
+	require.Equal(t, 1, fakeKC.posts, "the first reconcile creates the mapper")
+
+	for range 3 {
+		h.reconcile(t, r, mapper.Name)
+	}
+	require.Equal(t, 0, fakeKC.puts, "a mapper that already matches must not be written again")
+
+	updateObject(t, h, mapper, func(m *keycloakv1beta1.KeycloakProtocolMapper) {
+		m.Spec.Definition = protocolMapperDefinition("roles")
+	})
+	h.reconcile(t, r, mapper.Name)
+	h.reconcile(t, r, mapper.Name)
+	require.Equal(t, 1, fakeKC.puts, "a changed config value is written once")
 }

@@ -179,16 +179,13 @@ func (r *KeycloakGroupReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// The group listing omits attributes and roles, so fetch the full
 		// representation for drift detection.
 		currentRaw, fetchErr := kc.GetGroupRaw(ctx, realmName, groupID)
-
-		needsUpdate := true
 		if fetchErr != nil {
 			log.Error(fetchErr, "failed to fetch current group state, falling through to update")
-		} else if currentRaw != nil {
-			needsUpdate = !groupDefinitionsMatch(definition, currentRaw)
 		}
 
-		if needsUpdate {
-			driftKeys, _ := groupDriftKeys(definition, currentRaw)
+		// A current state that is missing or unreadable counts as drift.
+		driftKeys, driftErr := groupDriftKeys(definition, currentRaw)
+		if fetchErr != nil || driftErr != nil || len(driftKeys) > 0 {
 			log.Info("updating group", withDriftKeys(driftKeys, "name", groupDef.Name, "realm", realmName)...)
 			if err := kc.UpdateGroup(ctx, realmName, groupID, definition); err != nil {
 				RecordError(controllerName, "keycloak_api_error")
