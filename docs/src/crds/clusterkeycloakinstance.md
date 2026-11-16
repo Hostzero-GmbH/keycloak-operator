@@ -44,6 +44,8 @@ spec:
 Same rules as [`KeycloakInstance`](keycloakinstance.md): exactly one of
 `auth.passwordGrant` / `auth.clientCredentials`; passwords and client secrets
 always live in a Secret; `username` / `clientId` may be inlined.
+The notes on [Keycloak 26.8.2 and later](keycloakinstance.md#keycloak-2682-and-later)
+apply here too.
 
 The only difference: `secretRef.namespace` is **required** because the resource
 is cluster-scoped. Since the credential is sent to `baseUrl`, the right to

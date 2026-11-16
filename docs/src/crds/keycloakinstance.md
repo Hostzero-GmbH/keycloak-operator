@@ -124,6 +124,29 @@ kubectl create secret generic keycloak-operator-client \
   --from-literal=client-secret=$(openssl rand -hex 32)
 ```
 
+### Keycloak 26.8.2 and later
+
+Keycloak 26.8.2 tightened the Admin REST API in two ways that matter for the
+account the operator logs in with. Both are described in the Keycloak
+[upgrading guide](https://www.keycloak.org/docs/latest/upgrading/#migrating-to-26-8-2).
+
+**The client needs the `kc-admin-api` client scope.** The Admin REST API only
+accepts tokens that carry this built-in scope. Keycloak assigns it to
+`admin-cli` on upgrade, so `auth.passwordGrant` keeps working unchanged. A
+client used with `auth.clientCredentials` does not get it automatically, not
+even when it is created on 26.8.2 or later. Without the scope every admin
+request is answered with `401 Unauthorized` and the instance does not become
+ready. Add it under *Clients → your client → Client scopes → Add client scope*
+(as a default scope).
+
+**Protocol mappers need realm management permission.** Creating, updating and
+deleting protocol mappers on clients and client scopes now requires permission
+to manage the realm. If the operator's account only holds `manage-clients`,
+`KeycloakProtocolMapper` resources and mappers inside client or client scope
+definitions are rejected. Grant the account `manage-realm` (the `admin` role
+includes it), or list the mapper types it may manage under *Realm settings →
+Allowed protocol mapper types for client administrators*.
+
 ## Status
 
 ```yaml
