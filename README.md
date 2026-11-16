@@ -32,6 +32,8 @@ A Kubernetes operator for managing Keycloak resources declaratively. It uses the
 
 The operator validates the Keycloak version on connection and will fail to become ready if an unsupported version is detected. This ensures compatibility with modern Keycloak APIs and security features.
 
+> **Note**: From Keycloak 26.8.2 on, a client used with `auth.clientCredentials` needs the `kc-admin-api` client scope. See [KeycloakInstance](docs/src/crds/keycloakinstance.md#keycloak-2682-and-later).
+
 > **Note**: Red Hat Build of Keycloak (RHBK) versions are also supported as they map to upstream Keycloak versions (e.g., RHBK 24.x corresponds to Keycloak 24.x).
 
 ## Documentation
