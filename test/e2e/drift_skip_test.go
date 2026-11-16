@@ -740,10 +740,13 @@ func TestDriftSkip(t *testing.T) {
 				"access.token.claim": "true"
 			}
 		}`)
-		since = time.Now().UTC()
 		require.NoError(t, k8sClient.Update(ctx, updated))
-		assertOperatorLogged(t, since, "protocol mapper updated successfully", "name", mapperName)
-		require.NotContains(t, mapperConfig(), "multivalued", "config key removed from the CR should be removed in Keycloak")
+		// Poll Keycloak instead of the log: the "updated successfully" line
+		// of the previous step is still inside the log window.
+		require.Eventually(t, func() bool {
+			_, present := mapperConfig()["multivalued"]
+			return !present
+		}, 30*time.Second, time.Second, "config key removed from the CR should be removed in Keycloak")
 
 		final := &keycloakv1beta1.KeycloakProtocolMapper{}
 		require.NoError(t, k8sClient.Get(ctx, key, final))
