@@ -1571,6 +1571,7 @@ type OrganizationRepresentation struct {
 	Name        string               `json:"name,omitempty"`
 	Alias       string               `json:"alias,omitempty"`
 	Description string               `json:"description,omitempty"`
+	RedirectURL string               `json:"redirectUrl,omitempty"`
 	Enabled     *bool                `json:"enabled,omitempty"`
 	Domains     []OrganizationDomain `json:"domains,omitempty"`
 	Attributes  map[string][]string  `json:"attributes,omitempty"`
@@ -1597,16 +1598,16 @@ func (c *Client) GetOrganization(ctx context.Context, realmName, orgID string) (
 }
 
 // CreateOrganization creates a new organization
-func (c *Client) CreateOrganization(ctx context.Context, realmName string, org OrganizationRepresentation) (string, error) {
-	return c.Create(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations", org)
+func (c *Client) CreateOrganization(ctx context.Context, realmName string, orgDef json.RawMessage) (string, error) {
+	return c.Create(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations", orgDef)
 }
 
 // UpdateOrganization updates an existing organization
-func (c *Client) UpdateOrganization(ctx context.Context, realmName string, org OrganizationRepresentation) error {
-	if org.ID == "" {
+func (c *Client) UpdateOrganization(ctx context.Context, realmName, orgID string, orgDef json.RawMessage) error {
+	if orgID == "" {
 		return fmt.Errorf("organization ID is required for update")
 	}
-	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations/"+url.PathEscape(org.ID), org)
+	return c.Update(ctx, "/admin/realms/"+url.PathEscape(realmName)+"/organizations/"+url.PathEscape(orgID), orgDef)
 }
 
 // DeleteOrganization deletes an organization

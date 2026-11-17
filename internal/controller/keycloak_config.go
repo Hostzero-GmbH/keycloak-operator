@@ -776,6 +776,68 @@ func isMaskedConfigValue(val interface{}) bool {
 	return false
 }
 
+// organizationIgnoredKeys are the keys of an organization definition that
+// Keycloak accepts on create and update and then discards, so they never come
+// back on a read: the id is generated, and members, groups and identity
+// providers are managed through their own endpoints. Sent or compared, they
+// could only keep the organization permanently out of sync. The list is sorted.
+var organizationIgnoredKeys = []string{"groups", "id", "identityProviders", "members"}
+
+// stripIgnoredOrganizationKeys returns definition without the keys Keycloak
+// ignores, and the sorted names of those it carried. A definition that cannot be
+// parsed, or carries none of them, is returned unchanged.
+func stripIgnoredOrganizationKeys(definition json.RawMessage) (json.RawMessage, []string) {
+	var defMap map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return definition, nil
+	}
+
+	var ignored []string
+	for _, key := range organizationIgnoredKeys {
+		if _, ok := defMap[key]; ok {
+			delete(defMap, key)
+			ignored = append(ignored, key)
+		}
+	}
+	if len(ignored) == 0 {
+		return definition, nil
+	}
+
+	stripped, err := json.Marshal(defMap)
+	if err != nil {
+		return definition, nil
+	}
+	return stripped, ignored
+}
+
+// overlayOrganizationDefinition returns current with every key of desired set
+// on top. Keycloak's organization PUT replaces description, redirectUrl and
+// domains with what the request carries, so sending only the declared keys
+// would clear the ones the resource does not declare, such as a redirect URL set
+// in the Admin Console. If either side cannot be parsed, desired is returned.
+func overlayOrganizationDefinition(current, desired json.RawMessage) json.RawMessage {
+	var currentMap, desiredMap map[string]json.RawMessage
+	if err := json.Unmarshal(current, &currentMap); err != nil {
+		return desired
+	}
+	if err := json.Unmarshal(desired, &desiredMap); err != nil {
+		return desired
+	}
+
+	for _, key := range organizationIgnoredKeys {
+		delete(currentMap, key)
+	}
+	for key, value := range desiredMap {
+		currentMap[key] = value
+	}
+
+	merged, err := json.Marshal(currentMap)
+	if err != nil {
+		return desired
+	}
+	return merged
+}
+
 // organizationDefinitionsMatch reports whether desired matches current,
 // ignoring domains[].verified which Keycloak sets on read.
 func organizationDefinitionsMatch(desired, current json.RawMessage) bool {

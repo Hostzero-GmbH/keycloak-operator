@@ -139,9 +139,22 @@ Common properties from [Keycloak OrganizationRepresentation](https://www.keycloa
 | `name` | string | Organization name (required) |
 | `alias` | string | URL-friendly identifier |
 | `description` | string | Description of the organization |
+| `redirectUrl` | string | URL users are sent to after they have joined the organization |
 | `enabled` | boolean | Whether organization is enabled |
 | `domains` | array | Associated email domains |
 | `attributes` | map | Custom organization attributes |
+
+The definition is sent to Keycloak as it is, with `name` set from `spec.name`, so every field of the Keycloak `OrganizationRepresentation` is supported. A key Keycloak does not know is rejected by Keycloak (`400 Unrecognized field`) and shows up in the `Ready` condition message as a failed create or update.
+
+### Keys Keycloak Ignores
+
+Keycloak accepts `id`, `identityProviders`, `members` and `groups` in the organization representation and discards them: the `id` is generated, and the other three are managed through their own endpoints. They are neither sent nor compared, so they cannot keep the organization out of sync, and the `Ready` condition message names them:
+
+```
+Organization synchronized; ignored definition keys: id, identityProviders
+```
+
+Link identity providers with `organizationRef` on the [KeycloakIdentityProvider](./keycloakidentityprovider.md) instead.
 
 ### Domain Properties
 
@@ -169,13 +182,15 @@ kubectl get kcorg
 
 Reconciliation is idempotent. On each periodic resync the operator fetches the current organization from Keycloak and compares it against the spec; the update PUT is skipped when they already match, so an unchanged organization does not generate redundant writes or log noise. `domains[].verified` is set by Keycloak on read and is ignored in the comparison, so leaving it unset (or out of sync with the server) does not trigger a perpetual update loop.
 
+Only the keys the resource declares are compared. Keycloak's organization update replaces `description`, `redirectUrl` and `domains` with whatever the request carries, so when an update is needed the declared keys are applied on top of the organization Keycloak currently returns. A field the resource does not declare, such as a `redirectUrl` set in the Admin Console, is left as it is. A declared list or map (`domains`, `attributes`) replaces the one in Keycloak as a whole.
+
 ## Linking Identity Providers
 
 To map an identity provider to this organization, set `organizationRef` on the [KeycloakIdentityProvider](./keycloakidentityprovider.md) to this CR's name. The operator links the identity provider through this organization's identity-provider endpoint once both are ready; do not copy `status.organizationID` into the identity provider definition by hand.
 
 ## Notes
 
-- Organizations are immutable by ID - once created, the `id` field cannot be changed
+- Organizations are immutable by ID - Keycloak generates the id on create and it cannot be changed, so an `id` in the definition is ignored
 - The `alias` is used in URLs and should be URL-safe
 - Verified domains can be used for automatic user association based on email
 - Use attributes for custom metadata and configuration

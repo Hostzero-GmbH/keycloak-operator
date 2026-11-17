@@ -106,17 +106,19 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 		return r.updateStatus(ctx, org, false, "InvalidDefinition", fmt.Sprintf("Failed to parse organization definition: %v", err), "")
 	}
 
-	// Resolve the organization name from spec.name. NOTE: organizations use a
-	// typed-struct round-trip, so any definition field not present on
-	// keycloak.OrganizationRepresentation is dropped before send. This is a known
-	// passthrough limitation.
+	// Resolve the organization name from spec.name.
 	orgName, err := resolveIdentifier("name", org.Spec.Name, orgDef.Name)
 	if err != nil {
 		RecordError(controllerName, "invalid_identifier")
 		return r.updateStatus(ctx, org, false, InvalidIdentifierReason, err.Error(), "")
 	}
-	orgDef.Name = orgName
 	org.Status.OrganizationName = orgName
+
+	// Send the definition as it is, with the name set, so every field of
+	// Keycloak's OrganizationRepresentation reaches Keycloak. The keys Keycloak
+	// ignores are taken out of the request and out of the comparison below, and
+	// named in the status instead.
+	definition, ignoredKeys := stripIgnoredOrganizationKeys(setFieldInDefinition(org.Spec.Definition.Raw, "name", orgName))
 
 	// Check if organization exists by name
 	existingOrgs, err := kc.GetOrganizations(ctx, realmName)
@@ -127,7 +129,7 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	var existingOrg *keycloak.OrganizationRepresentation
 	if err == nil {
 		for i := range existingOrgs {
-			if existingOrgs[i].Name == orgDef.Name {
+			if existingOrgs[i].Name == orgName {
 				existingOrg = &existingOrgs[i]
 				break
 			}
@@ -137,43 +139,55 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 	var orgID string
 	if existingOrg == nil {
 		// Organization doesn't exist, create it
-		log.Info("creating organization", "name", orgDef.Name, "realm", realmName)
-		orgID, err = kc.CreateOrganization(ctx, realmName, orgDef)
+		log.Info("creating organization", "name", orgName, "realm", realmName)
+		orgID, err = kc.CreateOrganization(ctx, realmName, definition)
 		if err != nil {
-			log.Error(err, "failed to create organization in Keycloak", "name", orgDef.Name, "realm", realmName)
+			log.Error(err, "failed to create organization in Keycloak", "name", orgName, "realm", realmName)
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, org, false, "CreateFailed", fmt.Sprintf("Failed to create organization: %v", err), "")
 		}
-		log.Info("organization created successfully", "name", orgDef.Name, "id", orgID)
+		log.Info("organization created successfully", "name", orgName, "id", orgID)
 	} else {
 		// Skip the PUT when the server already matches the spec.
 		orgID = existingOrg.ID
-		orgDef.ID = orgID
 
 		currentRaw, fetchErr := kc.GetOrganizationRaw(ctx, realmName, orgID)
 		needsUpdate := true
 		if fetchErr != nil {
 			log.Error(fetchErr, "failed to fetch current organization state, falling through to update")
 		} else if currentRaw != nil {
-			needsUpdate = !organizationDefinitionsMatch(org.Spec.Definition.Raw, currentRaw)
+			needsUpdate = !organizationDefinitionsMatch(definition, currentRaw)
 		}
 
 		if needsUpdate {
-			driftKeys, _ := organizationDriftKeys(org.Spec.Definition.Raw, currentRaw)
-			log.Info("updating organization", withDriftKeys(driftKeys, "name", orgDef.Name, "realm", realmName)...)
-			if err := kc.UpdateOrganization(ctx, realmName, orgDef); err != nil {
+			driftKeys, _ := organizationDriftKeys(definition, currentRaw)
+			log.Info("updating organization", withDriftKeys(driftKeys, "name", orgName, "realm", realmName)...)
+
+			// Keycloak's PUT replaces what the request leaves out, so the
+			// declared keys go on top of the current organization.
+			body := definition
+			if currentRaw != nil {
+				body = overlayOrganizationDefinition(currentRaw, definition)
+			}
+			body = mergeIDIntoDefinition(body, &orgID)
+			if err := kc.UpdateOrganization(ctx, realmName, orgID, body); err != nil {
 				RecordError(controllerName, "keycloak_api_error")
 				return r.updateStatus(ctx, org, false, "UpdateFailed", fmt.Sprintf("Failed to update organization: %v", err), orgID)
 			}
-			log.Info("organization updated successfully", "name", orgDef.Name)
+			log.Info("organization updated successfully", "name", orgName)
 		} else {
-			log.V(1).Info("organization already in sync, skipping update", "name", orgDef.Name)
+			log.V(1).Info("organization already in sync, skipping update", "name", orgName)
 		}
 	}
 
 	// Update status
 	org.Status.ResourcePath = fmt.Sprintf("/admin/realms/%s/organizations/%s", realmName, orgID)
-	return r.updateStatus(ctx, org, true, "Ready", "Organization synchronized", orgID)
+	message := "Organization synchronized"
+	if len(ignoredKeys) > 0 {
+		log.V(1).Info("ignoring definition keys that Keycloak does not take from an organization", "name", orgName, "keys", ignoredKeys)
+		message = fmt.Sprintf("Organization synchronized; ignored definition keys: %s", strings.Join(ignoredKeys, ", "))
+	}
+	return r.updateStatus(ctx, org, true, "Ready", message, orgID)
 }
 
 func (r *KeycloakOrganizationReconciler) checkKeycloakVersionForOrganizations(version string) error {
