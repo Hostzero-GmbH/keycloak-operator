@@ -847,7 +847,10 @@ func organizationDefinitionsMatch(desired, current json.RawMessage) bool {
 
 // organizationDriftKeys names the top-level keys in which the desired
 // organization differs from the current one, ignoring domains[].verified as
-// organizationDefinitionsMatch does.
+// organizationDefinitionsMatch does. A key declared empty is in sync with a
+// current organization that does not have it: Keycloak stores an emptied
+// redirectUrl, or an emptied domains list, as no value and leaves the key out
+// of its answer, so without this the object would be written on every resync.
 func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	var desiredMap, currentMap map[string]interface{}
 	if err := json.Unmarshal(desired, &desiredMap); err != nil {
@@ -871,6 +874,12 @@ func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	stripDomainVerified(desiredMap)
 	stripDomainVerified(currentMap)
 
+	for key, value := range desiredMap {
+		if _, present := currentMap[key]; !present && isEmptyDefinitionValue(value) {
+			delete(desiredMap, key)
+		}
+	}
+
 	desiredJSON, err := json.Marshal(desiredMap)
 	if err != nil {
 		return nil, err
@@ -880,6 +889,22 @@ func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 		return nil, err
 	}
 	return definitionDriftKeys(desiredJSON, currentJSON)
+}
+
+// isEmptyDefinitionValue reports whether a decoded JSON value is null, an empty
+// string, an empty list or an empty object.
+func isEmptyDefinitionValue(value interface{}) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case []interface{}:
+		return len(v) == 0
+	case map[string]interface{}:
+		return len(v) == 0
+	}
+	return false
 }
 
 // roleCompositesSpec mirrors the "composites" field of a Keycloak

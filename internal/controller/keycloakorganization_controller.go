@@ -152,15 +152,13 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 		orgID = existingOrg.ID
 
 		currentRaw, fetchErr := kc.GetOrganizationRaw(ctx, realmName, orgID)
-		needsUpdate := true
 		if fetchErr != nil {
 			log.Error(fetchErr, "failed to fetch current organization state, falling through to update")
-		} else if currentRaw != nil {
-			needsUpdate = !organizationDefinitionsMatch(definition, currentRaw)
 		}
 
-		if needsUpdate {
-			driftKeys, _ := organizationDriftKeys(definition, currentRaw)
+		// A current state that is missing or unreadable counts as drift.
+		driftKeys, driftErr := organizationDriftKeys(definition, currentRaw)
+		if fetchErr != nil || driftErr != nil || len(driftKeys) > 0 {
 			log.Info("updating organization", withDriftKeys(driftKeys, "name", orgName, "realm", realmName)...)
 
 			// Keycloak's PUT replaces what the request leaves out, so the

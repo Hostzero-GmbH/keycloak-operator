@@ -184,6 +184,8 @@ Reconciliation is idempotent. On each periodic resync the operator fetches the c
 
 Only the keys the resource declares are compared. Keycloak's organization update replaces `description`, `redirectUrl` and `domains` with whatever the request carries, so when an update is needed the declared keys are applied on top of the organization Keycloak currently returns. A field the resource does not declare, such as a `redirectUrl` set in the Admin Console, is left as it is. A declared list or map (`domains`, `attributes`) replaces the one in Keycloak as a whole.
 
+Because a field the resource does not declare is left alone, removing a key from the definition does not clear it in Keycloak. To clear a field, declare it empty, for example `redirectUrl: ""`, `description: ""` or `domains: []`. Keycloak then returns no value for it, and that counts as in sync.
+
 ## Linking Identity Providers
 
 To map an identity provider to this organization, set `organizationRef` on the [KeycloakIdentityProvider](./keycloakidentityprovider.md) to this CR's name. The operator links the identity provider through this organization's identity-provider endpoint once both are ready; do not copy `status.organizationID` into the identity provider definition by hand.

@@ -110,11 +110,17 @@ func (f *fakeOrganizationKeycloak) store(body map[string]interface{}) {
 			f.org[key] = value
 		}
 	}
+	// Keycloak keeps an empty description as it is, and stores an emptied
+	// redirectUrl or domains list as no value, which it then leaves out.
 	for _, key := range []string{"description", "redirectUrl", "domains"} {
-		if value, ok := body[key]; ok {
-			f.org[key] = value
-		} else {
+		value, ok := body[key]
+		switch {
+		case !ok || value == nil:
 			delete(f.org, key)
+		case key != "description" && isEmptyDefinitionValue(value):
+			delete(f.org, key)
+		default:
+			f.org[key] = value
 		}
 	}
 	if domains, ok := f.org["domains"].([]interface{}); ok {
@@ -240,6 +246,30 @@ func TestKeycloakOrganizationReconcile_KeepsUndeclaredFieldsOnUpdate(t *testing.
 
 	h.reconcile(t, r, org.Name)
 	require.Equal(t, 1, fakeKC.puts, "and the organization is in sync afterwards")
+}
+
+func TestKeycloakOrganizationReconcile_ClearsADeclaredEmptyField(t *testing.T) {
+	fakeKC := &fakeOrganizationKeycloak{t: t}
+	org := newOrganizationFixture(`{"alias":"acme","description":"d","redirectUrl":"https://app.example.com/after","domains":[{"name":"acme.com"}]}`)
+	h := newReconcileHarness(t, fakeKC.handler(), org)
+	r := &KeycloakOrganizationReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+	h.reconcile(t, r, org.Name)
+	require.Contains(t, fakeKC.org, "redirectUrl")
+
+	// Undeclared fields are left alone, so a field is cleared by declaring it
+	// empty. Keycloak then leaves the key out of its answer, which must not
+	// look like drift on every resync.
+	updateObject(t, h, org, setOrganizationDefinition(`{"alias":"acme","description":"d","redirectUrl":"","domains":[]}`))
+	h.reconcile(t, r, org.Name)
+	require.Equal(t, 1, fakeKC.puts, "the emptied fields must be written")
+	require.NotContains(t, fakeKC.org, "redirectUrl")
+	require.NotContains(t, fakeKC.org, "domains")
+	require.Equal(t, "d", fakeKC.org["description"], "what is still declared stays")
+
+	for range 3 {
+		h.reconcile(t, r, org.Name)
+	}
+	require.Equal(t, 1, fakeKC.puts, "an emptied field that Keycloak no longer returns is in sync")
 }
 
 func TestKeycloakOrganizationReconcile_ReportsAKeyKeycloakRejects(t *testing.T) {

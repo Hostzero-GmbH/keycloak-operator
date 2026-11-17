@@ -1020,6 +1020,50 @@ func TestOrganizationDriftKeys_DomainsVerifiedIsNotDrift(t *testing.T) {
 	}
 }
 
+func TestOrganizationDriftKeys_EmptyDeclaredValueIsInSyncWithAnAbsentKey(t *testing.T) {
+	// Keycloak stores an emptied redirectUrl or domains list as no value and
+	// leaves the key out of its answer.
+	desired := json.RawMessage(`{"name":"acme","redirectUrl":"","description":null,"domains":[],"attributes":{}}`)
+	current := json.RawMessage(`{"id":"x","name":"acme","alias":"acme","enabled":true}`)
+
+	keys, err := organizationDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("organizationDriftKeys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("organizationDriftKeys = %v, want none", keys)
+	}
+}
+
+func TestOrganizationDriftKeys_EmptyDeclaredValueIsDriftWhenCurrentHasOne(t *testing.T) {
+	// Declaring a field empty is how it is cleared, so a current value has to
+	// show up as drift for the clearing PUT to be sent.
+	desired := json.RawMessage(`{"name":"acme","redirectUrl":"","description":null}`)
+	current := json.RawMessage(`{"id":"x","name":"acme","redirectUrl":"https://app/cb","description":"d"}`)
+
+	keys, err := organizationDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("organizationDriftKeys: %v", err)
+	}
+	if want := []string{"description", "redirectUrl"}; !slices.Equal(keys, want) {
+		t.Errorf("organizationDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestOrganizationDriftKeys_FalseIsNotEmpty(t *testing.T) {
+	// enabled: false is a value, not an absent one: it must still be compared.
+	desired := json.RawMessage(`{"name":"acme","enabled":false}`)
+	current := json.RawMessage(`{"id":"x","name":"acme"}`)
+
+	keys, err := organizationDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("organizationDriftKeys: %v", err)
+	}
+	if want := []string{"enabled"}; !slices.Equal(keys, want) {
+		t.Errorf("organizationDriftKeys = %v, want %v", keys, want)
+	}
+}
+
 func TestStripIgnoredOrganizationKeys(t *testing.T) {
 	definition := json.RawMessage(`{"name":"acme","id":"x","redirectUrl":"https://app/cb","identityProviders":[{"alias":"idp1"}],"members":[],"groups":[],"domains":[{"name":"acme.com"}]}`)
 
