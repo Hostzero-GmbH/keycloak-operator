@@ -43,6 +43,13 @@ import (
 //     unconditionally (#209), including the two removals a subset comparison
 //     cannot see: a dropped group attribute and a dropped mapper config key.
 //
+//   - Organization, whose definition used to be cut down to the typed
+//     representation (#210): redirectUrl reaches Keycloak, the keys Keycloak
+//     ignores are named instead of keeping the object out of sync, a field the
+//     CR does not declare survives an update, a field declared empty is
+//     cleared without looping, and attributes are compared exactly so a dropped
+//     attribute or an empty map reaches Keycloak.
+//
 // All assertions rely on the operator's V(1) "already in sync, skipping
 // update" log line as direct evidence the comparator returned true and the
 // PUT was bypassed. The chart's dev values run zap with development:true, so
@@ -477,6 +484,222 @@ func TestDriftSkip(t *testing.T) {
 		final := &keycloakv1beta1.KeycloakOrganization{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, final))
 		require.True(t, final.Status.Ready, "organization should remain Ready after skipped reconcile")
+	})
+
+	t.Run("KeycloakOrganization_SendsRedirectUrlAndNamesIgnoredKeys", func(t *testing.T) {
+		instance := &keycloakv1beta1.KeycloakInstance{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: instanceName, Namespace: testNamespace}, instance))
+		if instance.Status.Version == "" || instance.Status.Version[0:2] < "26" {
+			t.Skip("Organizations require Keycloak 26.0.0 or later")
+		}
+
+		realmName := createTestRealmWithOrganizations(t, instanceName, "drift-org-url")
+
+		orgName := fmt.Sprintf("drift-org-url-%d", time.Now().UnixNano())
+		const unusedID = "00000000-0000-0000-0000-000000000000"
+		// Keycloak accepts id and identityProviders and discards them, and
+		// never returns them, so left in the comparison they would make the
+		// operator PUT on every reconcile.
+		org := &keycloakv1beta1.KeycloakOrganization{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orgName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
+				Name:     strPtr(orgName),
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: rawJSON(fmt.Sprintf(`{
+					"alias": "%s",
+					"enabled": true,
+					"redirectUrl": "https://app.example.com/after-login",
+					"domains": [{"name": "%s.example.com"}],
+					"id": "%s",
+					"identityProviders": [{"alias": "not-linked-here"}]
+				}`, orgName, orgName, unusedID)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, org))
+		t.Cleanup(func() { k8sClient.Delete(ctx, org) })
+
+		waitForOrganizationReady(t, org.Name, org.Namespace)
+
+		ready := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, ready))
+		require.Contains(t, ready.Status.Message, "ignored definition keys: id, identityProviders",
+			"the keys Keycloak ignores should be named in the status")
+
+		kc := getInternalKeycloakClient(t)
+		raw, err := kc.GetOrganizationRaw(ctx, realmName, ready.Status.OrganizationID)
+		require.NoError(t, err)
+		var orgMap map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &orgMap))
+		require.Equal(t, "https://app.example.com/after-login", orgMap["redirectUrl"], "redirectUrl should reach Keycloak")
+		require.NotEqual(t, unusedID, orgMap["id"], "Keycloak generates the organization id")
+
+		since := time.Now().UTC()
+		bumpReconcile(t, ready)
+		assertOperatorLogged(t, since, "organization already in sync, skipping update", "name", orgName)
+
+		final := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: org.Name, Namespace: org.Namespace}, final))
+		require.True(t, final.Status.Ready, "organization should remain Ready after skipped reconcile")
+	})
+
+	t.Run("KeycloakOrganization_KeepsUndeclaredFieldsAndClearsEmptiedOnes", func(t *testing.T) {
+		instance := &keycloakv1beta1.KeycloakInstance{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: instanceName, Namespace: testNamespace}, instance))
+		if instance.Status.Version == "" || instance.Status.Version[0:2] < "26" {
+			t.Skip("Organizations require Keycloak 26.0.0 or later")
+		}
+
+		realmName := createTestRealmWithOrganizations(t, instanceName, "drift-org-keep")
+
+		orgName := fmt.Sprintf("drift-org-keep-%d", time.Now().UnixNano())
+		org := &keycloakv1beta1.KeycloakOrganization{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orgName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
+				Name:       strPtr(orgName),
+				RealmRef:   &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: rawJSON(fmt.Sprintf(`{"alias": "%s", "description": "first"}`, orgName)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, org))
+		t.Cleanup(func() { k8sClient.Delete(ctx, org) })
+
+		waitForOrganizationReady(t, org.Name, org.Namespace)
+
+		key := types.NamespacedName{Name: org.Name, Namespace: org.Namespace}
+		updated := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		orgID := updated.Status.OrganizationID
+
+		kc := getInternalKeycloakClient(t)
+		orgMap := func() map[string]interface{} {
+			t.Helper()
+			raw, err := kc.GetOrganizationRaw(ctx, realmName, orgID)
+			require.NoError(t, err)
+			var m map[string]interface{}
+			require.NoError(t, json.Unmarshal(raw, &m))
+			return m
+		}
+
+		// A redirect URL and a disabled flag set in the Admin Console: the
+		// resource declares neither.
+		require.NoError(t, kc.UpdateOrganization(ctx, realmName, orgID, json.RawMessage(fmt.Sprintf(
+			`{"id": "%s", "name": "%s", "alias": "%s", "enabled": false, "description": "first", "redirectUrl": "https://admin.example.com/console"}`,
+			orgID, orgName, orgName))))
+		require.Equal(t, "https://admin.example.com/console", orgMap()["redirectUrl"])
+		require.Equal(t, false, orgMap()["enabled"])
+
+		// Keycloak's PUT replaces redirectUrl and sets enabled back to true, so
+		// a changed description must be written on top of what Keycloak has
+		// instead of clearing them.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(fmt.Sprintf(`{"alias": "%s", "description": "second"}`, orgName))
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		require.Eventually(t, func() bool {
+			return orgMap()["description"] == "second"
+		}, 30*time.Second, time.Second, "changed description should reach Keycloak")
+		require.Equal(t, "https://admin.example.com/console", orgMap()["redirectUrl"],
+			"a field the resource does not declare should survive the update")
+		require.Equal(t, false, orgMap()["enabled"],
+			"an enabled flag the resource does not declare should survive the update")
+
+		// Declaring the field empty clears it. Keycloak then leaves the key out
+		// of its answer, which must not look like drift.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(fmt.Sprintf(`{"alias": "%s", "description": "second", "redirectUrl": ""}`, orgName))
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		require.Eventually(t, func() bool {
+			_, present := orgMap()["redirectUrl"]
+			return !present
+		}, 30*time.Second, time.Second, "redirectUrl declared empty should be cleared in Keycloak")
+
+		final := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, key, final))
+		require.True(t, final.Status.Ready, "organization should remain Ready after the update")
+
+		since := time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "organization already in sync, skipping update", "name", orgName)
+	})
+
+	t.Run("KeycloakOrganization_PropagatesRemovedAttributes", func(t *testing.T) {
+		instance := &keycloakv1beta1.KeycloakInstance{}
+		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{Name: instanceName, Namespace: testNamespace}, instance))
+		if instance.Status.Version == "" || instance.Status.Version[0:2] < "26" {
+			t.Skip("Organizations require Keycloak 26.0.0 or later")
+		}
+
+		realmName := createTestRealmWithOrganizations(t, instanceName, "drift-org-attrs")
+
+		orgName := fmt.Sprintf("drift-org-attrs-%d", time.Now().UnixNano())
+		org := &keycloakv1beta1.KeycloakOrganization{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      orgName,
+				Namespace: testNamespace,
+			},
+			Spec: keycloakv1beta1.KeycloakOrganizationSpec{
+				Name:     strPtr(orgName),
+				RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+				Definition: rawJSON(fmt.Sprintf(
+					`{"alias": "%s", "attributes": {"team": ["a", "b"], "tier": ["1"]}}`, orgName)),
+			},
+		}
+		require.NoError(t, k8sClient.Create(ctx, org))
+		t.Cleanup(func() { k8sClient.Delete(ctx, org) })
+
+		waitForOrganizationReady(t, org.Name, org.Namespace)
+
+		key := types.NamespacedName{Name: org.Name, Namespace: org.Namespace}
+		updated := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+
+		kc := getInternalKeycloakClient(t)
+		attributes := func() map[string]interface{} {
+			t.Helper()
+			raw, err := kc.GetOrganizationRaw(ctx, realmName, updated.Status.OrganizationID)
+			require.NoError(t, err)
+			var m map[string]interface{}
+			require.NoError(t, json.Unmarshal(raw, &m))
+			attrs, _ := m["attributes"].(map[string]interface{})
+			return attrs
+		}
+		require.Contains(t, attributes(), "tier")
+
+		since := time.Now().UTC()
+		bumpReconcile(t, updated)
+		assertOperatorLogged(t, since, "organization already in sync, skipping update", "name", orgName)
+
+		// The PUT replaces attributes as a whole, so an attribute dropped from
+		// the CR must reach Keycloak although the remaining ones match.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(fmt.Sprintf(`{"alias": "%s", "attributes": {"team": ["a", "b"]}}`, orgName))
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		require.Eventually(t, func() bool {
+			_, present := attributes()["tier"]
+			return !present
+		}, 30*time.Second, time.Second, "attribute removed from the CR should be removed in Keycloak")
+		require.Contains(t, attributes(), "team")
+
+		// An empty map clears the attributes.
+		require.NoError(t, k8sClient.Get(ctx, key, updated))
+		updated.Spec.Definition = rawJSON(fmt.Sprintf(`{"alias": "%s", "attributes": {}}`, orgName))
+		require.NoError(t, k8sClient.Update(ctx, updated))
+		require.Eventually(t, func() bool {
+			return len(attributes()) == 0
+		}, 30*time.Second, time.Second, "an empty attributes map should clear the attributes in Keycloak")
+
+		final := &keycloakv1beta1.KeycloakOrganization{}
+		require.NoError(t, k8sClient.Get(ctx, key, final))
+		require.True(t, final.Status.Ready, "organization should remain Ready after the update")
+
+		since = time.Now().UTC()
+		bumpReconcile(t, final)
+		assertOperatorLogged(t, since, "organization already in sync, skipping update", "name", orgName)
 	})
 
 	t.Run("KeycloakRole_SkipsUpdate", func(t *testing.T) {
