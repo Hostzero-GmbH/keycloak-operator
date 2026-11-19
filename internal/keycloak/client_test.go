@@ -448,6 +448,76 @@ func TestOrganizationIdentityProviders_PathEscaping(t *testing.T) {
 	}, seenPaths)
 }
 
+// TestOrganization_CreateAndUpdateSendTheRawDefinition verifies that the
+// definition reaches Keycloak byte for byte, so fields the typed
+// OrganizationRepresentation does not model (redirectUrl and whatever Keycloak
+// adds later) are not dropped, that the created ID comes from the Location
+// header, and that the organization ID is path-escaped on update.
+func TestOrganization_CreateAndUpdateSendTheRawDefinition(t *testing.T) {
+	const definition = `{"name":"acme","redirectUrl":"https://app.example.com/after","domains":[{"name":"acme.com"}]}`
+
+	var (
+		seenMethods []string
+		seenPaths   []string
+		seenBodies  []string
+	)
+	record := func(r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		seenMethods = append(seenMethods, r.Method)
+		seenPaths = append(seenPaths, r.URL.EscapedPath())
+		seenBodies = append(seenBodies, string(body))
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/realms/master/protocol/openid-connect/token", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"access_token":"test","expires_in":300,"token_type":"Bearer"}`))
+	})
+	mux.HandleFunc("/admin/realms/my-realm/organizations", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		w.Header().Set("Location", "/admin/realms/my-realm/organizations/new-id")
+		w.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/admin/realms/my-realm/organizations/org%2F1", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv.URL)
+	ctx := context.Background()
+
+	id, err := c.CreateOrganization(ctx, "my-realm", json.RawMessage(definition))
+	require.NoError(t, err)
+	assert.Equal(t, "new-id", id)
+
+	require.NoError(t, c.UpdateOrganization(ctx, "my-realm", "org/1", json.RawMessage(definition)))
+
+	assert.Equal(t, []string{http.MethodPost, http.MethodPut}, seenMethods)
+	assert.Equal(t, []string{
+		"/admin/realms/my-realm/organizations",
+		"/admin/realms/my-realm/organizations/org%2F1",
+	}, seenPaths)
+	assert.Equal(t, []string{definition, definition}, seenBodies)
+}
+
+// TestOrganization_UpdateRequiresAnID checks that an update without an
+// organization ID fails before any request is made.
+func TestOrganization_UpdateRequiresAnID(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`{"access_token":"test","expires_in":300,"token_type":"Bearer"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	c := newTestClient(t, srv.URL)
+
+	err := c.UpdateOrganization(context.Background(), "my-realm", "", json.RawMessage(`{"name":"acme"}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "organization ID is required")
+	assert.Zero(t, requests, "no request should be made without an ID")
+}
+
 // TestIsNotFound pins the error shape the generic CRUD helpers produce for a
 // 404 so callers can distinguish "gone" from other API failures.
 func TestIsNotFound(t *testing.T) {

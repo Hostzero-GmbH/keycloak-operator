@@ -40,6 +40,11 @@ type fakeOrganizationKeycloak struct {
 	lastPut  map[string]interface{}
 	// failGet makes GET /organizations/{id} answer 500.
 	failGet bool
+	// garbageGet makes GET /organizations/{id} answer 200 with a JSON array,
+	// which is valid JSON but not an organization.
+	garbageGet bool
+	// failPut makes PUT /organizations/{id} answer 400.
+	failPut bool
 }
 
 func (f *fakeOrganizationKeycloak) handler() http.Handler {
@@ -79,10 +84,18 @@ func (f *fakeOrganizationKeycloak) handler() http.Handler {
 				http.Error(w, `{"error":"boom"}`, http.StatusInternalServerError)
 				return
 			}
+			if f.garbageGet {
+				writeUserJSON(w, []interface{}{})
+				return
+			}
 			writeUserJSON(w, f.org)
 		case http.MethodPut:
 			body := decodeObject(f.t, r)
 			if !rejectUnknownOrganizationKeys(w, body) {
+				return
+			}
+			if f.failPut {
+				http.Error(w, `{"error":"rejected"}`, http.StatusBadRequest)
 				return
 			}
 			f.puts++
@@ -343,6 +356,55 @@ func TestKeycloakOrganizationReconcile_RetriesInsteadOfWritingWhenCurrentStateCa
 	require.Equal(t, 1, fakeKC.puts, "once Keycloak answers again the update goes out")
 	require.Equal(t, "second", fakeKC.org["description"])
 	require.Equal(t, "https://admin.example.com/console", fakeKC.org["redirectUrl"])
+	require.True(t, getOrganization(t, h, org).Status.Ready)
+}
+
+func TestKeycloakOrganizationReconcile_DoesNotWriteWhenCurrentStateIsUnreadable(t *testing.T) {
+	fakeKC := &fakeOrganizationKeycloak{t: t}
+	org := newOrganizationFixture(`{"alias":"acme","description":"first"}`)
+	h := newReconcileHarness(t, fakeKC.handler(), org)
+	r := &KeycloakOrganizationReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+	h.reconcile(t, r, org.Name)
+
+	// Keycloak answers 200, but with something that is not an organization.
+	fakeKC.garbageGet = true
+	updateObject(t, h, org, setOrganizationDefinition(`{"alias":"acme","description":"second"}`))
+	h.reconcile(t, r, org.Name)
+
+	require.Equal(t, 0, fakeKC.puts, "an update must not be built on a current state that cannot be read")
+	got := getOrganization(t, h, org)
+	require.False(t, got.Status.Ready)
+	require.Equal(t, "GetFailed", got.Status.Status)
+	require.Contains(t, got.Status.Message, "Failed to compare organization")
+
+	fakeKC.garbageGet = false
+	h.reconcile(t, r, org.Name)
+	require.Equal(t, 1, fakeKC.puts)
+	require.True(t, getOrganization(t, h, org).Status.Ready)
+}
+
+func TestKeycloakOrganizationReconcile_ReportsAnUpdateKeycloakRejects(t *testing.T) {
+	fakeKC := &fakeOrganizationKeycloak{t: t}
+	org := newOrganizationFixture(`{"alias":"acme","description":"first"}`)
+	h := newReconcileHarness(t, fakeKC.handler(), org)
+	r := &KeycloakOrganizationReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+	h.reconcile(t, r, org.Name)
+
+	fakeKC.failPut = true
+	updateObject(t, h, org, setOrganizationDefinition(`{"alias":"acme","description":"second"}`))
+	h.reconcile(t, r, org.Name)
+
+	require.Equal(t, 0, fakeKC.puts)
+	require.Equal(t, "first", fakeKC.org["description"])
+	got := getOrganization(t, h, org)
+	require.False(t, got.Status.Ready)
+	require.Equal(t, "UpdateFailed", got.Status.Status)
+	require.Contains(t, got.Status.Message, "Failed to update organization")
+
+	fakeKC.failPut = false
+	h.reconcile(t, r, org.Name)
+	require.Equal(t, 1, fakeKC.puts, "once Keycloak accepts it, the update goes out")
+	require.Equal(t, "second", fakeKC.org["description"])
 	require.True(t, getOrganization(t, h, org).Status.Ready)
 }
 
