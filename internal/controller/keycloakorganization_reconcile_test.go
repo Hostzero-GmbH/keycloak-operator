@@ -28,8 +28,9 @@ var fakeOrganizationKeys = map[string]bool{
 // representation does not have is answered with 400, the id of a created
 // organization is generated, and identityProviders, members and groups are
 // accepted and discarded. A PUT replaces description, redirectUrl and domains
-// with what it carries, and leaves attributes alone when it has none. Writes are
-// counted so tests can assert that a steady state stays silent.
+// with what it carries, sets enabled back to true when it has none, and leaves
+// attributes alone when it has none. Writes are counted so tests can assert that
+// a steady state stays silent.
 type fakeOrganizationKeycloak struct {
 	t        *testing.T
 	org      map[string]interface{}
@@ -37,6 +38,8 @@ type fakeOrganizationKeycloak struct {
 	puts     int
 	lastPost map[string]interface{}
 	lastPut  map[string]interface{}
+	// failGet makes GET /organizations/{id} answer 500.
+	failGet bool
 }
 
 func (f *fakeOrganizationKeycloak) handler() http.Handler {
@@ -61,7 +64,7 @@ func (f *fakeOrganizationKeycloak) handler() http.Handler {
 			}
 			f.posts++
 			f.lastPost = body
-			f.org = map[string]interface{}{"id": fakeOrganizationID, "enabled": true}
+			f.org = map[string]interface{}{"id": fakeOrganizationID}
 			f.store(body)
 			w.Header().Set("Location", organizations+"/"+fakeOrganizationID)
 			w.WriteHeader(http.StatusCreated)
@@ -72,6 +75,10 @@ func (f *fakeOrganizationKeycloak) handler() http.Handler {
 	mux.HandleFunc(organizations+"/"+fakeOrganizationID, func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
+			if f.failGet {
+				http.Error(w, `{"error":"boom"}`, http.StatusInternalServerError)
+				return
+			}
 			writeUserJSON(w, f.org)
 		case http.MethodPut:
 			body := decodeObject(f.t, r)
@@ -105,10 +112,15 @@ func rejectUnknownOrganizationKeys(w http.ResponseWriter, body map[string]interf
 }
 
 func (f *fakeOrganizationKeycloak) store(body map[string]interface{}) {
-	for _, key := range []string{"name", "alias", "enabled", "attributes"} {
+	for _, key := range []string{"name", "alias", "attributes"} {
 		if value, ok := body[key]; ok {
 			f.org[key] = value
 		}
+	}
+	if value, ok := body["enabled"]; ok {
+		f.org["enabled"] = value
+	} else {
+		f.org["enabled"] = true
 	}
 	// Keycloak keeps an empty description as it is, and stores an emptied
 	// redirectUrl or domains list as no value, which it then leaves out.
@@ -232,8 +244,9 @@ func TestKeycloakOrganizationReconcile_KeepsUndeclaredFieldsOnUpdate(t *testing.
 	r := &KeycloakOrganizationReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
 	h.reconcile(t, r, org.Name)
 
-	// Set in the Admin Console: the resource does not declare it.
+	// Set in the Admin Console: the resource does not declare them.
 	fakeKC.org["redirectUrl"] = "https://admin.example.com/console"
+	fakeKC.org["enabled"] = false
 
 	updateObject(t, h, org, setOrganizationDefinition(`{"alias":"acme","description":"second"}`))
 	h.reconcile(t, r, org.Name)
@@ -242,6 +255,8 @@ func TestKeycloakOrganizationReconcile_KeepsUndeclaredFieldsOnUpdate(t *testing.
 	require.Equal(t, "second", fakeKC.org["description"])
 	require.Equal(t, "https://admin.example.com/console", fakeKC.org["redirectUrl"],
 		"a field the resource does not declare must survive Keycloak's replace semantics")
+	require.Equal(t, false, fakeKC.org["enabled"],
+		"an enabled flag the resource does not declare must not be set back to true")
 	require.NotContains(t, fakeKC.lastPut, "members", "the overlay carries nothing Keycloak ignores")
 
 	h.reconcile(t, r, org.Name)
@@ -270,6 +285,65 @@ func TestKeycloakOrganizationReconcile_ClearsADeclaredEmptyField(t *testing.T) {
 		h.reconcile(t, r, org.Name)
 	}
 	require.Equal(t, 1, fakeKC.puts, "an emptied field that Keycloak no longer returns is in sync")
+}
+
+func TestKeycloakOrganizationReconcile_PropagatesRemovedAndEmptiedAttributes(t *testing.T) {
+	fakeKC := &fakeOrganizationKeycloak{t: t}
+	org := newOrganizationFixture(`{"alias":"acme","attributes":{"team":["a"],"tier":["1"]}}`)
+	h := newReconcileHarness(t, fakeKC.handler(), org)
+	r := &KeycloakOrganizationReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+	h.reconcile(t, r, org.Name)
+	h.reconcile(t, r, org.Name)
+	require.Equal(t, 0, fakeKC.puts)
+
+	// The PUT replaces attributes as a whole, so an attribute dropped from the
+	// resource must reach Keycloak although the remaining ones match.
+	updateObject(t, h, org, setOrganizationDefinition(`{"alias":"acme","attributes":{"team":["a"]}}`))
+	h.reconcile(t, r, org.Name)
+	require.Equal(t, 1, fakeKC.puts, "dropping an attribute is drift")
+	require.NotContains(t, fakeKC.org["attributes"], "tier")
+	require.Contains(t, fakeKC.org["attributes"], "team")
+
+	// An empty map clears them all.
+	updateObject(t, h, org, setOrganizationDefinition(`{"alias":"acme","attributes":{}}`))
+	h.reconcile(t, r, org.Name)
+	require.Equal(t, 2, fakeKC.puts, "an empty attributes map clears the attributes")
+	require.Empty(t, fakeKC.org["attributes"])
+
+	for range 3 {
+		h.reconcile(t, r, org.Name)
+	}
+	require.Equal(t, 2, fakeKC.puts, "and the organization is in sync afterwards")
+}
+
+func TestKeycloakOrganizationReconcile_RetriesInsteadOfWritingWhenCurrentStateCannotBeFetched(t *testing.T) {
+	fakeKC := &fakeOrganizationKeycloak{t: t}
+	org := newOrganizationFixture(`{"alias":"acme","description":"first"}`)
+	h := newReconcileHarness(t, fakeKC.handler(), org)
+	r := &KeycloakOrganizationReconciler{Client: h.client, Scheme: h.client.Scheme(), ClientManager: h.manager}
+	h.reconcile(t, r, org.Name)
+
+	fakeKC.org["redirectUrl"] = "https://admin.example.com/console"
+	fakeKC.failGet = true
+	updateObject(t, h, org, setOrganizationDefinition(`{"alias":"acme","description":"second"}`))
+	h.reconcile(t, r, org.Name)
+
+	// A PUT without the current state would clear what the resource does not
+	// declare, so nothing is written and the failure is on the status.
+	require.Equal(t, 0, fakeKC.puts, "an update must not be sent without the current organization")
+	require.Equal(t, "first", fakeKC.org["description"])
+	require.Equal(t, "https://admin.example.com/console", fakeKC.org["redirectUrl"])
+	got := getOrganization(t, h, org)
+	require.False(t, got.Status.Ready)
+	require.Equal(t, "GetFailed", got.Status.Status)
+	require.Contains(t, got.Status.Message, "Failed to get organization")
+
+	fakeKC.failGet = false
+	h.reconcile(t, r, org.Name)
+	require.Equal(t, 1, fakeKC.puts, "once Keycloak answers again the update goes out")
+	require.Equal(t, "second", fakeKC.org["description"])
+	require.Equal(t, "https://admin.example.com/console", fakeKC.org["redirectUrl"])
+	require.True(t, getOrganization(t, h, org).Status.Ready)
 }
 
 func TestKeycloakOrganizationReconcile_ReportsAKeyKeycloakRejects(t *testing.T) {

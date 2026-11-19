@@ -1064,6 +1064,80 @@ func TestOrganizationDriftKeys_FalseIsNotEmpty(t *testing.T) {
 	}
 }
 
+func TestOrganizationDriftKeys_AttributesAreComparedExactly(t *testing.T) {
+	// An organization PUT replaces attributes as a whole and Keycloak adds none
+	// of its own, so what the definition no longer lists is drift, not only what
+	// it lists with another value.
+	tests := []struct {
+		name    string
+		desired string
+		current string
+		want    []string
+	}{
+		{
+			name:    "empty map clears the attributes",
+			desired: `{"name":"acme","attributes":{}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "an attribute removed from the definition",
+			desired: `{"name":"acme","attributes":{"team":["a"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"],"tier":["1"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "a changed value",
+			desired: `{"name":"acme","attributes":{"team":["b"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "an added attribute",
+			desired: `{"name":"acme","attributes":{"team":["a"],"tier":["1"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "the same attributes",
+			desired: `{"name":"acme","attributes":{"team":["a","b"],"tier":["1"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"tier":["1"],"team":["b","a"]}}`,
+		},
+		{
+			name:    "attributes the definition does not declare are left alone",
+			desired: `{"name":"acme"}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+		},
+		{
+			name:    "an empty map is in sync with no attributes",
+			desired: `{"name":"acme","attributes":{}}`,
+			current: `{"id":"x","name":"acme"}`,
+		},
+		{
+			name:    "an empty map is in sync with the empty map Keycloak returns",
+			desired: `{"name":"acme","attributes":{}}`,
+			current: `{"id":"x","name":"acme","attributes":{}}`,
+		},
+		{
+			name:    "a dropped attribute is named together with the other drift",
+			desired: `{"name":"acme","description":"new","attributes":{"team":["a"]}}`,
+			current: `{"id":"x","name":"acme","description":"old","attributes":{"team":["a"],"tier":["1"]}}`,
+			want:    []string{"attributes", "description"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keys, err := organizationDriftKeys(json.RawMessage(tt.desired), json.RawMessage(tt.current))
+			if err != nil {
+				t.Fatalf("organizationDriftKeys: %v", err)
+			}
+			if !slices.Equal(keys, tt.want) {
+				t.Errorf("organizationDriftKeys = %v, want %v", keys, tt.want)
+			}
+		})
+	}
+}
+
 func TestStripIgnoredOrganizationKeys(t *testing.T) {
 	definition := json.RawMessage(`{"name":"acme","id":"x","redirectUrl":"https://app/cb","identityProviders":[{"alias":"idp1"}],"members":[],"groups":[],"domains":[{"name":"acme.com"}]}`)
 

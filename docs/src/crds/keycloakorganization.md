@@ -146,6 +146,8 @@ Common properties from [Keycloak OrganizationRepresentation](https://www.keycloa
 
 The definition is sent to Keycloak as it is, with `name` set from `spec.name`, so every field of the Keycloak `OrganizationRepresentation` is supported. A key Keycloak does not know is rejected by Keycloak (`400 Unrecognized field`) and shows up in the `Ready` condition message as a failed create or update.
 
+> **Upgrading:** earlier releases dropped keys that are not part of the typed representation without a word. A resource whose definition still carries one, for example a misspelled key, changes from `Ready` to `UpdateFailed` after the operator is upgraded. Remove the key from the definition.
+
 ### Keys Keycloak Ignores
 
 Keycloak accepts `id`, `identityProviders`, `members` and `groups` in the organization representation and discards them: the `id` is generated, and the other three are managed through their own endpoints. They are neither sent nor compared, so they cannot keep the organization out of sync, and the `Ready` condition message names them:
@@ -177,14 +179,17 @@ kubectl get kcorg
 
 - **Keycloak 26.0.0+**: Organizations are a feature introduced in Keycloak 26. The operator will report an error if you try to create an organization on an older Keycloak version.
 - **Organizations must be enabled**: The organization feature must be enabled in the realm settings.
+- **At least one domain on Keycloak 26.0 to 26.3**: those releases answer `400 You must provide at least one domain` to a create or update that leaves the organization without a domain, `domains: []` included, so declare `domains` when you create an organization there. Keycloak 26.4 and later accept an organization without domains.
 
 ## Reconciliation
 
 Reconciliation is idempotent. On each periodic resync the operator fetches the current organization from Keycloak and compares it against the spec; the update PUT is skipped when they already match, so an unchanged organization does not generate redundant writes or log noise. `domains[].verified` is set by Keycloak on read and is ignored in the comparison, so leaving it unset (or out of sync with the server) does not trigger a perpetual update loop.
 
-Only the keys the resource declares are compared. Keycloak's organization update replaces `description`, `redirectUrl` and `domains` with whatever the request carries, so when an update is needed the declared keys are applied on top of the organization Keycloak currently returns. A field the resource does not declare, such as a `redirectUrl` set in the Admin Console, is left as it is. A declared list or map (`domains`, `attributes`) replaces the one in Keycloak as a whole.
+Only the keys the resource declares are compared, with one exception: `attributes` is compared exactly. Keycloak replaces the attributes as a whole and adds none of its own, so an attribute removed from the definition, or `attributes: {}`, is written to Keycloak. Keycloak's organization update also replaces `description`, `redirectUrl` and `domains` with whatever the request carries, and sets `enabled` back to `true` when it is left out. So when an update is needed, the declared keys are applied on top of the organization Keycloak currently returns. A field the resource does not declare, such as a `redirectUrl` set in the Admin Console or an organization disabled there, is left as it is. A declared list or map (`domains`, `attributes`) replaces the one in Keycloak as a whole.
 
-Because a field the resource does not declare is left alone, removing a key from the definition does not clear it in Keycloak. To clear a field, declare it empty, for example `redirectUrl: ""`, `description: ""` or `domains: []`. Keycloak then returns no value for it, and that counts as in sync.
+If the current organization cannot be read, no update is sent, because it would clear the fields the resource does not declare. The `Ready` condition turns false with the reason `GetFailed` and the reconcile is retried.
+
+Because a field the resource does not declare is left alone, removing a key from the definition does not clear it in Keycloak. To clear a field, declare it empty, for example `redirectUrl: ""`, `description: ""` or `attributes: {}`. Keycloak then returns no value for it, or an empty map, and that counts as in sync. `domains: []` clears the domains only on Keycloak 26.4 and later: see [Requirements](#requirements).
 
 ## Linking Identity Providers
 

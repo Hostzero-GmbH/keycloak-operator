@@ -151,22 +151,27 @@ func (r *KeycloakOrganizationReconciler) Reconcile(ctx context.Context, req ctrl
 		// Skip the PUT when the server already matches the spec.
 		orgID = existingOrg.ID
 
+		// Keycloak's PUT replaces what the request leaves out, so an update is
+		// only ever sent on top of the current organization. Without it, a
+		// description, redirect URL or enabled flag the resource does not
+		// declare would be cleared, so a failed read is retried instead.
 		currentRaw, fetchErr := kc.GetOrganizationRaw(ctx, realmName, orgID)
 		if fetchErr != nil {
-			log.Error(fetchErr, "failed to fetch current organization state, falling through to update")
+			log.Error(fetchErr, "failed to fetch current organization state", "name", orgName, "realm", realmName)
+			RecordError(controllerName, "keycloak_api_error")
+			return r.updateStatus(ctx, org, false, "GetFailed", fmt.Sprintf("Failed to get organization: %v", fetchErr), orgID)
 		}
 
-		// A current state that is missing or unreadable counts as drift.
 		driftKeys, driftErr := organizationDriftKeys(definition, currentRaw)
-		if fetchErr != nil || driftErr != nil || len(driftKeys) > 0 {
+		if driftErr != nil {
+			log.Error(driftErr, "failed to compare the organization with Keycloak", "name", orgName, "realm", realmName)
+			RecordError(controllerName, "keycloak_api_error")
+			return r.updateStatus(ctx, org, false, "GetFailed", fmt.Sprintf("Failed to compare organization: %v", driftErr), orgID)
+		}
+		if len(driftKeys) > 0 {
 			log.Info("updating organization", withDriftKeys(driftKeys, "name", orgName, "realm", realmName)...)
 
-			// Keycloak's PUT replaces what the request leaves out, so the
-			// declared keys go on top of the current organization.
-			body := definition
-			if currentRaw != nil {
-				body = overlayOrganizationDefinition(currentRaw, definition)
-			}
+			body := overlayOrganizationDefinition(currentRaw, definition)
 			body = mergeIDIntoDefinition(body, &orgID)
 			if err := kc.UpdateOrganization(ctx, realmName, orgID, body); err != nil {
 				RecordError(controllerName, "keycloak_api_error")

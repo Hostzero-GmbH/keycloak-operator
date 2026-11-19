@@ -812,9 +812,10 @@ func stripIgnoredOrganizationKeys(definition json.RawMessage) (json.RawMessage, 
 
 // overlayOrganizationDefinition returns current with every key of desired set
 // on top. Keycloak's organization PUT replaces description, redirectUrl and
-// domains with what the request carries, so sending only the declared keys
-// would clear the ones the resource does not declare, such as a redirect URL set
-// in the Admin Console. If either side cannot be parsed, desired is returned.
+// domains with what the request carries and sets enabled back to true, so
+// sending only the declared keys would clear the ones the resource does not
+// declare, such as a redirect URL set in the Admin Console. If either side
+// cannot be parsed, desired is returned.
 func overlayOrganizationDefinition(current, desired json.RawMessage) json.RawMessage {
 	var currentMap, desiredMap map[string]json.RawMessage
 	if err := json.Unmarshal(current, &currentMap); err != nil {
@@ -851,6 +852,9 @@ func organizationDefinitionsMatch(desired, current json.RawMessage) bool {
 // current organization that does not have it: Keycloak stores an emptied
 // redirectUrl, or an emptied domains list, as no value and leaves the key out
 // of its answer, so without this the object would be written on every resync.
+// An organization PUT replaces attributes as a whole and Keycloak adds none of
+// its own, so an attribute the definition no longer lists, or an empty map
+// while Keycloak still has attributes, counts as drift.
 func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	var desiredMap, currentMap map[string]interface{}
 	if err := json.Unmarshal(desired, &desiredMap); err != nil {
@@ -888,7 +892,11 @@ func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return definitionDriftKeys(desiredJSON, currentJSON)
+	keys, err := definitionDriftKeys(desiredJSON, currentJSON)
+	if err != nil {
+		return nil, err
+	}
+	return withDroppedAttributes(keys, desiredJSON, currentJSON), nil
 }
 
 // isEmptyDefinitionValue reports whether a decoded JSON value is null, an empty
