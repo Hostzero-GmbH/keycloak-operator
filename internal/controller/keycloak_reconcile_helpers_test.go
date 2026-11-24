@@ -74,6 +74,7 @@ func newReconcileHarness(t *testing.T, keycloakHandler http.Handler, objs ...cli
 				&keycloakv1beta1.KeycloakGroup{},
 				&keycloakv1beta1.KeycloakClientScope{},
 				&keycloakv1beta1.KeycloakProtocolMapper{},
+				&keycloakv1beta1.KeycloakOrganization{},
 			).
 			Build(),
 		manager: keycloak.NewClientManager(logr.Discard()),

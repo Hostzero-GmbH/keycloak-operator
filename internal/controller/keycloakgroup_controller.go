@@ -217,11 +217,19 @@ func groupDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !slices.Contains(keys, "attributes") && attributesDropped(desired, current) {
-		keys = append(keys, "attributes")
-		sort.Strings(keys)
+	return withDroppedAttributes(keys, desired, current), nil
+}
+
+// withDroppedAttributes adds attributes to the sorted drift keys when current
+// holds an attribute that the desired definition no longer lists, which the
+// subset comparison of definitionDriftKeys cannot see.
+func withDroppedAttributes(keys []string, desired, current json.RawMessage) []string {
+	if slices.Contains(keys, "attributes") || !attributesDropped(desired, current) {
+		return keys
 	}
-	return keys, nil
+	keys = append(keys, "attributes")
+	sort.Strings(keys)
+	return keys
 }
 
 // attributesDropped reports whether current holds an attribute that the desired
