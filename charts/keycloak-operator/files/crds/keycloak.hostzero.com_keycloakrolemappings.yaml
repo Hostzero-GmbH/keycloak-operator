@@ -108,6 +108,44 @@ spec:
                 description: Subject defines who the role is assigned to (user or
                   group)
                 properties:
+                  existingGroup:
+                    description: ExistingGroup resolves an existing Keycloak group
+                      without managing it.
+                    properties:
+                      clusterRealmRef:
+                        description: ClusterRealmRef selects a ClusterKeycloakRealm.
+                        properties:
+                          name:
+                            description: Name of the cluster-scoped resource
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      name:
+                        description: Name is the exact name of a top-level group.
+                        minLength: 1
+                        type: string
+                      path:
+                        description: Path is the absolute path of a group, such as
+                          /parent/child.
+                        pattern: ^/[^/]+(/[^/]+)*$
+                        type: string
+                      realmRef:
+                        description: RealmRef selects a namespaced KeycloakRealm.
+                        properties:
+                          name:
+                            description: Name of the resource
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    type: object
+                    x-kubernetes-validations:
+                    - message: exactly one of name or path must be set
+                      rule: has(self.name) != has(self.path)
+                    - message: exactly one of realmRef or clusterRealmRef must be
+                        set
+                      rule: has(self.realmRef) != has(self.clusterRealmRef)
                   groupRef:
                     description: GroupRef references a KeycloakGroup
                     properties:
@@ -140,10 +178,11 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-validations:
-                - message: exactly one of userRef, groupRef, or serviceAccountRef
+                - message: exactly one of userRef, groupRef, existingGroup, or serviceAccountRef
                     must be set
                   rule: '(has(self.userRef) ? 1 : 0) + (has(self.groupRef) ? 1 : 0)
-                    + (has(self.serviceAccountRef) ? 1 : 0) == 1'
+                    + (has(self.existingGroup) ? 1 : 0) + (has(self.serviceAccountRef)
+                    ? 1 : 0) == 1'
             required:
             - subject
             type: object

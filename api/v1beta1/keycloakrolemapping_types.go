@@ -23,7 +23,7 @@ type KeycloakRoleMappingSpec struct {
 }
 
 // RoleMappingSubject defines the target of the role mapping
-// +kubebuilder:validation:XValidation:rule="(has(self.userRef) ? 1 : 0) + (has(self.groupRef) ? 1 : 0) + (has(self.serviceAccountRef) ? 1 : 0) == 1",message="exactly one of userRef, groupRef, or serviceAccountRef must be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.userRef) ? 1 : 0) + (has(self.groupRef) ? 1 : 0) + (has(self.existingGroup) ? 1 : 0) + (has(self.serviceAccountRef) ? 1 : 0) == 1",message="exactly one of userRef, groupRef, existingGroup, or serviceAccountRef must be set"
 type RoleMappingSubject struct {
 	// UserRef references a KeycloakUser
 	// +optional
@@ -33,11 +33,38 @@ type RoleMappingSubject struct {
 	// +optional
 	GroupRef *ResourceRef `json:"groupRef,omitempty"`
 
+	// ExistingGroup resolves an existing Keycloak group without managing it.
+	// +optional
+	ExistingGroup *ExistingGroupRef `json:"existingGroup,omitempty"`
+
 	// ServiceAccountRef references a KeycloakClient to assign roles to its
 	// auto-created service account user. This avoids needing an intermediate
 	// KeycloakUser CR for clients with serviceAccountsEnabled: true.
 	// +optional
 	ServiceAccountRef *ResourceRef `json:"serviceAccountRef,omitempty"`
+}
+
+// ExistingGroupRef identifies a group already present in a Keycloak realm.
+// +kubebuilder:validation:XValidation:rule="has(self.name) != has(self.path)",message="exactly one of name or path must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.realmRef) != has(self.clusterRealmRef)",message="exactly one of realmRef or clusterRealmRef must be set"
+type ExistingGroupRef struct {
+	// Name is the exact name of a top-level group.
+	// +kubebuilder:validation:MinLength=1
+	// +optional
+	Name *string `json:"name,omitempty"`
+
+	// Path is the absolute path of a group, such as /parent/child.
+	// +kubebuilder:validation:Pattern=`^/[^/]+(/[^/]+)*$`
+	// +optional
+	Path *string `json:"path,omitempty"`
+
+	// RealmRef selects a namespaced KeycloakRealm.
+	// +optional
+	RealmRef *ResourceRef `json:"realmRef,omitempty"`
+
+	// ClusterRealmRef selects a ClusterKeycloakRealm.
+	// +optional
+	ClusterRealmRef *ClusterResourceRef `json:"clusterRealmRef,omitempty"`
 }
 
 // RoleDefinition defines a role inline
@@ -150,7 +177,7 @@ func (r *KeycloakRoleMapping) IsUserMapping() bool {
 
 // IsGroupMapping returns true if this maps to a group
 func (r *KeycloakRoleMapping) IsGroupMapping() bool {
-	return r.Spec.Subject.GroupRef != nil
+	return r.Spec.Subject.GroupRef != nil || r.Spec.Subject.ExistingGroup != nil
 }
 
 // IsServiceAccountMapping returns true if this maps to a service account

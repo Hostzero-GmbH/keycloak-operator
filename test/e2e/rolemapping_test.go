@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
 
 func TestKeycloakRoleMappingE2E(t *testing.T) {
@@ -862,9 +864,78 @@ func TestKeycloakClientRoleMapping(t *testing.T) {
 		}
 		err := k8sClient.Create(ctx, roleMapping)
 		require.Error(t, err, "setting two subject refs must be rejected")
-		require.Contains(t, err.Error(), "exactly one of userRef, groupRef, or serviceAccountRef")
+		require.Contains(t, err.Error(), "exactly one of userRef, groupRef, existingGroup, or serviceAccountRef")
 		if err == nil {
 			t.Cleanup(func() { k8sClient.Delete(ctx, roleMapping) })
 		}
 	})
+}
+
+// TestExistingGroupRoleMappingE2E verifies that a group created outside the
+// operator can receive a role mapping without a KeycloakGroup CR.
+func TestExistingGroupRoleMappingE2E(t *testing.T) {
+	skipIfNoCluster(t)
+	skipIfNoKeycloakAccess(t)
+
+	instanceName, _ := getOrCreateInstance(t)
+	realmName := createTestRealm(t, instanceName, "existing-group-mapping")
+	kc := getInternalKeycloakClient(t)
+	suffix := time.Now().UnixNano()
+	parentName := fmt.Sprintf("external-parent-%d", suffix)
+	childName := fmt.Sprintf("external-child-%d", suffix)
+	parentID, err := kc.CreateGroup(ctx, realmName, json.RawMessage(fmt.Sprintf(`{"name":%q}`, parentName)))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = kc.DeleteGroup(ctx, realmName, parentID) })
+	childID, err := kc.CreateChildGroup(ctx, realmName, parentID, json.RawMessage(fmt.Sprintf(`{"name":%q}`, childName)))
+	require.NoError(t, err)
+
+	groupPath := "/" + parentName + "/" + childName
+	mapping := &keycloakv1beta1.KeycloakRoleMapping{
+		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("external-group-mapping-%d", suffix), Namespace: testNamespace},
+		Spec: keycloakv1beta1.KeycloakRoleMappingSpec{
+			Subject: keycloakv1beta1.RoleMappingSubject{ExistingGroup: &keycloakv1beta1.ExistingGroupRef{
+				Path: &groupPath, RealmRef: &keycloakv1beta1.ResourceRef{Name: realmName},
+			}},
+			Role: &keycloakv1beta1.RoleDefinition{Name: "offline_access"},
+		},
+	}
+	require.NoError(t, k8sClient.Create(ctx, mapping))
+	t.Cleanup(func() { _ = k8sClient.Delete(ctx, mapping) })
+	key := types.NamespacedName{Name: mapping.Name, Namespace: mapping.Namespace}
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		updated := &keycloakv1beta1.KeycloakRoleMapping{}
+		if err := k8sClient.Get(ctx, key, updated); err != nil {
+			return false, nil
+		}
+		return updated.Status.Ready, nil
+	}), "existing group mapping did not become ready")
+	updated := &keycloakv1beta1.KeycloakRoleMapping{}
+	require.NoError(t, k8sClient.Get(ctx, key, updated))
+	require.Equal(t, "group", updated.Status.SubjectType)
+	require.Equal(t, childID, updated.Status.SubjectID)
+
+	roles, err := kc.GetGroupRealmRoleMappings(ctx, realmName, childID)
+	require.NoError(t, err)
+	require.True(t, hasRoleNamed(roles, "offline_access"), "role was not assigned to existing group")
+
+	require.NoError(t, k8sClient.Delete(ctx, mapping))
+	require.NoError(t, wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		err := k8sClient.Get(ctx, key, &keycloakv1beta1.KeycloakRoleMapping{})
+		return errors.IsNotFound(err), nil
+	}))
+	group, err := kc.GetGroup(ctx, realmName, childID)
+	require.NoError(t, err, "deleting the mapping must not delete the group")
+	require.Equal(t, childName, *group.Name)
+	roles, err = kc.GetGroupRealmRoleMappings(ctx, realmName, childID)
+	require.NoError(t, err)
+	require.False(t, hasRoleNamed(roles, "offline_access"), "role mapping was not removed")
+}
+
+func hasRoleNamed(roles []keycloak.RoleRepresentation, name string) bool {
+	for _, role := range roles {
+		if role.Name != nil && *role.Name == name {
+			return true
+		}
+	}
+	return false
 }

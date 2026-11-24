@@ -92,6 +92,30 @@ spec:
     name: developer-role
 ```
 
+### Role to an Existing LDAP/AD Group
+
+Use `subject.existingGroup` to assign a role to a group that Keycloak already has. The operator reads the group and changes only its role mapping; it does not create, update, or delete the group. `name` matches a top-level group exactly. For a nested group, use its absolute `path` instead.
+
+```yaml
+apiVersion: keycloak.hostzero.com/v1beta1
+kind: KeycloakRoleMapping
+metadata:
+  name: directory-admins-role
+spec:
+  subject:
+    existingGroup:
+      path: /department/admins
+      realmRef:
+        name: my-realm
+  role:
+    name: view-users
+    clientId: realm-management
+```
+
+If the group is absent, the mapping reports `SubjectNotReady` and retries. For a cluster-scoped realm, use `clusterRealmRef` in place of `realmRef`.
+
+`path` splits on `/`, so it cannot address a nested group whose own name contains `/`; a top-level group with such a name can still be selected with `name`. Resolving a nested `path` uses the group children endpoint, which requires Keycloak 23 or later; on older versions only top-level groups can be resolved.
+
 ### Role to a Client's Service Account
 
 `serviceAccountRef` assigns roles to the service account user that Keycloak auto-creates for clients with `serviceAccountsEnabled: true`, without an intermediate `KeycloakUser` resource:
@@ -117,6 +141,7 @@ spec:
 |-------|------|-------------|----------|
 | `subject.userRef` | ResourceRef | Reference to KeycloakUser | Exactly one subject ref |
 | `subject.groupRef` | ResourceRef | Reference to KeycloakGroup | Exactly one subject ref |
+| `subject.existingGroup` | ExistingGroupRef | Existing group by exact top-level `name` or absolute `path`, with `realmRef` or `clusterRealmRef` | Exactly one subject source |
 | `subject.serviceAccountRef` | ResourceRef | Reference to a KeycloakClient whose service account is the subject | Exactly one subject ref |
 | `roleRef` | ResourceRef | Reference to KeycloakRole resource | Either roleRef or role |
 | `role.name` | string | Keycloak role name (inline) | Either roleRef or role |
@@ -167,6 +192,7 @@ spec:
 | groupRef | inline `role` with `clientRef` or `clientId` | Group client role mapping |
 | groupRef | `roleRef` to a `KeycloakRole` without `clientRef` | Group realm role mapping |
 | groupRef | `roleRef` to a `KeycloakRole` with `clientRef` | Group client role mapping |
+| existingGroup | any role source | Role mapping on an existing Keycloak group |
 | serviceAccountRef | any role source | Role mapping on the client's service account user |
 
 ### Cleanup
@@ -267,7 +293,8 @@ spec:
 
 ## Notes
 
-- Exactly one of `userRef`, `groupRef`, or `serviceAccountRef` can be specified
+- Exactly one of `userRef`, `groupRef`, `group`, or `serviceAccountRef` can be specified
+- With `subject.existingGroup`, specify exactly one of `name` or `path` and exactly one of `realmRef` or `clusterRealmRef`
 - Only one of `roleRef` or `role` can be specified
 - When using `role.clientRef`, the role must be a client role, not a realm role
 - Built-in Keycloak roles (like `offline_access`, `uma_authorization`) should use inline `role.name`

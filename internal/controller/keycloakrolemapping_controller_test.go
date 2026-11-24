@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/go-logr/logr/testr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -12,7 +15,45 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	keycloakv1beta1 "github.com/Hostzero-GmbH/keycloak-operator/api/v1beta1"
+	"github.com/Hostzero-GmbH/keycloak-operator/internal/keycloak"
 )
+
+func TestFindExistingGroupID(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.Path == "/realms/master/protocol/openid-connect/token" {
+			_, _ = w.Write([]byte(`{"access_token":"test","expires_in":300,"token_type":"Bearer"}`))
+			return
+		}
+		requests++
+		if req.Method != http.MethodGet || req.URL.Query().Get("exact") != "true" {
+			t.Errorf("unexpected group request: %s %s", req.Method, req.URL)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case req.URL.Path == "/admin/realms/test/groups" && req.URL.Query().Get("search") == "parent":
+			_, _ = w.Write([]byte(`[{"id":"parent-id","name":"parent"}]`))
+		case req.URL.Path == "/admin/realms/test/groups/parent-id/children" && req.URL.Query().Get("search") == "child":
+			_, _ = w.Write([]byte(`[{"id":"wrong","name":"childish"},{"id":"child-id","name":"child"}]`))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer srv.Close()
+	kc := keycloak.NewClient(keycloak.Config{BaseURL: srv.URL, ClientID: "admin-cli", ClientSecret: "secret"}, testr.New(t))
+	path := "/parent/child"
+	id, err := findExistingGroupID(context.Background(), kc, "test", &keycloakv1beta1.ExistingGroupRef{Path: &path})
+	if err != nil || id != "child-id" {
+		t.Fatalf("got ID %q, error %v; want child-id", id, err)
+	}
+	if requests != 2 {
+		t.Fatalf("got %d group lookups; want 2", requests)
+	}
+	name := "missing"
+	if _, err := findExistingGroupID(context.Background(), kc, "test", &keycloakv1beta1.ExistingGroupRef{Name: &name}); err == nil {
+		t.Fatal("expected missing group to fail")
+	}
+}
 
 func newScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
