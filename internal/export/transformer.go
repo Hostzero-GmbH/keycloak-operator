@@ -166,14 +166,18 @@ func (t *Transformer) TransformClientScope(raw json.RawMessage) (ExportedResourc
 // manage memberships for that user.
 func (t *Transformer) TransformUser(raw json.RawMessage, groupPaths []string) (ExportedResource, error) {
 	var parsed struct {
-		Username string `json:"username"`
+		Username        string   `json:"username"`
+		RequiredActions []string `json:"requiredActions"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return ExportedResource{}, err
 	}
 
-	// Remove server-managed fields, secrets, and role/group keys (typed spec fields).
-	definition := removeServerFields(raw, "id", "createdTimestamp", "credentials", "federatedIdentities", "access", "realmRoles", "clientRoles", "groups")
+	// Remove server-managed fields, secrets, and the keys that live in typed
+	// spec fields: roles, groups and required actions. Keycloak returns
+	// requiredActions for every user, and KeycloakUser rejects the key in
+	// spec.definition.
+	definition := removeServerFields(raw, "id", "createdTimestamp", "credentials", "federatedIdentities", "access", "realmRoles", "clientRoles", "groups", "requiredActions")
 
 	user := &keycloakv1beta1.KeycloakUser{
 		TypeMeta: metav1.TypeMeta{
@@ -195,6 +199,11 @@ func (t *Transformer) TransformUser(raw json.RawMessage, groupPaths []string) (E
 	if len(groupPaths) > 0 {
 		groups := append([]string(nil), groupPaths...)
 		user.Spec.Groups = &groups
+	}
+	// Actions the user has not completed yet are queued again when the
+	// exported user is created somewhere else.
+	if len(parsed.RequiredActions) > 0 {
+		user.Spec.InitialRequiredActions = append([]string(nil), parsed.RequiredActions...)
 	}
 
 	return ExportedResource{

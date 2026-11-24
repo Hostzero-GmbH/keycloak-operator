@@ -2,6 +2,7 @@ package export
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -270,4 +271,42 @@ func TestTransformGroup_SubgroupHasOnlyParentGroupRef(t *testing.T) {
 	group = res.Object.(*keycloakv1beta1.KeycloakGroup)
 	require.Nil(t, group.Spec.ParentGroupRef)
 	require.NotNil(t, group.Spec.RealmRef)
+}
+
+func TestTransformUser_RequiredActionsMoveToInitialRequiredActions(t *testing.T) {
+	tr := NewTransformer(TransformerOptions{TargetNamespace: "ns", RealmRef: "realm"})
+
+	cases := []struct {
+		name string
+		raw  string
+		want []string
+	}{
+		{"pending actions", `{"id":"1","username":"alice","enabled":true,"requiredActions":["UPDATE_PASSWORD","VERIFY_EMAIL"]}`, []string{"UPDATE_PASSWORD", "VERIFY_EMAIL"}},
+		{"empty queue", `{"id":"2","username":"bob","enabled":true,"requiredActions":[]}`, nil},
+		{"key absent", `{"id":"3","username":"carol","enabled":true}`, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := tr.TransformUser(json.RawMessage(tc.raw), nil)
+			if err != nil {
+				t.Fatalf("TransformUser: %v", err)
+			}
+			user := res.Object.(*keycloakv1beta1.KeycloakUser)
+
+			var def map[string]json.RawMessage
+			if err := json.Unmarshal(user.Spec.Definition.Raw, &def); err != nil {
+				t.Fatalf("unmarshal definition: %v", err)
+			}
+			if _, present := def["requiredActions"]; present {
+				t.Errorf("definition must not carry requiredActions: %s", user.Spec.Definition.Raw)
+			}
+			if _, present := def["enabled"]; !present {
+				t.Errorf("definition lost other keys: %s", user.Spec.Definition.Raw)
+			}
+			if !slices.Equal(user.Spec.InitialRequiredActions, tc.want) {
+				t.Errorf("initialRequiredActions = %v, want %v", user.Spec.InitialRequiredActions, tc.want)
+			}
+		})
+	}
 }

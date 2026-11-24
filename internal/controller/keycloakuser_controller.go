@@ -99,13 +99,14 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Parse any username in definition so resolveIdentifier can reject it; the
 	// username comes from spec.username and is injected into the definition
-	// before syncing to Keycloak. Role and group keys are probed so they can be
-	// rejected: those live in the typed spec fields.
+	// before syncing to Keycloak. Role, group and required action keys are
+	// probed so they can be rejected: those live in the typed spec fields.
 	var userDef struct {
-		Username    string          `json:"username"`
-		RealmRoles  json.RawMessage `json:"realmRoles"`
-		ClientRoles json.RawMessage `json:"clientRoles"`
-		Groups      json.RawMessage `json:"groups"`
+		Username        string          `json:"username"`
+		RealmRoles      json.RawMessage `json:"realmRoles"`
+		ClientRoles     json.RawMessage `json:"clientRoles"`
+		Groups          json.RawMessage `json:"groups"`
+		RequiredActions json.RawMessage `json:"requiredActions"`
 	}
 	var rawDef []byte
 	if user.Spec.Definition != nil {
@@ -118,6 +119,10 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 	if err := rejectRoleGroupDefinitionKeys(userDef.RealmRoles, userDef.ClientRoles, userDef.Groups); err != nil {
+		RecordError(controllerName, "invalid_definition")
+		return r.updateStatus(ctx, user, false, "InvalidDefinition", err.Error(), "", false, "")
+	}
+	if err := rejectRequiredActionsDefinitionKey(userDef.RequiredActions); err != nil {
 		RecordError(controllerName, "invalid_definition")
 		return r.updateStatus(ctx, user, false, "InvalidDefinition", err.Error(), "", false, "")
 	}
@@ -149,7 +154,7 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err != nil || len(existingUsers) == 0 {
 		// User doesn't exist, create it
 		log.Info("creating user", "username", username, "realm", realmName)
-		userID, err = kc.CreateUser(ctx, realmName, definition)
+		userID, err = kc.CreateUser(ctx, realmName, userCreateBody(definition, user.Spec.InitialRequiredActions))
 		if err != nil {
 			RecordError(controllerName, "keycloak_api_error")
 			return r.updateStatus(ctx, user, false, "CreateFailed", fmt.Sprintf("Failed to create user: %v", err), "", false, "")
@@ -250,6 +255,30 @@ func rejectRoleGroupDefinitionKeys(realmRoles, clientRoles, groups json.RawMessa
 		}
 	}
 	return nil
+}
+
+// rejectRequiredActionsDefinitionKey fails reconcile when spec.definition
+// carries requiredActions. Keycloak removes an action once the user has
+// completed it, and a user PUT that carries the key replaces the whole queue,
+// so declaring it as state puts completed actions back on every reconcile and
+// drops the ones queued elsewhere, such as the UPDATE_PASSWORD of a temporary
+// password (#169).
+func rejectRequiredActionsDefinitionKey(requiredActions json.RawMessage) error {
+	if requiredActions == nil {
+		return nil
+	}
+	return fmt.Errorf("spec.definition must not contain %q: Keycloak removes a required action once the user has completed it, so it cannot be kept as declared state; use spec.initialRequiredActions to queue actions when the user is created", "requiredActions")
+}
+
+// userCreateBody returns the body of the create request: the definition with
+// spec.initialRequiredActions added. Only the create request carries the
+// actions. A user PUT without the key leaves Keycloak's queue untouched, so an
+// update neither re-queues a completed action nor removes a pending one.
+func userCreateBody(definition json.RawMessage, initialRequiredActions []string) json.RawMessage {
+	if len(initialRequiredActions) == 0 {
+		return definition
+	}
+	return setFieldInDefinition(definition, "requiredActions", initialRequiredActions)
 }
 
 // reconcileRolesAndGroups applies the typed spec role/group fields via the
@@ -571,15 +600,20 @@ func (r *KeycloakUserReconciler) reconcileServiceAccountUser(ctx context.Context
 	// If a definition is provided, update the service account user with it
 	if user.Spec.Definition != nil && len(user.Spec.Definition.Raw) > 0 {
 		var defKeys struct {
-			RealmRoles  json.RawMessage `json:"realmRoles"`
-			ClientRoles json.RawMessage `json:"clientRoles"`
-			Groups      json.RawMessage `json:"groups"`
+			RealmRoles      json.RawMessage `json:"realmRoles"`
+			ClientRoles     json.RawMessage `json:"clientRoles"`
+			Groups          json.RawMessage `json:"groups"`
+			RequiredActions json.RawMessage `json:"requiredActions"`
 		}
 		if err := json.Unmarshal(user.Spec.Definition.Raw, &defKeys); err != nil {
 			RecordError(controllerName, "invalid_definition")
 			return r.updateStatus(ctx, user, false, "InvalidDefinition", fmt.Sprintf("Failed to parse user definition: %v", err), userID, true, clientUUID)
 		}
 		if err := rejectRoleGroupDefinitionKeys(defKeys.RealmRoles, defKeys.ClientRoles, defKeys.Groups); err != nil {
+			RecordError(controllerName, "invalid_definition")
+			return r.updateStatus(ctx, user, false, "InvalidDefinition", err.Error(), userID, true, clientUUID)
+		}
+		if err := rejectRequiredActionsDefinitionKey(defKeys.RequiredActions); err != nil {
 			RecordError(controllerName, "invalid_definition")
 			return r.updateStatus(ctx, user, false, "InvalidDefinition", err.Error(), userID, true, clientUUID)
 		}

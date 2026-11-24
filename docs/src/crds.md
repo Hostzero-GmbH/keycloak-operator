@@ -110,6 +110,7 @@ For contributors, the layer of a new field follows mechanically:
 
 - References a Kubernetes object or another CR? → typed spec field (layer 3).
 - Managed through a separate Keycloak API endpoint rather than the representation `PUT`? → its own CRD (like KeycloakRoleMapping or KeycloakProtocolMapper) or a typed spec section — never keys inside `definition`. Such a key is rejected with `Ready=False`, because Keycloak may accept the parent `PUT` while discarding the nested change.
+- Part of the Keycloak representation, but consumed by Keycloak instead of held as state? → a typed, create-only spec field, and the key is rejected inside `definition`. The one case today is the user's `requiredActions`: Keycloak removes an action once the user has completed it, so re-applying it as desired state would force the user through it again on every login. It lives in `initialRequiredActions`.
 - Part of the Keycloak representation itself? → stays in `definition`, untyped.
 
 ### Placement References
