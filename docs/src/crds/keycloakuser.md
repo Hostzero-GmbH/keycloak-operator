@@ -47,8 +47,12 @@ spec:
     - developers
   
   # Optional: Initial password (only set on creation)
+  # Exactly one of value or valueFromSecret must be set
   initialPassword:
     value: "temporary-password"
+    # valueFromSecret:
+    #   secretName: john-doe-password
+    #   secretKey: password  # default: password
     temporary: true  # User must change on first login
 
   # Optional: required actions queued when the operator creates the user
@@ -318,6 +322,7 @@ The `definition` field is optional for service account users since Keycloak crea
 ## Notes
 
 - `spec.initialPassword` is only set on user creation
+- `spec.initialPassword.valueFromSecret` reads the password from a Secret in the same namespace as the user. If the Secret does not exist yet, the user is not created in Keycloak until it appears
 - `spec.initialRequiredActions` is only sent when the operator creates the user
 - To manage or rotate a password declaratively, use [KeycloakUserCredential](./keycloakusercredential.md)
 - For service account users, the username is automatically set by Keycloak (format: `service-account-<client-id>`)

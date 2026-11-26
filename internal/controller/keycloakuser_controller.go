@@ -9,6 +9,7 @@ import (
 
 	stderrors "errors"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +35,7 @@ type KeycloakUserReconciler struct {
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakusers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakusers/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=keycloak.hostzero.com,resources=keycloakusers/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 
 // Reconcile handles KeycloakUser reconciliation
 func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -95,6 +97,24 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err != nil {
 		RecordError(controllerName, "realm_not_ready")
 		return r.updateStatus(ctx, user, false, "RealmNotReady", err.Error(), "", false, "")
+	}
+
+	// Resolve the initial password source before creating the user. When it
+	// comes from a Secret, the user is only created once the Secret exists,
+	// so a user is never created without its password.
+	initialPasswordValue := ""
+	if user.Spec.InitialPassword != nil {
+		if user.Spec.InitialPassword.ValueFromSecret != nil {
+			initialPasswordValue, err = r.resolveInitialPasswordFromSecret(ctx, user)
+			if err != nil {
+				RecordError(controllerName, "initial_password_secret_error")
+				res, _ := r.updateStatus(ctx, user, false, "InitialPasswordSecretNotFound", err.Error(), "", false, "")
+				res.RequeueAfter = ErrorRequeueDelay
+				return res, nil
+			}
+		} else {
+			initialPasswordValue = user.Spec.InitialPassword.Value
+		}
 	}
 
 	// Parse any username in definition so resolveIdentifier can reject it; the
@@ -199,7 +219,7 @@ func (r *KeycloakUserReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// Handle initial password if specified
 	if user.Spec.InitialPassword != nil && user.Status.UserID == "" {
 		// Only set password on first creation
-		if err := kc.SetPassword(ctx, realmName, userID, user.Spec.InitialPassword.Value, user.Spec.InitialPassword.Temporary); err != nil {
+		if err := kc.SetPassword(ctx, realmName, userID, initialPasswordValue, user.Spec.InitialPassword.Temporary); err != nil {
 			log.Error(err, "failed to set initial password")
 			// Don't fail the reconciliation for password issues
 		}
@@ -709,6 +729,26 @@ func (r *KeycloakUserReconciler) updateStatus(ctx context.Context, user *keycloa
 	return writeStatusIfChanged(ctx, r.Client, user, ready)
 }
 
+// resolveInitialPasswordFromSecret reads the initial password from the
+// Kubernetes Secret referenced by spec.initialPassword.valueFromSecret.
+// The Secret must live in the same namespace as the KeycloakUser.
+func (r *KeycloakUserReconciler) resolveInitialPasswordFromSecret(ctx context.Context, user *keycloakv1beta1.KeycloakUser) (string, error) {
+	ref := user.Spec.InitialPassword.ValueFromSecret
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Name: ref.SecretName, Namespace: user.Namespace}, secret); err != nil {
+		return "", fmt.Errorf("failed to get initial password secret %q: %w", ref.SecretName, err)
+	}
+	key := ref.SecretKey
+	if key == "" {
+		key = "password"
+	}
+	value, ok := secret.Data[key]
+	if !ok {
+		return "", fmt.Errorf("key %q not found in initial password secret %q", key, ref.SecretName)
+	}
+	return string(value), nil
+}
+
 // SetupWithManager sets up the controller with the Manager
 func (r *KeycloakUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	b := ctrl.NewControllerManagedBy(mgr).
@@ -716,6 +756,10 @@ func (r *KeycloakUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&keycloakv1beta1.KeycloakClient{},
 			handler.EnqueueRequestsFromMapFunc(r.findUsersForClient),
+		).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findUsersForInitialPasswordSecret),
 		)
 	return watchRealms(b, r.Client,
 		func() client.ObjectList { return &keycloakv1beta1.KeycloakUserList{} },
@@ -742,6 +786,26 @@ func (r *KeycloakUserReconciler) findUsersForClient(ctx context.Context, obj cli
 					Name:      user.Name,
 					Namespace: user.Namespace,
 				},
+			})
+		}
+	}
+	return requests
+}
+
+// findUsersForInitialPasswordSecret maps a Secret to the KeycloakUsers whose
+// initialPassword.valueFromSecret references it.
+func (r *KeycloakUserReconciler) findUsersForInitialPasswordSecret(ctx context.Context, obj client.Object) []reconcile.Request {
+	secret := obj.(*corev1.Secret)
+	var users keycloakv1beta1.KeycloakUserList
+	if err := r.List(ctx, &users, client.InNamespace(secret.Namespace)); err != nil {
+		return nil
+	}
+	var requests []reconcile.Request
+	for _, user := range users.Items {
+		ip := user.Spec.InitialPassword
+		if ip != nil && ip.ValueFromSecret != nil && ip.ValueFromSecret.SecretName == secret.Name {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: user.Name, Namespace: user.Namespace},
 			})
 		}
 	}
