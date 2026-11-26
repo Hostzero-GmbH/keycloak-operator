@@ -53,6 +53,7 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 	mapperName := "mapper"
 	groupName := "group"
 	componentName := "mapper"
+	userName := "alice"
 
 	tests := []struct {
 		name        string
@@ -103,6 +104,28 @@ func TestCRDReferenceChoiceValidation(t *testing.T) {
 				},
 			},
 			wantErrText: "exactly one of realmRef, clusterRealmRef, or clientRef must be set",
+		},
+		{
+			name: "KeycloakUser accepts initial required actions for a realm user",
+			object: &KeycloakUser{
+				ObjectMeta: metav1.ObjectMeta{Name: "user-initial-actions", Namespace: namespace},
+				Spec: KeycloakUserSpec{
+					RealmRef:               &ResourceRef{Name: "realm"},
+					Username:               &userName,
+					InitialRequiredActions: []string{"UPDATE_PASSWORD"},
+				},
+			},
+		},
+		{
+			name: "KeycloakUser rejects initial required actions for a service account",
+			object: &KeycloakUser{
+				ObjectMeta: metav1.ObjectMeta{Name: "user-sa-initial-actions", Namespace: namespace},
+				Spec: KeycloakUserSpec{
+					ClientRef:              clientRef,
+					InitialRequiredActions: []string{"UPDATE_PASSWORD"},
+				},
+			},
+			wantErrText: "spec.initialRequiredActions cannot be combined with spec.clientRef",
 		},
 		{
 			name: "KeycloakProtocolMapper rejects both parents",

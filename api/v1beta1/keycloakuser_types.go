@@ -9,6 +9,7 @@ import (
 // +kubebuilder:validation:XValidation:rule="(has(self.realmRef) ? 1 : 0) + (has(self.clusterRealmRef) ? 1 : 0) + (has(self.clientRef) ? 1 : 0) == 1",message="exactly one of realmRef, clusterRealmRef, or clientRef must be set"
 // +kubebuilder:validation:XValidation:rule="has(self.clientRef) || (has(self.username) && size(self.username) > 0)",message="spec.username is required unless spec.clientRef is set (service account user)"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.username) || (has(self.username) && self.username == oldSelf.username)",message="spec.username is immutable once set"
+// +kubebuilder:validation:XValidation:rule="!has(self.clientRef) || !has(self.initialRequiredActions)",message="spec.initialRequiredActions cannot be combined with spec.clientRef: the operator does not create service account users"
 type KeycloakUserSpec struct {
 	// RealmRef is a reference to a KeycloakRealm
 	// One of realmRef, clusterRealmRef, or clientRef must be specified
@@ -37,7 +38,8 @@ type KeycloakUserSpec struct {
 
 	// Definition contains the Keycloak UserRepresentation. Set the username via
 	// spec.username; role and group assignments go in spec.realmRoles,
-	// spec.clientRoles, and spec.groups.
+	// spec.clientRoles, and spec.groups, and required actions in
+	// spec.initialRequiredActions.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	Definition *runtime.RawExtension `json:"definition,omitempty"`
@@ -69,6 +71,18 @@ type KeycloakUserSpec struct {
 	// For managed credentials stored in a Kubernetes secret, use KeycloakUserCredential.
 	// +optional
 	InitialPassword *InitialPassword `json:"initialPassword,omitempty"`
+
+	// InitialRequiredActions lists the required actions (for example
+	// UPDATE_PASSWORD or VERIFY_EMAIL) queued for the user when the operator
+	// creates it. Keycloak removes an action as soon as the user has completed
+	// it, so the list is sent with the create request only: it is never
+	// re-applied, changing it later has no effect, and it is not applied to a
+	// user that already exists in Keycloak. Not available for service account
+	// users (spec.clientRef).
+	// +kubebuilder:validation:items:MinLength=1
+	// +listType=set
+	// +optional
+	InitialRequiredActions []string `json:"initialRequiredActions,omitempty"`
 }
 
 // InitialPassword defines the initial password for a user

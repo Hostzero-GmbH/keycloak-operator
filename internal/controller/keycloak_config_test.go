@@ -973,9 +973,9 @@ func TestOrganizationDefinitionsMatch_FieldDiff(t *testing.T) {
 }
 
 func TestOrganizationDefinitionsMatch_RedirectUrlDrift(t *testing.T) {
-	// redirectUrl exists on Keycloak 26's OrganizationRepresentation but is not
-	// modelled by the operator's struct. The raw-bytes diff must still detect
-	// drift when current omits a value the user set in spec.
+	// redirectUrl is a field of Keycloak 26's OrganizationRepresentation. The
+	// comparison works on the raw JSON, so it must detect drift when current
+	// omits a value the user set in spec.
 	desired := json.RawMessage(`{"name":"acme","redirectUrl":"https://app/cb","domains":[{"name":"acme.com"}]}`)
 	current := json.RawMessage(`{"id":"x","name":"acme","domains":[{"name":"acme.com","verified":false}]}`)
 
@@ -1017,6 +1017,238 @@ func TestOrganizationDriftKeys_DomainsVerifiedIsNotDrift(t *testing.T) {
 	}
 	if want := []string{"description"}; !slices.Equal(keys, want) {
 		t.Errorf("organizationDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestOrganizationDriftKeys_EmptyDeclaredValueIsInSyncWithAnAbsentKey(t *testing.T) {
+	// Keycloak stores an emptied redirectUrl or domains list as no value and
+	// leaves the key out of its answer.
+	desired := json.RawMessage(`{"name":"acme","redirectUrl":"","description":null,"domains":[],"attributes":{}}`)
+	current := json.RawMessage(`{"id":"x","name":"acme","alias":"acme","enabled":true}`)
+
+	keys, err := organizationDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("organizationDriftKeys: %v", err)
+	}
+	if len(keys) != 0 {
+		t.Errorf("organizationDriftKeys = %v, want none", keys)
+	}
+}
+
+func TestOrganizationDriftKeys_EmptyDeclaredValueIsDriftWhenCurrentHasOne(t *testing.T) {
+	// Declaring a field empty is how it is cleared, so a current value has to
+	// show up as drift for the clearing PUT to be sent.
+	desired := json.RawMessage(`{"name":"acme","redirectUrl":"","description":null}`)
+	current := json.RawMessage(`{"id":"x","name":"acme","redirectUrl":"https://app/cb","description":"d"}`)
+
+	keys, err := organizationDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("organizationDriftKeys: %v", err)
+	}
+	if want := []string{"description", "redirectUrl"}; !slices.Equal(keys, want) {
+		t.Errorf("organizationDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestOrganizationDriftKeys_FalseIsNotEmpty(t *testing.T) {
+	// enabled: false is a value, not an absent one: it must still be compared.
+	desired := json.RawMessage(`{"name":"acme","enabled":false}`)
+	current := json.RawMessage(`{"id":"x","name":"acme"}`)
+
+	keys, err := organizationDriftKeys(desired, current)
+	if err != nil {
+		t.Fatalf("organizationDriftKeys: %v", err)
+	}
+	if want := []string{"enabled"}; !slices.Equal(keys, want) {
+		t.Errorf("organizationDriftKeys = %v, want %v", keys, want)
+	}
+}
+
+func TestOrganizationDriftKeys_AttributesAreComparedExactly(t *testing.T) {
+	// An organization PUT replaces attributes as a whole and Keycloak adds none
+	// of its own, so what the definition no longer lists is drift, not only what
+	// it lists with another value.
+	tests := []struct {
+		name    string
+		desired string
+		current string
+		want    []string
+	}{
+		{
+			name:    "empty map clears the attributes",
+			desired: `{"name":"acme","attributes":{}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "an attribute removed from the definition",
+			desired: `{"name":"acme","attributes":{"team":["a"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"],"tier":["1"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "a changed value",
+			desired: `{"name":"acme","attributes":{"team":["b"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "an added attribute",
+			desired: `{"name":"acme","attributes":{"team":["a"],"tier":["1"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+			want:    []string{"attributes"},
+		},
+		{
+			name:    "the same attributes",
+			desired: `{"name":"acme","attributes":{"team":["a","b"],"tier":["1"]}}`,
+			current: `{"id":"x","name":"acme","attributes":{"tier":["1"],"team":["b","a"]}}`,
+		},
+		{
+			name:    "attributes the definition does not declare are left alone",
+			desired: `{"name":"acme"}`,
+			current: `{"id":"x","name":"acme","attributes":{"team":["a"]}}`,
+		},
+		{
+			name:    "an empty map is in sync with no attributes",
+			desired: `{"name":"acme","attributes":{}}`,
+			current: `{"id":"x","name":"acme"}`,
+		},
+		{
+			name:    "an empty map is in sync with the empty map Keycloak returns",
+			desired: `{"name":"acme","attributes":{}}`,
+			current: `{"id":"x","name":"acme","attributes":{}}`,
+		},
+		{
+			name:    "a dropped attribute is named together with the other drift",
+			desired: `{"name":"acme","description":"new","attributes":{"team":["a"]}}`,
+			current: `{"id":"x","name":"acme","description":"old","attributes":{"team":["a"],"tier":["1"]}}`,
+			want:    []string{"attributes", "description"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			keys, err := organizationDriftKeys(json.RawMessage(tt.desired), json.RawMessage(tt.current))
+			if err != nil {
+				t.Fatalf("organizationDriftKeys: %v", err)
+			}
+			if !slices.Equal(keys, tt.want) {
+				t.Errorf("organizationDriftKeys = %v, want %v", keys, tt.want)
+			}
+		})
+	}
+}
+
+func TestStripIgnoredOrganizationKeys(t *testing.T) {
+	definition := json.RawMessage(`{"name":"acme","id":"x","redirectUrl":"https://app/cb","identityProviders":[{"alias":"idp1"}],"members":[],"groups":[],"domains":[{"name":"acme.com"}]}`)
+
+	got, ignored := stripIgnoredOrganizationKeys(definition)
+
+	if want := []string{"groups", "id", "identityProviders", "members"}; !slices.Equal(ignored, want) {
+		t.Errorf("ignored = %v, want %v", ignored, want)
+	}
+	var gotMap map[string]interface{}
+	if err := json.Unmarshal(got, &gotMap); err != nil {
+		t.Fatalf("stripped definition is not valid JSON: %v", err)
+	}
+	if len(gotMap) != 3 || gotMap["name"] != "acme" || gotMap["redirectUrl"] != "https://app/cb" || gotMap["domains"] == nil {
+		t.Errorf("stripped definition = %s, want name, redirectUrl and domains only", got)
+	}
+}
+
+func TestStripIgnoredOrganizationKeys_NothingToStripIsUnchanged(t *testing.T) {
+	definition := json.RawMessage(`{"name":"acme","redirectUrl":"https://app/cb"}`)
+
+	got, ignored := stripIgnoredOrganizationKeys(definition)
+
+	if len(ignored) != 0 {
+		t.Errorf("ignored = %v, want none", ignored)
+	}
+	if string(got) != string(definition) {
+		t.Errorf("definition = %s, want it returned unchanged", got)
+	}
+}
+
+func TestStripIgnoredOrganizationKeys_InvalidJSONIsUnchanged(t *testing.T) {
+	definition := json.RawMessage(`not json`)
+
+	got, ignored := stripIgnoredOrganizationKeys(definition)
+
+	if len(ignored) != 0 || string(got) != string(definition) {
+		t.Errorf("got %s, %v; want the input back and no ignored keys", got, ignored)
+	}
+}
+
+func TestOverlayOrganizationDefinition_KeepsUndeclaredKeys(t *testing.T) {
+	// The PUT replaces description, redirectUrl and domains, so the ones the
+	// resource does not declare have to be carried over from what Keycloak has.
+	current := json.RawMessage(`{"id":"x","name":"acme","alias":"acme","enabled":true,"description":"old","redirectUrl":"https://admin/console","domains":[{"name":"acme.com","verified":true}]}`)
+	desired := json.RawMessage(`{"name":"acme","description":"new"}`)
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(overlayOrganizationDefinition(current, desired), &got); err != nil {
+		t.Fatalf("overlay is not valid JSON: %v", err)
+	}
+
+	if got["description"] != "new" {
+		t.Errorf("description = %v, want the declared value", got["description"])
+	}
+	if got["redirectUrl"] != "https://admin/console" {
+		t.Errorf("redirectUrl = %v, want the one Keycloak has", got["redirectUrl"])
+	}
+	if got["alias"] != "acme" || got["enabled"] != true || got["domains"] == nil {
+		t.Errorf("overlay = %v, want the undeclared alias, enabled and domains kept", got)
+	}
+	if _, ok := got["id"]; ok {
+		t.Errorf("overlay = %v, the id is set by the caller and must not come from current", got)
+	}
+}
+
+func TestOverlayOrganizationDefinition_DeclaredKeysReplaceWholesale(t *testing.T) {
+	// A declared list or map is authoritative: an attribute or domain removed
+	// from the resource must not survive from the current organization.
+	current := json.RawMessage(`{"attributes":{"a":["1"],"b":["2"]},"domains":[{"name":"old.com"},{"name":"older.com"}]}`)
+	desired := json.RawMessage(`{"attributes":{"a":["1"]},"domains":[{"name":"new.com"}]}`)
+
+	var got struct {
+		Attributes map[string][]string `json:"attributes"`
+		Domains    []struct {
+			Name string `json:"name"`
+		} `json:"domains"`
+	}
+	if err := json.Unmarshal(overlayOrganizationDefinition(current, desired), &got); err != nil {
+		t.Fatalf("overlay is not valid JSON: %v", err)
+	}
+
+	if len(got.Attributes) != 1 || got.Attributes["a"][0] != "1" {
+		t.Errorf("attributes = %v, want only the declared one", got.Attributes)
+	}
+	if len(got.Domains) != 1 || got.Domains[0].Name != "new.com" {
+		t.Errorf("domains = %v, want only the declared one", got.Domains)
+	}
+}
+
+func TestOverlayOrganizationDefinition_DropsIgnoredKeysOfCurrent(t *testing.T) {
+	current := json.RawMessage(`{"id":"x","name":"acme","members":[{"username":"u"}],"identityProviders":[{"alias":"idp1"}],"groups":[]}`)
+	desired := json.RawMessage(`{"name":"acme"}`)
+
+	var got map[string]interface{}
+	if err := json.Unmarshal(overlayOrganizationDefinition(current, desired), &got); err != nil {
+		t.Fatalf("overlay is not valid JSON: %v", err)
+	}
+
+	if len(got) != 1 || got["name"] != "acme" {
+		t.Errorf("overlay = %v, want only name", got)
+	}
+}
+
+func TestOverlayOrganizationDefinition_InvalidJSONReturnsDesired(t *testing.T) {
+	desired := json.RawMessage(`{"name":"acme"}`)
+
+	if got := overlayOrganizationDefinition(json.RawMessage(`not json`), desired); string(got) != string(desired) {
+		t.Errorf("invalid current: got %s, want desired back", got)
+	}
+	if got := overlayOrganizationDefinition(json.RawMessage(`{"id":"x"}`), json.RawMessage(`not json`)); string(got) != `not json` {
+		t.Errorf("invalid desired: got %s, want desired back", got)
 	}
 }
 

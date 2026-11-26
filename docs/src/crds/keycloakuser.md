@@ -35,7 +35,7 @@ spec:
     lastName: Doe
     enabled: true
     # ... any other Keycloak user properties
-    # (must not contain realmRoles, clientRoles, or groups — see below)
+    # (must not contain realmRoles, clientRoles, groups, or requiredActions — see below)
   
   # Optional: role and group assignments (see "Roles and Groups")
   realmRoles:
@@ -54,6 +54,11 @@ spec:
     #   secretName: john-doe-password
     #   secretKey: password  # default: password
     temporary: true  # User must change on first login
+
+  # Optional: required actions queued when the operator creates the user
+  # (see "Required Actions")
+  initialRequiredActions:
+    - VERIFY_EMAIL
 ```
 
 To manage credentials in a Kubernetes Secret (including password generation), use [KeycloakUserCredential](./keycloakusercredential.md).
@@ -238,6 +243,34 @@ Groups are referenced by full path (e.g. `/engineering/team-alpha` for a nested 
 
 Because these fields are authoritative, do not combine them with `KeycloakRoleMapping` resources targeting the same user — the user's reconciler would remove the mappings again.
 
+## Required Actions
+
+`spec.initialRequiredActions` lists the required actions, such as `UPDATE_PASSWORD`, `VERIFY_EMAIL` or `CONFIGURE_TOTP`, that are queued for the user when the operator creates it:
+
+```yaml
+spec:
+  realmRef:
+    name: my-realm
+  username: johndoe
+  initialRequiredActions:
+    - UPDATE_PASSWORD
+  definition:
+    email: john.doe@example.com
+    enabled: true
+```
+
+A required action is not a setting. It is an entry in a queue, and Keycloak removes it as soon as the user has completed it. The list is therefore sent with the create request only:
+
+- It is never applied again, so a completed action does not come back.
+- Changing the list after the user exists has no effect.
+- It is not applied to a user that already exists in Keycloak when the resource is created.
+- Updates leave Keycloak's queue alone. Actions added in the Admin Console, or the `UPDATE_PASSWORD` that `initialPassword.temporary` adds, stay until the user completes them.
+- It cannot be combined with `clientRef`: the operator does not create service account users.
+
+`requiredActions` must not appear inside `spec.definition`. The operator rejects such a definition with `Ready=False` and the reason `InvalidDefinition`, and does not reconcile the user until the key is removed.
+
+> **Upgrading:** up to v0.14 the key was accepted in the definition and written to Keycloak on every reconcile, which put a completed action back and made the user repeat it at the next login. A definition that still carries the key, an empty list included, is now rejected. Move the actions to `spec.initialRequiredActions`, or drop the key. Manifests written by the export command of an earlier release contain `requiredActions` for every user and need the same change.
+
 ## Definition Properties
 
 Common properties from [Keycloak UserRepresentation](https://www.keycloak.org/docs-api/latest/rest-api/index.html#UserRepresentation):
@@ -251,9 +284,8 @@ Common properties from [Keycloak UserRepresentation](https://www.keycloak.org/do
 | `enabled` | boolean | Whether user is enabled |
 | `emailVerified` | boolean | Email verified flag |
 | `attributes` | map | Custom user attributes |
-| `requiredActions` | string[] | Required actions on login |
 
-Role and group assignments (`realmRoles`, `clientRoles`, `groups`) are typed spec fields, not definition properties.
+Role and group assignments (`realmRoles`, `clientRoles`, `groups`) are typed spec fields, not definition properties. Required actions go in `spec.initialRequiredActions` (see [Required Actions](#required-actions)).
 
 ## Short Names
 
@@ -291,5 +323,6 @@ The `definition` field is optional for service account users since Keycloak crea
 
 - `spec.initialPassword` is only set on user creation
 - `spec.initialPassword.valueFromSecret` reads the password from a Secret in the same namespace as the user. If the Secret does not exist yet, the user is not created in Keycloak until it appears
+- `spec.initialRequiredActions` is only sent when the operator creates the user
 - To manage or rotate a password declaratively, use [KeycloakUserCredential](./keycloakusercredential.md)
 - For service account users, the username is automatically set by Keycloak (format: `service-account-<client-id>`)

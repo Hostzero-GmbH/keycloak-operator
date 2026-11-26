@@ -776,6 +776,69 @@ func isMaskedConfigValue(val interface{}) bool {
 	return false
 }
 
+// organizationIgnoredKeys are the keys of an organization definition that
+// Keycloak accepts on create and update and then discards, so they never come
+// back on a read: the id is generated, and members, groups and identity
+// providers are managed through their own endpoints. Sent or compared, they
+// could only keep the organization permanently out of sync. The list is sorted.
+var organizationIgnoredKeys = []string{"groups", "id", "identityProviders", "members"}
+
+// stripIgnoredOrganizationKeys returns definition without the keys Keycloak
+// ignores, and the sorted names of those it carried. A definition that cannot be
+// parsed, or carries none of them, is returned unchanged.
+func stripIgnoredOrganizationKeys(definition json.RawMessage) (json.RawMessage, []string) {
+	var defMap map[string]json.RawMessage
+	if err := json.Unmarshal(definition, &defMap); err != nil {
+		return definition, nil
+	}
+
+	var ignored []string
+	for _, key := range organizationIgnoredKeys {
+		if _, ok := defMap[key]; ok {
+			delete(defMap, key)
+			ignored = append(ignored, key)
+		}
+	}
+	if len(ignored) == 0 {
+		return definition, nil
+	}
+
+	stripped, err := json.Marshal(defMap)
+	if err != nil {
+		return definition, nil
+	}
+	return stripped, ignored
+}
+
+// overlayOrganizationDefinition returns current with every key of desired set
+// on top. Keycloak's organization PUT replaces description, redirectUrl and
+// domains with what the request carries and sets enabled back to true, so
+// sending only the declared keys would clear the ones the resource does not
+// declare, such as a redirect URL set in the Admin Console. If either side
+// cannot be parsed, desired is returned.
+func overlayOrganizationDefinition(current, desired json.RawMessage) json.RawMessage {
+	var currentMap, desiredMap map[string]json.RawMessage
+	if err := json.Unmarshal(current, &currentMap); err != nil {
+		return desired
+	}
+	if err := json.Unmarshal(desired, &desiredMap); err != nil {
+		return desired
+	}
+
+	for _, key := range organizationIgnoredKeys {
+		delete(currentMap, key)
+	}
+	for key, value := range desiredMap {
+		currentMap[key] = value
+	}
+
+	merged, err := json.Marshal(currentMap)
+	if err != nil {
+		return desired
+	}
+	return merged
+}
+
 // organizationDefinitionsMatch reports whether desired matches current,
 // ignoring domains[].verified which Keycloak sets on read.
 func organizationDefinitionsMatch(desired, current json.RawMessage) bool {
@@ -785,7 +848,13 @@ func organizationDefinitionsMatch(desired, current json.RawMessage) bool {
 
 // organizationDriftKeys names the top-level keys in which the desired
 // organization differs from the current one, ignoring domains[].verified as
-// organizationDefinitionsMatch does.
+// organizationDefinitionsMatch does. A key declared empty is in sync with a
+// current organization that does not have it: Keycloak stores an emptied
+// redirectUrl, or an emptied domains list, as no value and leaves the key out
+// of its answer, so without this the object would be written on every resync.
+// An organization PUT replaces attributes as a whole and Keycloak adds none of
+// its own, so an attribute the definition no longer lists, or an empty map
+// while Keycloak still has attributes, counts as drift.
 func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	var desiredMap, currentMap map[string]interface{}
 	if err := json.Unmarshal(desired, &desiredMap); err != nil {
@@ -809,6 +878,12 @@ func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	stripDomainVerified(desiredMap)
 	stripDomainVerified(currentMap)
 
+	for key, value := range desiredMap {
+		if _, present := currentMap[key]; !present && isEmptyDefinitionValue(value) {
+			delete(desiredMap, key)
+		}
+	}
+
 	desiredJSON, err := json.Marshal(desiredMap)
 	if err != nil {
 		return nil, err
@@ -817,7 +892,27 @@ func organizationDriftKeys(desired, current json.RawMessage) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return definitionDriftKeys(desiredJSON, currentJSON)
+	keys, err := definitionDriftKeys(desiredJSON, currentJSON)
+	if err != nil {
+		return nil, err
+	}
+	return withDroppedAttributes(keys, desiredJSON, currentJSON), nil
+}
+
+// isEmptyDefinitionValue reports whether a decoded JSON value is null, an empty
+// string, an empty list or an empty object.
+func isEmptyDefinitionValue(value interface{}) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case []interface{}:
+		return len(v) == 0
+	case map[string]interface{}:
+		return len(v) == 0
+	}
+	return false
 }
 
 // roleCompositesSpec mirrors the "composites" field of a Keycloak

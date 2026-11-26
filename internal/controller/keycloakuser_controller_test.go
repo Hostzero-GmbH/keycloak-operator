@@ -259,6 +259,70 @@ func TestRejectRoleGroupDefinitionKeys(t *testing.T) {
 	}
 }
 
+func TestRejectRequiredActionsDefinitionKey(t *testing.T) {
+	cases := []struct {
+		name    string
+		def     string
+		wantErr bool
+	}{
+		{"key absent", `{"enabled": true}`, false},
+		{"actions listed", `{"requiredActions": ["UPDATE_PASSWORD"]}`, true},
+		{"empty list still rejected", `{"requiredActions": []}`, true},
+		{"null value still rejected", `{"requiredActions": null}`, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var keys struct {
+				RequiredActions json.RawMessage `json:"requiredActions"`
+			}
+			if err := json.Unmarshal([]byte(tc.def), &keys); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			err := rejectRequiredActionsDefinitionKey(keys.RequiredActions)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("got err %v, wantErr %v", err, tc.wantErr)
+			}
+			if err != nil && !strings.Contains(err.Error(), "spec.initialRequiredActions") {
+				t.Errorf("error should point at spec.initialRequiredActions, got %q", err)
+			}
+		})
+	}
+}
+
+func TestUserCreateBody(t *testing.T) {
+	definition := json.RawMessage(`{"username":"alice","enabled":true}`)
+
+	t.Run("no initial actions leaves the definition as it is", func(t *testing.T) {
+		for _, actions := range [][]string{nil, {}} {
+			if got := userCreateBody(definition, actions); string(got) != string(definition) {
+				t.Errorf("got %s, want the definition unchanged", got)
+			}
+		}
+	})
+
+	t.Run("initial actions are added to the create body", func(t *testing.T) {
+		var body struct {
+			Username        string   `json:"username"`
+			Enabled         bool     `json:"enabled"`
+			RequiredActions []string `json:"requiredActions"`
+		}
+		got := userCreateBody(definition, []string{"UPDATE_PASSWORD", "VERIFY_EMAIL"})
+		if err := json.Unmarshal(got, &body); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if body.Username != "alice" || !body.Enabled {
+			t.Errorf("definition keys were lost: %s", got)
+		}
+		if len(body.RequiredActions) != 2 || body.RequiredActions[0] != "UPDATE_PASSWORD" || body.RequiredActions[1] != "VERIFY_EMAIL" {
+			t.Errorf("got requiredActions %v", body.RequiredActions)
+		}
+		if strings.Contains(string(definition), "requiredActions") {
+			t.Errorf("the definition used for updates must stay free of requiredActions: %s", definition)
+		}
+	})
+}
+
 func TestReconcileUserRealmRoles_Assign(t *testing.T) {
 	fake := newFakeUserKeycloak(t)
 	fake.realmRoles = []keycloak.RoleRepresentation{
